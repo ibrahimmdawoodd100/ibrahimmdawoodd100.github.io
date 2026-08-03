@@ -1,0 +1,2694 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>لوحة تحكم المدير — النسخة المخصصة</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#f5a623">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="بصمة - المدير">
+<link rel="apple-touch-icon" href="./icon-manager-192.png">
+<link rel="icon" href="./icon-manager-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0c14;--card:#161b2e;--surface:#1e2438;
+  --gold:#f5a623;--gold2:#ffd27f;
+  --green:#22c55e;--red:#ef4444;--blue:#3b82f6;--purple:#a855f7;
+  --orange:#f97316;
+  --text:#e8eaf0;--text2:#8892a4;--border:#2a3050;
+  --radius-card:16px;--radius-btn:50px;--radius-input:12px;
+}
+body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;display:flex}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Toast */
+#toast-container{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;width:90%;max-width:400px}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;color:var(--text);font-size:14px;font-weight:600;text-align:center;animation:fadeUp .3s ease}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--red);color:var(--red)}
+.toast.info{border-color:var(--blue);color:var(--blue)}
+
+/* Loading */
+.loading-overlay{display:none;position:fixed;inset:0;background:#000a;z-index:9000;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.loading-overlay.active{display:flex}
+.spinner-lg{width:50px;height:50px;border:4px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite}
+.spinner-sm{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle}
+
+/* PIN Screen */
+#pin-screen{position:fixed;inset:0;background:var(--bg);z-index:8000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;padding:24px}
+#pin-screen.hidden{display:none}
+.pin-screen-logo{font-size:60px;animation:pulse 2s ease-in-out infinite}
+.pin-screen-title{font-size:24px;font-weight:900;color:var(--gold)}
+.pin-display{display:flex;justify-content:center;gap:14px;margin:8px 0}
+.pin-dot{width:18px;height:18px;border-radius:50%;background:var(--border);transition:background .2s}
+.pin-dot.filled{background:var(--gold)}
+.pin-keyboard{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:320px}
+.pin-key{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;font-size:22px;font-weight:700;font-family:'Cairo',sans-serif;color:var(--text);cursor:pointer;transition:all .15s;text-align:center}
+.pin-key:active{background:var(--gold);color:#0a0c14}
+.pin-key.del{font-size:18px;color:var(--red)}
+.pin-key.empty{visibility:hidden}
+.pin-error{text-align:center;color:var(--red);font-size:13px;min-height:20px}
+
+/* Layout */
+#sidebar{width:240px;min-height:100vh;background:var(--card);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:transform .3s;z-index:100}
+.sidebar-header{padding:20px 16px;border-bottom:1px solid var(--border)}
+.sidebar-logo{font-size:32px;display:block;margin-bottom:4px}
+.sidebar-company{font-size:15px;font-weight:700;line-height:1.3}
+.sidebar-sub{font-size:11px;color:var(--text2)}
+.nav-items{flex:1;padding:12px 0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer;transition:all .2s;border-right:3px solid transparent;position:relative}
+.nav-item:hover{background:var(--surface)}
+.nav-item.active{background:linear-gradient(90deg,#1e2438,var(--card));border-right-color:var(--gold);color:var(--gold)}
+.nav-icon{font-size:20px;width:28px;text-align:center}
+.nav-label{font-size:14px;font-weight:600}
+.nav-badge{background:var(--red);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:2px 7px;margin-right:auto}
+.sidebar-footer{padding:16px;border-top:1px solid var(--border)}
+.lock-btn{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;color:var(--red);font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;width:100%}
+#main-area{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.top-header{background:var(--card);padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:50}
+.header-right{display:flex;align-items:center;gap:12px}
+.menu-btn{background:none;border:none;color:var(--text);font-size:22px;cursor:pointer;display:none}
+@media(max-width:768px){
+  body{flex-direction:column}
+  #sidebar{width:100%;min-height:unset;position:fixed;right:0;top:0;height:100vh;transform:translateX(100%)}
+  #sidebar.open{transform:translateX(0)}
+  #main-area{flex:1;width:100%;padding-top:0}
+  .menu-btn{display:block}
+}
+.live-indicator{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--green);font-weight:600}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.5s ease-in-out infinite}
+.refresh-btn{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-btn);padding:8px 16px;color:var(--gold);font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer}
+.content-area{flex:1;overflow-y:auto;padding:20px}
+.page{display:none;animation:fadeUp .3s ease}
+.page.active{display:block}
+
+/* Cards */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:20px}
+.stat-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);text-align:center}
+.stat-card .sc-icon{font-size:32px;margin-bottom:8px}
+.stat-card .sc-num{font-size:28px;font-weight:900;color:var(--gold)}
+.stat-card .sc-label{font-size:12px;color:var(--text2);margin-top:4px}
+.section-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);margin-bottom:16px}
+.section-title{font-size:16px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.filter-input{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-input);padding:10px 14px;color:var(--text);font-size:14px;font-family:'Cairo',sans-serif;outline:none}
+.filter-input:focus{border-color:var(--gold)}
+.filter-chip{background:var(--surface);border:1.5px solid var(--border);border-radius:20px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;color:var(--text2);transition:all .2s}
+.filter-chip.active{background:var(--gold);color:#0a0c14;border-color:var(--gold)}
+.wh-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;flex-wrap:nowrap}
+
+/* Table */
+.table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:var(--surface)}
+th{padding:12px 14px;text-align:right;color:var(--text2);font-weight:700;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1a1f30}
+.cursor-pointer{cursor:pointer}
+.badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.badge-green{background:#1a3329;color:var(--green)}
+.badge-red{background:#3a1a1a;color:var(--red)}
+.badge-blue{background:#1e2a4a;color:var(--blue)}
+.badge-purple{background:#2d1b4e;color:var(--purple)}
+.badge-gold{background:#3d2800;color:var(--gold)}
+.badge-gray{background:#2a2a3a;color:var(--text2)}
+.badge-orange{background:#3d1e00;color:var(--orange)}
+
+/* Employee Cards */
+.emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.emp-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);cursor:pointer;transition:all .2s}
+.emp-card:hover{border-color:var(--gold);transform:translateY(-2px)}
+.emp-card-top{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.emp-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#0a0c14;flex-shrink:0}
+.emp-name{font-size:14px;font-weight:700}
+.emp-id{font-size:11px;color:var(--text2)}
+.emp-tags{display:flex;gap:6px;flex-wrap:wrap}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:#000b;z-index:500;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.active{display:flex}
+.modal-box{background:var(--card);border-radius:20px;padding:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;border:1px solid var(--border);animation:fadeUp .3s ease}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.modal-title{font-size:18px;font-weight:700}
+.modal-close{background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;line-height:1}
+.modal-section{margin-bottom:16px}
+.modal-section-title{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-transform:uppercase}
+.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-label{color:var(--text2)}
+.info-value{font-weight:600}
+.modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.modal-btn{border:none;border-radius:var(--radius-btn);padding:10px 20px;font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;transition:all .2s}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-gold{background:var(--gold);color:#0a0c14}
+.btn-gray{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-orange{background:var(--orange);color:#fff}
+.action-btn-sm{border:none;border-radius:var(--radius-btn);padding:8px 14px;font-size:12px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;transition:all .2s}
+
+/* Forms */
+.form-group{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.form-label{font-size:12px;font-weight:700;color:var(--text2)}
+.form-input{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-input);padding:12px 14px;color:var(--text);font-size:14px;font-family:'Cairo',sans-serif;outline:none;width:100%}
+.form-input:focus{border-color:var(--gold)}
+.form-select{appearance:none}
+.form-textarea{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-input);padding:12px;color:var(--text);font-size:14px;font-family:'Cairo',sans-serif;resize:none;width:100%;min-height:80px;outline:none}
+.form-textarea:focus{border-color:var(--gold)}
+.action-btn-full{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#0a0c14;border:none;border-radius:var(--radius-btn);padding:14px;font-size:15px;font-weight:900;font-family:'Cairo',sans-serif;cursor:pointer;width:100%;margin-top:8px}
+.action-btn-full:disabled{opacity:.4;cursor:not-allowed}
+
+/* Approvals */
+.approval-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);margin-bottom:12px}
+.approval-card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.approval-actions{display:flex;gap:8px}
+
+/* Messages */
+.msg-item{background:var(--card);border-radius:12px;padding:14px;border:1px solid var(--border);margin-bottom:10px}
+.msg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.msg-emp{font-size:14px;font-weight:700}
+.msg-date{font-size:11px;color:var(--text2)}
+.msg-body{font-size:13px;color:var(--text);line-height:1.6}
+.msg-read{font-size:11px;font-weight:600}
+.msg-read.read{color:var(--green)}
+.msg-read.unread{color:var(--red)}
+
+/* Warehouse cards */
+.wh-card-admin{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.wh-info{flex:1}
+.wh-name{font-size:15px;font-weight:700}
+.wh-meta{font-size:12px;color:var(--text2);margin-top:3px}
+.wh-actions{display:flex;gap:8px}
+
+/* Reports */
+.report-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;margin-bottom:16px}
+.report-stat{background:var(--surface);border-radius:12px;padding:12px;text-align:center;border:1px solid var(--border)}
+.report-stat .rsn{font-size:22px;font-weight:900}
+.report-stat .rsl{font-size:11px;color:var(--text2);margin-top:2px}
+.note-present{color:var(--green)}
+.note-absent{color:var(--red)}
+.note-excused{color:var(--blue)}
+.note-leave{color:var(--purple)}
+.note-holiday{color:var(--gold)}
+.note-present_no_out{color:var(--gold)}
+.empty-state{text-align:center;padding:40px 20px;color:var(--text2)}
+.empty-state .es-icon{font-size:48px;margin-bottom:12px}
+.confirm-modal{background:var(--card);border-radius:20px;padding:24px;width:100%;max-width:360px;border:1px solid var(--border);text-align:center;animation:fadeUp .3s ease}
+.confirm-modal h3{font-size:18px;font-weight:700;margin-bottom:10px}
+.confirm-modal p{font-size:13px;color:var(--text2);margin-bottom:20px;white-space:pre-wrap}
+.confirm-actions{display:flex;gap:10px;justify-content:center}
+
+/* Mission cards */
+.mission-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);margin-bottom:12px}
+.mission-status-assigned{border-right:4px solid var(--gold)}
+.mission-status-started{border-right:4px solid var(--orange)}
+.mission-status-completed{border-right:4px solid var(--green)}
+
+/* Delay badge */
+.delay-card{background:linear-gradient(135deg,#3d1e00,#2a1400);border:1px solid var(--orange);border-radius:var(--radius-card);padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:14px}
+.delay-num{font-size:28px;font-weight:900;color:var(--orange)}
+.delay-lbl{font-size:12px;color:var(--text2);margin-top:2px}
+</style>
+</head>
+<body>
+<div id="toast-container"></div>
+<div class="loading-overlay" id="loading-overlay"><div class="spinner-lg"></div><div style="color:var(--text2);font-size:14px" id="lo-text">جاري التحميل...</div></div>
+
+<!-- PIN Screen -->
+<div id="pin-screen" class="hidden">
+  <div class="pin-screen-logo" id="ps-logo">🏭</div>
+  <div class="pin-screen-title">لوحة تحكم المدير</div>
+  <div style="font-size:13px;color:var(--text2)" id="ps-company"></div>
+  <div style="font-size:13px;color:var(--text2)">أدخل رمز الدخول للمدير</div>
+  <div class="pin-display" id="ps-pin-display"></div>
+  <div class="pin-keyboard">
+    <button class="pin-key" onclick="adminPinKey('1')">1</button>
+    <button class="pin-key" onclick="adminPinKey('2')">2</button>
+    <button class="pin-key" onclick="adminPinKey('3')">3</button>
+    <button class="pin-key" onclick="adminPinKey('4')">4</button>
+    <button class="pin-key" onclick="adminPinKey('5')">5</button>
+    <button class="pin-key" onclick="adminPinKey('6')">6</button>
+    <button class="pin-key" onclick="adminPinKey('7')">7</button>
+    <button class="pin-key" onclick="adminPinKey('8')">8</button>
+    <button class="pin-key" onclick="adminPinKey('9')">9</button>
+    <button class="pin-key empty"></button>
+    <button class="pin-key" onclick="adminPinKey('0')">0</button>
+    <button class="pin-key del" onclick="adminPinDel()">⌫</button>
+  </div>
+  <div class="pin-error" id="ps-error"></div>
+  <button id="ps-reset-btn" onclick="resetFbCfg()" style="display:none;background:none;border:1px solid var(--border);color:var(--text2);font-family:'Cairo',sans-serif;font-size:12px;padding:8px 16px;border-radius:20px;cursor:pointer;margin-top:4px">🔧 إعادة ضبط إعدادات الاتصال</button>
+</div>
+
+<!-- Modal: Employee Detail -->
+<div class="modal-overlay" id="emp-modal">
+  <div class="modal-box" id="emp-modal-box"></div>
+</div>
+
+<!-- Modal: Confirm -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="confirm-modal">
+    <h3 id="confirm-title">تأكيد</h3>
+    <p id="confirm-msg">هل أنت متأكد؟</p>
+    <div class="confirm-actions">
+      <button class="modal-btn btn-red" id="confirm-ok">تأكيد</button>
+      <button class="modal-btn btn-gray" onclick="closeConfirm()">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Employee Login Credentials -->
+<div class="modal-overlay" id="act-link-modal">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title" id="act-link-modal-title">🔑 بيانات دخول الموظف</div>
+      <button class="modal-close" onclick="closeActLinkModal()">×</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:12px" id="act-link-desc"></div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:4px">👤 اسم المستخدم</div>
+    <div style="background:var(--bg);border-radius:8px;padding:12px;font-size:14px;font-weight:700;word-break:break-all;color:var(--gold);margin-bottom:10px;border:1px solid var(--border)" id="act-link-username"></div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:4px">🔑 الرقم السري</div>
+    <div style="background:var(--bg);border-radius:8px;padding:12px;font-size:14px;font-weight:700;word-break:break-all;color:var(--gold);margin-bottom:12px;border:1px solid var(--border)" id="act-link-password"></div>
+    <div class="modal-actions">
+      <button class="modal-btn btn-green" id="act-link-wa-btn">📲 واتساب</button>
+      <button class="modal-btn btn-gray" onclick="closeActLinkModal()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Mission Form -->
+<div class="modal-overlay" id="mission-modal">
+  <div class="modal-box" style="max-width:500px">
+    <div class="modal-header">
+      <div class="modal-title" id="mission-modal-title">📋 إضافة مهمة</div>
+      <button class="modal-close" onclick="closeMissionModal()">×</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">الموظف</label>
+      <select class="form-input form-select" id="mission-emp-select"><option value="">اختر موظفاً...</option></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">عنوان المهمة / الموقع</label>
+      <input class="form-input" id="mission-location" placeholder="مثال: توصيل للعميل - حي الملز">
+    </div>
+    <div class="form-group">
+      <label class="form-label">الوصف (اختياري)</label>
+      <textarea class="form-textarea" id="mission-desc" placeholder="تفاصيل المهمة..."></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label class="form-label">التاريخ</label>
+        <input class="form-input" type="date" id="mission-date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">الوقت المتوقع</label>
+        <input class="form-input" type="time" id="mission-time">
+      </div>
+    </div>
+    <input type="hidden" id="mission-edit-key">
+    <button class="action-btn-full" onclick="saveMission()">💾 حفظ المهمة</button>
+  </div>
+</div>
+
+<!-- Sidebar -->
+<div id="sidebar">
+  <div class="sidebar-header">
+    <span class="sidebar-logo" id="sb-logo">🏭</span>
+    <div class="sidebar-company" id="sb-company">الشركة</div>
+    <div class="sidebar-sub">لوحة تحكم المدير — مخصص</div>
+  </div>
+  <div class="nav-items">
+    <div class="nav-item active" onclick="showPage('dash')"><span class="nav-icon">📊</span><span class="nav-label">لوحة التحكم</span></div>
+    <div class="nav-item" onclick="showPage('attend')"><span class="nav-icon">📅</span><span class="nav-label">الحضور</span></div>
+    <div class="nav-item" onclick="showPage('emps')"><span class="nav-icon">👥</span><span class="nav-label">الموظفون</span></div>
+    <div class="nav-item" onclick="showPage('excuses')" id="nav-excuses"><span class="nav-icon">📝</span><span class="nav-label">الأعذار</span><span class="nav-badge" id="excuse-badge" style="display:none">0</span></div>
+    <div class="nav-item" onclick="showPage('leaves')" id="nav-leaves"><span class="nav-icon">🌴</span><span class="nav-label">الإجازات</span><span class="nav-badge" id="leaves-badge" style="display:none">0</span></div>
+    <div class="nav-item" onclick="showPage('messages')"><span class="nav-icon">💬</span><span class="nav-label">رسائل خاصة</span></div>
+    <div class="nav-item" onclick="showPage('warehouses')"><span class="nav-icon">🏭</span><span class="nav-label">إدارة الفروع</span></div>
+    <div class="nav-item" onclick="showPage('settings')"><span class="nav-icon">⚙️</span><span class="nav-label">الإعدادات</span></div>
+    <div class="nav-item" onclick="showPage('reports')"><span class="nav-icon">📄</span><span class="nav-label">تقارير PDF</span></div>
+    <div class="nav-item" onclick="showPage('payroll')"><span class="nav-icon">💰</span><span class="nav-label">الرواتب</span></div>
+    <div class="nav-item" onclick="showPage('admin-notifs')"><span class="nav-icon">🔔</span><span class="nav-label">الإشعارات</span><span id="admin-notif-badge" style="display:none" class="nav-badge">0</span></div>
+  </div>
+  <div class="sidebar-footer"><button class="lock-btn" onclick="lockAdmin()">🔒 قفل الشاشة</button></div>
+</div>
+
+<!-- Main Area -->
+<div id="main-area">
+  <div class="top-header">
+    <div class="header-right">
+      <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+      <span style="font-size:18px;font-weight:900" id="page-title">لوحة التحكم</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="live-indicator"><span class="live-dot"></span>مباشر</div>
+      <button class="refresh-btn" onclick="refreshCurrentPage()">↻ تحديث</button>
+      <button id="sound-toggle-btn" onclick="toggleAdminSound()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px">🔊</button>
+    </div>
+  </div>
+
+  <div class="content-area">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dash">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="sc-icon">👥</div><div class="sc-num" id="ds-total">-</div><div class="sc-label">إجمالي الموظفين</div></div>
+        <div class="stat-card"><div class="sc-icon">✅</div><div class="sc-num" id="ds-present">-</div><div class="sc-label">حاضرون اليوم</div></div>
+        <div class="stat-card"><div class="sc-icon">❌</div><div class="sc-num" id="ds-absent">-</div><div class="sc-label">غائبون</div></div>
+        <div class="stat-card"><div class="sc-icon">🌴</div><div class="sc-num" id="ds-leave">-</div><div class="sc-label">في إجازة</div></div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">🏭 تصفية حسب الفرع</div>
+        <div class="wh-chips" id="dash-wh-chips"><span class="filter-chip active" data-wh="all" onclick="dashSelectWH(this,'all')">الكل</span></div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">📋 سجل الحضور المباشر</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الاسم</th><th>المسمى</th><th>الفرع</th><th>الحالة</th><th>الحضور</th><th>الانصراف</th><th>الموقع</th></tr></thead>
+            <tbody id="dash-tbody"><tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text2)"><div class="spinner-sm"></div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN NOTIFICATIONS -->
+    <div class="page" id="page-admin-notifs">
+      <div class="section-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="section-title" style="margin:0">🔔 إشعارات النشاط</div>
+          <button onclick="clearAdminNotifs()" style="background:var(--surface);border:1px solid var(--border);color:var(--red);border-radius:20px;padding:4px 14px;font-size:12px;font-family:Cairo,sans-serif;cursor:pointer">🗑 مسح الكل</button>
+        </div>
+        <div id="admin-notif-list"><div style="text-align:center;padding:40px;color:var(--text2)"><div class="spinner-sm" style="margin:0 auto 12px"></div>جاري التحميل...</div></div>
+      </div>
+    </div>
+
+    <!-- ATTENDANCE -->
+    <div class="page" id="page-attend">
+      <div class="section-card">
+        <div class="section-title">🗓 فلترة الحضور</div>
+        <div class="filter-bar">
+          <input class="filter-input" type="date" id="att-date" onchange="loadAttendance()">
+          <select class="filter-input form-select" id="att-wh" onchange="loadAttendance()"><option value="all">كل الفروع</option></select>
+        </div>
+        <div class="filter-bar" id="att-status-chips">
+          <span class="filter-chip active" onclick="attChip(this,'all')">الكل</span>
+          <span class="filter-chip" onclick="attChip(this,'present')">حاضر</span>
+          <span class="filter-chip" onclick="attChip(this,'absent')">غائب</span>
+          <span class="filter-chip" onclick="attChip(this,'leave')">إجازة</span>
+        </div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">📋 جدول الحضور</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الاسم</th><th>المسمى</th><th>الفرع</th><th>الحالة</th><th>الحضور</th><th>الانصراف</th><th>التأخير (د)</th></tr></thead>
+            <tbody id="att-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- EMPLOYEES -->
+    <div class="page" id="page-emps">
+      <div class="section-card" id="bypass-req-section" style="display:none;border:1px solid var(--red)">
+        <div class="section-title" style="color:var(--red)">🔐 طلبات تخطي الجهاز</div>
+        <div id="bypass-req-list"></div>
+      </div>
+      <div class="section-card" id="pending-act-section" style="display:none;border:1px solid var(--orange)">
+        <div class="section-title" style="color:var(--orange)">⏳ بانتظار التفعيل</div>
+        <div id="pending-act-list"></div>
+      </div>
+      <div class="section-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="section-title" style="margin:0">👥 إدارة الموظفين</div>
+          <button class="modal-btn btn-gold" onclick="toggleAddEmpPanel()">+ إضافة موظف</button>
+        </div>
+        <div id="add-emp-panel" style="display:none;background:var(--surface);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid var(--border)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="form-group"><label class="form-label">الاسم</label><input class="form-input" id="ae-name" placeholder="اسم الموظف"></div>
+            <div class="form-group"><label class="form-label">الرقم الوظيفي</label><input class="form-input" id="ae-empid" placeholder="مثال: EMP001"></div>
+            <div class="form-group"><label class="form-label">المسمى الوظيفي</label><input class="form-input" id="ae-role" placeholder="مثال: مشرف"></div>
+            <div class="form-group"><label class="form-label">الفرع</label><select class="form-input form-select" id="ae-wh"><option value="">اختر الفرع...</option></select></div>
+            <div class="form-group"><label class="form-label">الراتب الأساسي (شهري)</label><input class="form-input" type="number" id="ae-salary" placeholder="مثال: 500000"></div>
+            <div class="form-group"><label class="form-label">نسبة الاستقطاع لكل يوم غياب %</label><input class="form-input" type="number" id="ae-deduction" placeholder="100" value="100"></div>
+          </div>
+          <button class="action-btn-full" onclick="addEmployee()">✅ إضافة وإنشاء بيانات الدخول</button>
+        </div>
+        <div class="filter-bar">
+          <input class="filter-input" id="emp-search" placeholder="بحث بالاسم أو الرقم..." oninput="filterEmps()" style="flex:1">
+          <select class="filter-input form-select" id="emp-wh-filter" onchange="filterEmps()"><option value="all">كل الفروع</option></select>
+        </div>
+        <div class="emp-grid" id="emp-grid"><div style="text-align:center;padding:30px;color:var(--text2);grid-column:span 4"><div class="spinner-sm"></div></div></div>
+      </div>
+    </div>
+
+    <!-- EXCUSES -->
+    <div class="page" id="page-excuses">
+      <div class="section-card">
+        <div class="section-title">📝 الأعذار</div>
+        <div id="excuses-list"></div>
+      </div>
+    </div>
+
+    <!-- LEAVES -->
+    <div class="page" id="page-leaves">
+      <div class="section-card">
+        <div class="section-title">🌴 طلبات الإجازة</div>
+        <div id="leaves-list"></div>
+      </div>
+    </div>
+
+    <!-- MESSAGES -->
+    <div class="page" id="page-messages">
+      <div class="section-card">
+        <div class="section-title">💬 إرسال رسالة خاصة</div>
+        <div class="form-group">
+          <label class="form-label">اختر الموظف</label>
+          <select class="form-input form-select" id="msg-emp-select"><option value="">اختر موظفاً...</option></select>
+        </div>
+        <div class="form-group"><textarea class="form-textarea" id="msg-body" placeholder="اكتب رسالتك هنا..." style="min-height:100px"></textarea></div>
+        <button class="action-btn-full" onclick="sendPrivateMsg()">📤 إرسال الرسالة</button>
+      </div>
+      <div class="section-card">
+        <div class="section-title">📬 الرسائل المُرسلة</div>
+        <div id="sent-messages-list"></div>
+      </div>
+    </div>
+
+    <!-- WAREHOUSES -->
+    <div class="page" id="page-warehouses">
+      <div class="section-card">
+        <div class="section-title">🏭 إضافة فرع جديد</div>
+        <div style="display:flex;gap:10px">
+          <input class="form-input" id="new-wh-name" placeholder="اسم الفرع" style="flex:1">
+          <button class="modal-btn btn-gold" onclick="addWarehouse()">إضافة</button>
+        </div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">📦 الفروع</div>
+        <div id="warehouses-list"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS (مخصص — يضيف جدول مواعيد الموظف + الجيو-زون) -->
+    <div class="page" id="page-settings">
+      <div class="section-card" style="border:1px solid var(--gold);background:linear-gradient(135deg,#1a1600,var(--card))">
+        <div class="section-title">👤 الحساب</div>
+        <div style="margin-top:4px">
+          <button onclick="resetFirebaseConfig()" style="background:transparent;border:1px solid var(--red);color:var(--red);border-radius:50px;padding:10px 20px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%">🚪 تسجيل الخروج من هذا الجهاز</button>
+        </div>
+      </div>
+
+      <!-- ① نوافذ الوقت الافتراضية للشركة -->
+      <div class="section-card">
+        <div class="section-title">⏰ نوافذ الوقت — الافتراضية للشركة</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div><div class="form-label" style="margin-bottom:8px">وقت الحضور — من</div><input class="form-input" type="time" id="ci-from"></div>
+          <div><div class="form-label" style="margin-bottom:8px">وقت الحضور — إلى</div><input class="form-input" type="time" id="ci-to"></div>
+          <div><div class="form-label" style="margin-bottom:8px">وقت الانصراف — من</div><input class="form-input" type="time" id="co-from"></div>
+          <div><div class="form-label" style="margin-bottom:8px">وقت الانصراف — إلى</div><input class="form-input" type="time" id="co-to"></div>
+        </div>
+        <button class="action-btn-full" onclick="saveTimeWindows()">💾 حفظ نوافذ الوقت</button>
+      </div>
+
+      <!-- ① جدول مواعيد خاص بكل موظف -->
+      <div class="section-card" style="border:1px solid var(--blue)">
+        <div class="section-title" style="color:var(--blue)">🗓 جدول مواعيد خاص بموظف</div>
+        <div class="form-group">
+          <label class="form-label">اختر الموظف</label>
+          <select class="form-input form-select" id="sched-emp-sel" onchange="loadEmpSchedule()"><option value="">اختر...</option></select>
+        </div>
+        <div id="sched-form" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
+            <div><div class="form-label" style="margin-bottom:8px">حضوره — من</div><input class="form-input" type="time" id="sched-ci-from"></div>
+            <div><div class="form-label" style="margin-bottom:8px">حضوره — إلى</div><input class="form-input" type="time" id="sched-ci-to"></div>
+            <div><div class="form-label" style="margin-bottom:8px">انصرافه — من</div><input class="form-input" type="time" id="sched-co-from"></div>
+            <div><div class="form-label" style="margin-bottom:8px">انصرافه — إلى</div><input class="form-input" type="time" id="sched-co-to"></div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button class="action-btn-full" onclick="saveEmpSchedule()" style="flex:1">💾 حفظ جدول الموظف</button>
+            <button class="modal-btn btn-red" onclick="clearEmpSchedule()" style="margin-top:8px">🗑 إزالة الجدول الخاص</button>
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:8px">ملاحظة: إزالة الجدول الخاص يعيد الموظف لمواعيد الشركة الافتراضية</div>
+        </div>
+      </div>
+
+      <!-- إدارة العطلات -->
+      <div class="section-card">
+        <div class="section-title">🎉 إدارة العطلات</div>
+        <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <input class="form-input" type="date" id="holiday-date" style="flex:1">
+          <input class="form-input" id="holiday-name" placeholder="اسم العطلة" style="flex:1">
+          <button class="modal-btn btn-gold" onclick="addHoliday()">إضافة</button>
+        </div>
+        <div id="holidays-list"></div>
+      </div>
+
+      <!-- إشعار جماعي -->
+      <div class="section-card">
+        <div class="section-title">📢 إشعار جماعي</div>
+        <div class="form-group"><textarea class="form-textarea" id="broadcast-msg" placeholder="اكتب رسالتك للجميع..."></textarea></div>
+        <button class="action-btn-full" onclick="sendBroadcast()">📤 إرسال لجميع الموظفين</button>
+      </div>
+    </div>
+
+    <!-- REPORTS (مخصص — يضيف عمود إجمالي التأخيرات الشهرية) -->
+    <div class="page" id="page-reports">
+      <div class="section-card">
+        <div class="section-title">⚙️ إعدادات التقرير</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+          <div class="form-group"><label class="form-label">نوع التقرير</label>
+            <select class="form-input form-select" id="rep-type" onchange="updateRepDates()">
+              <option value="daily">يومي</option>
+              <option value="weekly">أسبوعي</option>
+              <option value="monthly" selected>شهري</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="form-label">من تاريخ</label><input class="form-input" type="date" id="rep-from"></div>
+          <div class="form-group"><label class="form-label">إلى تاريخ</label><input class="form-input" type="date" id="rep-to"></div>
+          <div class="form-group"><label class="form-label">الفرع</label><select class="form-input form-select" id="rep-wh"><option value="all">الكل</option></select></div>
+          <div class="form-group"><label class="form-label">الموظف</label><select class="form-input form-select" id="rep-emp"><option value="all">كل الموظفين</option></select></div>
+        </div>
+        <button class="action-btn-full" onclick="generateReport()">📊 عرض التقرير</button>
+      </div>
+      <div id="report-output" style="display:none">
+        <div class="section-card">
+          <div class="section-title">📈 ملخص التقرير</div>
+          <div class="report-stats" id="rep-stats"></div>
+          <!-- ② ملخص التأخيرات الشهرية -->
+          <div id="delay-summary-section" style="display:none;margin-top:14px">
+            <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--orange)">⏱ ملخص التأخيرات الشهرية</div>
+            <div class="table-wrap"><table><thead><tr><th>الموظف</th><th>إجمالي أيام التأخير</th><th>إجمالي الدقائق</th><th>متوسط التأخير/يوم</th></tr></thead><tbody id="delay-summary-tbody"></tbody></table></div>
+          </div>
+        </div>
+        <!-- ملخص موظف محدد -->
+        <div id="emp-detail-summary" style="display:none;margin-top:14px"></div>
+        <div class="section-card">
+          <div class="section-title" id="rep-table-title">📋 جدول التقرير (أول 50 سجل)</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>الموظف</th><th>التاريخ</th><th>الحضور</th><th>الانصراف</th><th>ساعات</th><th>التأخير (د)</th><th>ملاحظات</th></tr></thead>
+              <tbody id="rep-tbody"></tbody>
+            </table>
+          </div>
+          <button class="action-btn-full" style="margin-top:12px" onclick="generatePDF()">🖨️ طباعة / حفظ PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAYROLL -->
+    <div class="page" id="page-payroll">
+      <div class="section-card">
+        <div class="section-title">💰 احتساب الرواتب</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+          <div class="form-group"><label class="form-label">الشهر</label><input class="form-input" type="month" id="pr-month"></div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">يُحتسب الاستقطاع كالتالي: (الراتب ÷ أيام العمل بالشهر) × عدد أيام الغياب × نسبة الاستقطاع. أيام الجمعة والعطل الرسمية والإجازات المعتمدة لا تُحتسب غيابًا.</div>
+        <button class="action-btn-full" onclick="calculatePayroll()">📊 احتساب الرواتب</button>
+      </div>
+      <div id="payroll-output" style="display:none">
+        <div class="section-card">
+          <div class="section-title">📈 ملخص الرواتب</div>
+          <div class="report-stats" id="pr-stats"></div>
+        </div>
+        <div class="section-card">
+          <div class="section-title">📋 تفصيل الرواتب</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>نسبة الاستقطاع</th><th>مبلغ الاستقطاع</th><th>الصافي</th></tr></thead>
+              <tbody id="pr-tbody"></tbody>
+            </table>
+          </div>
+          <button class="action-btn-full" style="margin-top:12px" onclick="generatePayrollPDF()">🖨️ طباعة / حفظ PDF</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Directory Login Screen -->
+<div id="setup-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;overflow-y:auto;padding:24px;align-items:center;justify-content:center;flex-direction:column">
+  <div style="width:100%;max-width:420px">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:52px">🏭</div>
+      <div style="font-size:22px;font-weight:900;color:var(--gold);margin-top:8px">تسجيل دخول المدير</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:8px;line-height:1.8">أدخل اسم المستخدم والرقم السري اللي استلمته من المورّد</div>
+    </div>
+    <div style="background:var(--card);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)">
+      <input id="dl-username" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:15px;outline:none;width:100%" placeholder="اسم المستخدم">
+      <input id="dl-password" type="password" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:15px;outline:none;width:100%" placeholder="الرقم السري">
+      <div id="setup-error" style="color:var(--red);font-size:13px;text-align:center;display:none"></div>
+      <button id="dl-submit-btn" onclick="directoryLogin()" style="background:var(--gold);color:#0a0c14;border:none;border-radius:50px;padding:14px;font-size:16px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;margin-top:4px">✅ دخول</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== CONFIG ====================
+let COMPANY_ID = 'main';
+let DB = null, COMPANY_INFO = {}, ALL_EMPLOYEES = {}, ALL_WAREHOUSES = {};
+let currentPage = 'dash', dashWHFilter = 'all', attStatusFilter = 'all';
+let adminPinVal = '';
+let cachedAdminPin = null;
+let pinChecking = false;
+let inactivityTimer = null;
+let reportData = [];
+let adminSoundEnabled = localStorage.getItem('admin_sound') !== 'false';
+let adminNotifCount = 0;
+let adminNotifBadgeListener = null;
+let adminPopupTimer = null;
+let excusesListener = null;
+let leavesListener = null;
+let adminNotifPageListener = null;
+
+// ==================== الدليل المركزي (Directory) ====================
+// مشروع Firebase ثابت مشترك: يحوّل اسم مستخدم/رقم سري إلى إعدادات
+// Firebase الخاصة بشركة هذا المدير (tenantConfig) + معرّف الشركة.
+const DIRECTORY_CONFIG = {
+  apiKey: "AIzaSyA569Cn0DbbJ-gZIAEtAI4-Y1qOU9Wzfps",
+  authDomain: "signature-7706e.firebaseapp.com",
+  databaseURL: "https://signature-7706e-default-rtdb.firebaseio.com",
+  projectId: "signature-7706e",
+  storageBucket: "signature-7706e.firebasestorage.app",
+  messagingSenderId: "25739438341",
+  appId: "1:25739438341:web:a394b046ed29d96bd36f6c"
+};
+const DIRECTORY_EMAIL_DOMAIN = 'basma.app';
+
+function getStoredTenant() {
+  const cfg = localStorage.getItem('tenant_cfg');
+  const cid = localStorage.getItem('tenant_company_id');
+  if (cfg && cid) { try { return { tenantConfig: JSON.parse(cfg), companyId: cid }; } catch(e) {} }
+  return null;
+}
+
+function initTenantAndLoad(tenantConfig, companyId) {
+  COMPANY_ID = companyId;
+  const tenantApp = firebase.initializeApp(tenantConfig, 'tenantApp');
+  DB = tenantApp.database();
+  loadCompanyAndShowPin();
+}
+
+window.onload = async () => {
+  const soundBtn = document.getElementById('sound-toggle-btn');
+  if (soundBtn) soundBtn.textContent = adminSoundEnabled ? '🔊' : '🔇';
+  const stored = getStoredTenant();
+  if (stored) {
+    initTenantAndLoad(stored.tenantConfig, stored.companyId);
+    return;
+  }
+  document.getElementById('setup-screen').style.display = 'flex';
+};
+
+async function directoryLogin() {
+  const username = document.getElementById('dl-username').value.trim();
+  const password = document.getElementById('dl-password').value;
+  const err = document.getElementById('setup-error');
+  err.style.display = 'none';
+  if (!username || !password) {
+    err.textContent = 'يرجى إدخال اسم المستخدم والرقم السري';
+    err.style.display = 'block'; return;
+  }
+  const btn = document.getElementById('dl-submit-btn');
+  btn.disabled = true; btn.textContent = 'جاري التحقق...';
+  try {
+    const dirApp = firebase.apps.find(a => a.name === 'directoryApp') || firebase.initializeApp(DIRECTORY_CONFIG, 'directoryApp');
+    const email = `${username}@${DIRECTORY_EMAIL_DOMAIN}`;
+    const cred = await dirApp.auth().signInWithEmailAndPassword(email, password);
+    const uid = cred.user.uid;
+    const snap = await dirApp.database().ref(`directory/managers/${uid}`).once('value');
+    const record = snap.val();
+    if (!record || record.active === false) {
+      await dirApp.auth().signOut();
+      err.textContent = 'الحساب غير موجود أو معطّل — تواصل مع المورّد';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = '✅ دخول';
+      return;
+    }
+    localStorage.setItem('tenant_cfg', JSON.stringify(record.tenantConfig));
+    localStorage.setItem('tenant_company_id', record.companyId);
+    localStorage.setItem('manager_dir_uid', uid);
+    document.getElementById('setup-screen').style.display = 'none';
+    initTenantAndLoad(record.tenantConfig, record.companyId);
+  } catch(e) {
+    err.textContent = 'اسم المستخدم أو الرقم السري غير صحيح';
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = '✅ دخول';
+  }
+}
+
+function resetFirebaseConfig() {
+  if (!confirm('سيتم تسجيل الخروج من هذا الجهاز وحذف بيانات الشركة المحفوظة محليًا. هل أنت متأكد؟')) return;
+  localStorage.removeItem('tenant_cfg');
+  localStorage.removeItem('tenant_company_id');
+  localStorage.removeItem('manager_dir_uid');
+  sessionStorage.clear();
+  location.reload();
+}
+
+// ==================== PIN ====================
+function adminPinKey(d) {
+  if (adminPinVal.length >= 6 || pinChecking) return;
+  document.getElementById('ps-error').textContent = '';
+  adminPinVal += d;
+  updateAdminPinDisplay();
+  if (adminPinVal.length >= 4) setTimeout(checkAdminPin, 150);
+}
+function adminPinDel() {
+  if (pinChecking) return;
+  adminPinVal = adminPinVal.slice(0, -1);
+  document.getElementById('ps-error').textContent = '';
+  updateAdminPinDisplay();
+}
+function updateAdminPinDisplay() {
+  const disp = document.getElementById('ps-pin-display');
+  disp.innerHTML = '';
+  const len = Math.max(adminPinVal.length, 4);
+  for (let i = 0; i < len; i++) {
+    const d = document.createElement('div');
+    d.className = 'pin-dot' + (i < adminPinVal.length ? ' filled' : '');
+    disp.appendChild(d);
+  }
+}
+function checkAdminPin() {
+  if (pinChecking) return;
+  pinChecking = true;
+
+  // لم يُحمَّل PIN بعد
+  if (cachedAdminPin === null) {
+    document.getElementById('ps-error').textContent = 'جاري تحميل البيانات...';
+    adminPinVal = '';
+    updateAdminPinDisplay();
+    pinChecking = false;
+    return;
+  }
+
+  // لم يتم إيجاد بيانات الشركة — غالباً إعدادات Firebase غير صحيحة
+  if (cachedAdminPin === '') {
+    document.getElementById('ps-error').textContent = '⚠️ لم يتم إيجاد بيانات الشركة — تحقق من صحة الرابط أو اضغط إعادة ضبط';
+    document.getElementById('ps-reset-btn').style.display = 'inline-block';
+    adminPinVal = '';
+    updateAdminPinDisplay();
+    pinChecking = false;
+    return;
+  }
+
+  const storedPin = cachedAdminPin;
+  if (adminPinVal === storedPin) {
+    document.getElementById('ps-error').textContent = '';
+    pinChecking = false;
+    unlockAdmin();
+  } else if (adminPinVal.length >= Math.max(storedPin.length, 4)) {
+    document.getElementById('ps-error').textContent = '❌ رمز غير صحيح، حاول مجدداً';
+    adminPinVal = '';
+    updateAdminPinDisplay();
+    pinChecking = false;
+  } else {
+    pinChecking = false;
+  }
+}
+function unlockAdmin() {
+  sessionStorage.setItem('admin_session_' + COMPANY_ID, Date.now().toString());
+  document.getElementById('pin-screen').classList.add('hidden');
+  loadAllData();
+  resetInactivity();
+  document.addEventListener('click', resetInactivity);
+  document.addEventListener('keydown', resetInactivity);
+}
+function lockAdmin() {
+  sessionStorage.removeItem('admin_session_' + COMPANY_ID);
+  document.getElementById('ps-error').textContent = '';
+  adminPinVal = '';
+  updateAdminPinDisplay();
+  document.getElementById('pin-screen').classList.remove('hidden');
+}
+function resetInactivity() {
+  if (inactivityTimer) clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(lockAdmin, 1800000);
+}
+function resetFbCfg() {
+  localStorage.removeItem('tenant_cfg');
+  localStorage.removeItem('tenant_company_id');
+  localStorage.removeItem('manager_dir_uid');
+  location.reload();
+}
+
+async function loadCompanyAndShowPin() {
+  try {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
+    COMPANY_INFO = snap.val() || {};
+    if (COMPANY_INFO.adminPin != null) {
+      cachedAdminPin = String(COMPANY_INFO.adminPin);
+    } else {
+      try {
+        const pinSnap = await DB.ref(`companies/${COMPANY_ID}/info/adminPin`).once('value');
+        cachedAdminPin = pinSnap.val() != null ? String(pinSnap.val()) : '';
+      } catch(e) { cachedAdminPin = ''; }
+    }
+    const logo = COMPANY_INFO.logo || '🏭';
+    const name = COMPANY_INFO.nameAr || COMPANY_INFO.name || 'الشركة';
+    document.getElementById('ps-logo').textContent = logo;
+    document.getElementById('ps-company').textContent = name + (COMPANY_ID !== 'main' ? ` (${COMPANY_ID})` : ' — لم يتم تحديد الشركة');
+    document.getElementById('sb-logo').textContent = logo;
+    document.getElementById('sb-company').textContent = name;
+    const ol = document.getElementById('loading-overlay');
+    if (ol) ol.style.display = 'none';
+    const session = sessionStorage.getItem('admin_session_' + COMPANY_ID);
+    if (session && (Date.now() - parseInt(session)) < 1800000) {
+      unlockAdmin();
+    } else {
+      document.getElementById('pin-screen').classList.remove('hidden');
+    }
+  } catch(e) {
+    const ol = document.getElementById('loading-overlay');
+    if (ol) ol.style.display = 'none';
+    showToast('خطأ في الاتصال — تحقق من الإنترنت وأعد التحميل', 'error');
+  }
+}
+
+// ==================== DATA LOAD ====================
+async function loadAllData() {
+  try {
+    showLoading('جاري تحميل البيانات...');
+    const [whSnap, empSnap] = await Promise.all([
+      DB.ref(`companies/${COMPANY_ID}/warehouses`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/employees`).once('value')
+    ]);
+    ALL_WAREHOUSES = whSnap.val() || {};
+    ALL_EMPLOYEES = empSnap.val() || {};
+    populateWHSelects();
+    hideLoading();
+    loadDashboard();
+    loadBadges();
+    loadAdminNotifBadge();
+  } catch(e) { hideLoading(); showToast('خطأ في تحميل البيانات', 'error'); }
+}
+
+function populateWHSelects() {
+  const chips = document.getElementById('dash-wh-chips');
+  chips.innerHTML = '<span class="filter-chip active" data-wh="all" onclick="dashSelectWH(this,\'all\')">الكل</span>';
+  ['att-wh', 'emp-wh-filter', 'rep-wh'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) while (el.options.length > 1) el.remove(1);
+  });
+  for (const [id, wh] of Object.entries(ALL_WAREHOUSES)) {
+    const chip = document.createElement('span');
+    chip.className = 'filter-chip';
+    chip.dataset.wh = id;
+    chip.onclick = () => dashSelectWH(chip, id);
+    chip.textContent = wh.name;
+    chips.appendChild(chip);
+    ['att-wh', 'emp-wh-filter', 'rep-wh'].forEach(sel => {
+      const el = document.getElementById(sel);
+      if (el) { const opt = document.createElement('option'); opt.value = id; opt.textContent = wh.name; el.appendChild(opt); }
+    });
+  }
+  // Populate mission emp filter
+  const mef = document.getElementById('mission-filter-emp');
+  if (mef) {
+    while (mef.options.length > 1) mef.remove(1);
+    Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved').forEach(([id,e])=>{
+      const opt = document.createElement('option'); opt.value=id; opt.textContent=e.name; mef.appendChild(opt);
+    });
+  }
+  // Populate sched emp select
+  const schedSel = document.getElementById('sched-emp-sel');
+  if (schedSel) {
+    while (schedSel.options.length > 1) schedSel.remove(1);
+    Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved').forEach(([id,e])=>{
+      const opt = document.createElement('option'); opt.value=id; opt.textContent=e.name; schedSel.appendChild(opt);
+    });
+  }
+}
+
+function loadBadges() {
+  DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('status').equalTo('pending').on('value', snap => {
+    const count = snap.numChildren();
+    const badge = document.getElementById('leaves-badge');
+    badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none';
+  });
+  DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('locStatus').equalTo('pending').on('value', snap => {
+    const count = snap.numChildren();
+    const badge = document.getElementById('loc-badge');
+    badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none';
+  });
+  DB.ref(`companies/${COMPANY_ID}/excuses`).orderByChild('status').equalTo('pending').on('value', snap => {
+    const count = snap.numChildren();
+    const badge = document.getElementById('excuse-badge');
+    badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none';
+  });
+  // missions badge — assigned & not completed
+  DB.ref(`companies/${COMPANY_ID}/missions`).on('value', snap => {
+    let count = 0;
+    snap.forEach(c => { const v=c.val(); if(v&&(v.status==='assigned'||v.status==='started')) count++; });
+    const badge = document.getElementById('missions-badge');
+    badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none';
+  });
+}
+
+function playNotifSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.12].forEach((t, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = i === 0 ? 880 : 1100;
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+      osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch(e) {}
+}
+
+function toggleAdminSound() {
+  adminSoundEnabled = !adminSoundEnabled;
+  localStorage.setItem('admin_sound', adminSoundEnabled ? 'true' : 'false');
+  const btn = document.getElementById('sound-toggle-btn');
+  if (btn) btn.textContent = adminSoundEnabled ? '🔊' : '🔇';
+  showToast(adminSoundEnabled ? 'تم تشغيل صوت الإشعارات' : 'تم إيقاف صوت الإشعارات', 'success');
+}
+
+function loadAdminNotifBadge() {
+  if (adminNotifBadgeListener) DB.ref(`companies/${COMPANY_ID}/notifications/admin`).off('value', adminNotifBadgeListener);
+  let firstLoad = true;
+  adminNotifBadgeListener = DB.ref(`companies/${COMPANY_ID}/notifications/admin`).on('value', snap => {
+    let count = 0;
+    snap.forEach(c => { const v=c.val(); if(v&&typeof v==='object'&&!v.read) count++; });
+    const badge = document.getElementById('admin-notif-badge');
+    if (count > 0) {
+      if (!firstLoad && count > adminNotifCount && adminSoundEnabled) playNotifSound();
+      badge.textContent = count; badge.style.display = 'inline';
+    } else { badge.style.display = 'none'; }
+    firstLoad = false;
+    adminNotifCount = count;
+  });
+
+  DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests`).on('value', snap => {
+    const section = document.getElementById('bypass-req-section');
+    const list = document.getElementById('bypass-req-list');
+    if (!section || !list) return;
+    const pending = [];
+    snap.forEach(c => { const v = c.val(); if (v && v.status === 'pending') pending.push({ key: c.key, ...v }); });
+    if (!pending.length) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    list.innerHTML = '';
+    pending.forEach(req => {
+      const row = document.createElement('div');
+      row.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;margin-bottom:8px';
+      row.innerHTML = `<div style="flex:1"><div style="font-weight:700;font-size:14px">${req.name||req.uid}</div><div style="font-size:12px;color:var(--text2)">يطلب تسجيل جهاز جديد</div></div><button class="action-btn-sm btn-green" onclick="answerBypass('${req.key}','approved')">✅ موافقة</button><button class="action-btn-sm btn-red" onclick="answerBypass('${req.key}','rejected')" style="margin-right:6px">❌ رفض</button>`;
+      list.appendChild(row);
+    });
+  });
+}
+
+async function answerBypass(uid, decision) {
+  await DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${uid}/status`).set(decision);
+  if (decision === 'approved') showToast('تمت الموافقة — الموظف يسجّل الآن', 'success');
+  else showToast('تم رفض الطلب', 'error');
+}
+
+function loadAdminNotifPage() {
+  const list = document.getElementById('admin-notif-list');
+  if (!list) return;
+  if (adminNotifPageListener) { DB.ref(`companies/${COMPANY_ID}/notifications/admin`).off('value', adminNotifPageListener); adminNotifPageListener = null; }
+  const markedRead = new Set();
+  adminNotifPageListener = DB.ref(`companies/${COMPANY_ID}/notifications/admin`).on('value', async snap => {
+    const el = document.getElementById('admin-notif-list');
+    if (!el) return;
+    const items = [];
+    snap.forEach(c => { const v=c.val(); if(v&&typeof v==='object') items.push({key:c.key,...v}); });
+    items.sort((a,b)=>new Date(b.timestamp||0)-new Date(a.timestamp||0));
+    if (!items.length) { el.innerHTML='<div style="text-align:center;padding:40px;color:var(--text2)">🔕 لا توجد إشعارات</div>'; return; }
+    const typeIcon={checkin:'⏰',checkout:'🚪',excuse_new:'📝',leave_new:'🌴',reg_new:'👤',mission:'📋'};
+    const typeLabel={checkin:'تسجيل حضور',checkout:'تسجيل انصراف',excuse_new:'عذر جديد',leave_new:'طلب إجازة',reg_new:'طلب تسجيل',mission:'تحديث مهمة'};
+    el.innerHTML='';
+    items.forEach(n => {
+      const div=document.createElement('div');
+      div.style.cssText=`padding:14px 16px;border-radius:12px;margin-bottom:10px;background:var(--surface);border:1px solid ${n.read?'var(--border)':'var(--gold)'};border-right:4px solid ${n.read?'var(--border)':'var(--gold)'}`;
+      const ts=n.timestamp?new Date(n.timestamp).toLocaleString('ar-SA'):'';
+      const msg=String(n.message||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      div.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-weight:700;font-size:13px">${typeIcon[n.type]||'🔔'} ${typeLabel[n.type]||''}</span><span style="font-size:11px;color:var(--text2)">${ts}</span></div><div style="font-size:14px;color:var(--text1)">${msg}</div>`;
+      el.appendChild(div);
+    });
+    const updates={};
+    items.forEach(n=>{ if(!n.read&&!markedRead.has(n.key)){updates[n.key+'/read']=true;markedRead.add(n.key);} });
+    if(Object.keys(updates).length) await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).update(updates).catch(()=>{});
+  });
+}
+
+async function clearAdminNotifs() {
+  if (!confirm('هل تريد حذف جميع الإشعارات؟')) return;
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).remove();
+    adminNotifCount = 0;
+    showToast('تم مسح الإشعارات', 'success');
+  } catch(e) { showToast('خطأ: ' + e.message, 'error'); }
+}
+
+// ==================== DASHBOARD ====================
+async function loadDashboard() {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const [todaySnap, leavesSnap] = await Promise.all([
+      DB.ref(`companies/${COMPANY_ID}/today`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/leaves`).once('value')
+    ]);
+    const todayData = todaySnap.val() || {};
+    const allLeaves = leavesSnap.val() || {};
+    // Partial leaves do NOT count as full-day leave in dashboard
+    const approvedLeaveEids = new Set(
+      Object.values(allLeaves).filter(l=>l.date===today&&l.status==='approved'&&!l.isPartial).map(l=>l.empId)
+    );
+    const approved = Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
+    document.getElementById('ds-total').textContent = approved.length;
+    let present=0, absent=0, onLeave=0;
+    const tbody = document.getElementById('dash-tbody');
+    tbody.innerHTML = '';
+    for (const [eid, emp] of approved) {
+      if (dashWHFilter !== 'all' && emp.warehouseId !== dashWHFilter) continue;
+      const rawTd = todayData[eid] || {};
+      const td = (rawTd.dateKey && rawTd.dateKey !== today) ? {} : rawTd;
+      const isOnLeave = approvedLeaveEids.has(eid);
+      let status, statusBadge;
+      if (isOnLeave) { status='🌴 إجازة'; statusBadge='badge-purple'; onLeave++; }
+      else if (td.checkIn && td.checkOut) { status='🚪 انصرف'; statusBadge='badge-blue'; present++; }
+      else if (td.checkIn) { status='✅ حاضر'; statusBadge='badge-green'; present++; }
+      else { status='❌ غائب'; statusBadge='badge-red'; absent++; }
+      const tr = document.createElement('tr');
+      tr.className = 'cursor-pointer';
+      tr.onclick = () => showEmpModal(eid);
+      tr.innerHTML=`<td><b>${emp.name}</b></td><td>${emp.role||''}</td><td>${emp.warehouseName||''}</td><td><span class="badge ${statusBadge}">${status}</span></td><td>${td.checkIn?format12(td.checkIn):'--'}</td><td>${td.checkOut?format12(td.checkOut):'--'}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${td.locationName||'--'}</td>`;
+      tbody.appendChild(tr);
+    }
+    document.getElementById('ds-present').textContent = present;
+    document.getElementById('ds-absent').textContent = absent;
+    document.getElementById('ds-leave').textContent = onLeave;
+    if (!tbody.children.length) tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text2)">لا توجد بيانات</td></tr>';
+  } catch(e) { showToast('خطأ في تحميل البيانات', 'error'); }
+}
+
+function dashSelectWH(el, wh) {
+  document.querySelectorAll('#dash-wh-chips .filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  dashWHFilter = wh;
+  loadDashboard();
+}
+
+// ==================== ATTENDANCE (مخصص — يضيف عمود التأخير) ====================
+function attChip(el, status) {
+  document.querySelectorAll('#att-status-chips .filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  attStatusFilter = status;
+  loadAttendance();
+}
+
+async function loadAttendance() {
+  const dateVal = document.getElementById('att-date').value;
+  const whVal = document.getElementById('att-wh').value;
+  if (!dateVal) return;
+  const tbody = document.getElementById('att-tbody');
+  tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px"><div class="spinner-sm"></div></td></tr>';
+  try {
+    const settSnap = await DB.ref(`companies/${COMPANY_ID}/settings`).once('value');
+    const settings = settSnap.val() || {};
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isToday = dateVal === todayStr;
+    const dateObj = new Date(dateVal);
+    const isHoliday = dateObj.getDay()===5 || Object.values(settings.holidays||{}).some(h=>h.date===dateVal&&h.active!==false);
+    const attMap = {};
+    if (isToday) {
+      const todaySnap = await DB.ref(`companies/${COMPANY_ID}/today`).once('value');
+      const todayAll = todaySnap.val() || {};
+      Object.entries(todayAll).forEach(([eid, td]) => {
+        if (td && typeof td==='object' && (!td.dateKey || td.dateKey===todayStr))
+          attMap[eid] = { checkIn:td.checkIn, checkOut:td.checkOut, locationName:td.locationName, delayMins:td.delayMins||0 };
+      });
+    } else {
+      const recSnap = await DB.ref(`companies/${COMPANY_ID}/records`).once('value');
+      recSnap.forEach(c => {
+        const r = c.val();
+        if (!r||!r.timestamp||!r.empId) return;
+        const recDate = r.timestamp.split('T')[0];
+        if (recDate!==dateVal) return;
+        if (!attMap[r.empId]) attMap[r.empId] = {};
+        if (r.type==='in'&&!attMap[r.empId].checkIn) attMap[r.empId].checkIn = r.timestamp;
+        if (r.type==='out'&&!attMap[r.empId].checkOut) attMap[r.empId].checkOut = r.timestamp;
+        if (r.locationName) attMap[r.empId].locationName = r.locationName;
+        if (r.delayMins) attMap[r.empId].delayMins = r.delayMins;
+      });
+    }
+    tbody.innerHTML = '';
+    const approved = Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
+    for (const [eid, emp] of approved) {
+      if (whVal!=='all'&&emp.warehouseId!==whVal) continue;
+      const td = attMap[eid] || {};
+      let status, badge;
+      if (isHoliday) { status='🎉 عطلة'; badge='badge-gold'; }
+      else {
+        const leaveSnap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(eid).once('value');
+        let isLeave=false;
+        // Partial leaves do NOT override attendance status
+        leaveSnap.forEach(c=>{const lv=c.val();if(lv.date===dateVal&&lv.status==='approved'&&!lv.isPartial)isLeave=true;});
+        if (isLeave) { status='🌴 إجازة'; badge='badge-purple'; }
+        else if (td.checkIn&&td.checkOut) { status='🚪 انصرف'; badge='badge-blue'; }
+        else if (td.checkIn) { status='✅ حاضر'; badge='badge-green'; }
+        else { status='❌ غائب'; badge='badge-red'; }
+      }
+      if (attStatusFilter!=='all') {
+        const smap={present:['✅ حاضر','🚪 انصرف'],absent:['❌ غائب'],leave:['🌴 إجازة']};
+        if (!smap[attStatusFilter]?.includes(status)) continue;
+      }
+      const delayMins = td.delayMins || 0;
+      const delayCell = delayMins > 0
+        ? `<span style="color:var(--orange);font-weight:700">${delayMins} د</span>`
+        : '<span style="color:var(--text2)">—</span>';
+      const tr = document.createElement('tr');
+      tr.innerHTML=`<td><b>${emp.name}</b></td><td>${emp.role||''}</td><td>${emp.warehouseName||''}</td><td><span class="badge ${badge}">${status}</span></td><td>${td.checkIn?format12(td.checkIn):'--'}</td><td>${td.checkOut?format12(td.checkOut):'--'}</td><td>${delayCell}</td>`;
+      tbody.appendChild(tr);
+    }
+    if (!tbody.children.length) tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text2)">لا توجد بيانات</td></tr>';
+  } catch(e) { tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--red)">خطأ في التحميل</td></tr>'; }
+}
+
+// ==================== EMPLOYEES ====================
+async function loadEmployees() {
+  const empSnap = await DB.ref(`companies/${COMPANY_ID}/employees`).once('value');
+  ALL_EMPLOYEES = empSnap.val() || {};
+  filterEmps();
+}
+
+function filterEmps() {
+  const search = (document.getElementById('emp-search').value||'').toLowerCase();
+  const wh = document.getElementById('emp-wh-filter').value;
+  const grid = document.getElementById('emp-grid');
+  grid.innerHTML = '';
+  const pendingAct = Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='pending_activation');
+  const paSection = document.getElementById('pending-act-section');
+  const paList = document.getElementById('pending-act-list');
+  if (pendingAct.length) {
+    paSection.style.display = 'block'; paList.innerHTML = '';
+    pendingAct.forEach(([eid,emp])=>{
+      const row=document.createElement('div');
+      row.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;margin-bottom:8px';
+      row.innerHTML=`<div style="width:36px;height:36px;border-radius:50%;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${(emp.name||'?')[0]}</div><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">${emp.name}</div><div style="font-size:12px;color:var(--text2)">${emp.empId||''} • ${emp.role||''}</div></div><button class="action-btn-sm btn-blue" onclick="regenerateActLink('${eid}')" style="flex-shrink:0">🔗 رابط التفعيل</button>`;
+      paList.appendChild(row);
+    });
+  } else { paSection.style.display='none'; }
+  const approved = Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
+  const filtered = approved.filter(([,e])=>{
+    const matchSearch=!search||(e.name||'').toLowerCase().includes(search)||(e.empId||'').toLowerCase().includes(search);
+    const matchWH=wh==='all'||e.warehouseId===wh;
+    return matchSearch&&matchWH;
+  });
+  if (!filtered.length){grid.innerHTML='<div class="empty-state" style="grid-column:span 4"><div class="es-icon">👤</div><p>لا يوجد موظفون</p></div>';return;}
+  filtered.forEach(([eid,emp])=>{
+    const card=document.createElement('div');
+    card.className='emp-card';
+    card.onclick=()=>showEmpModal(eid);
+    card.innerHTML=`<div class="emp-card-top"><div class="emp-avatar">${(emp.name||'?')[0]}</div><div><div class="emp-name">${emp.name}</div><div class="emp-id">${emp.empId||''}</div></div></div><div class="emp-tags"><span class="badge badge-blue">${emp.role||''}</span><span class="badge badge-purple">${emp.warehouseName||''}</span></div><div style="margin-top:10px"><button class="action-btn-sm btn-blue" onclick="event.stopPropagation();regenerateActLink('${eid}')" style="font-size:11px;padding:5px 10px">🔗 رابط التفعيل</button></div>`;
+    grid.appendChild(card);
+  });
+}
+
+async function showEmpModal(eid) {
+  const emp = ALL_EMPLOYEES[eid];
+  if (!emp) return;
+  const todaySnap = await DB.ref(`companies/${COMPANY_ID}/today/${eid}`).once('value');
+  const td = todaySnap.val() || {};
+  const modal = document.getElementById('emp-modal');
+  const box = document.getElementById('emp-modal-box');
+  const mapsLink = td.lat&&td.lng ? `https://www.google.com/maps?q=${td.lat},${td.lng}` : null;
+  const schedHtml = emp.schedule ? `
+  <div class="modal-section">
+    <div class="modal-section-title">🗓 جدوله الخاص</div>
+    <div class="info-row"><span class="info-label">نافذة الحضور</span><span class="info-value">${emp.schedule.checkIn?.from||'--'} ← ${emp.schedule.checkIn?.to||'--'}</span></div>
+    <div class="info-row"><span class="info-label">نافذة الانصراف</span><span class="info-value">${emp.schedule.checkOut?.from||'--'} ← ${emp.schedule.checkOut?.to||'--'}</span></div>
+  </div>` : '';
+  box.innerHTML=`
+  <div class="modal-header">
+    <div class="modal-title">👤 ${emp.name}</div>
+    <button class="modal-close" onclick="closeEmpModal()">×</button>
+  </div>
+  <div class="modal-section">
+    <div class="modal-section-title">معلومات الموظف</div>
+    <div class="info-row"><span class="info-label">الاسم</span><span class="info-value">${emp.name}</span></div>
+    <div class="info-row"><span class="info-label">الرقم الوظيفي</span><span class="info-value">${emp.empId||'--'}</span></div>
+    <div class="info-row"><span class="info-label">المسمى</span><span class="info-value">${emp.role||'--'}</span></div>
+    <div class="info-row"><span class="info-label">الفرع</span><span class="info-value">${emp.warehouseName||'--'}</span></div>
+    <div class="info-row"><span class="info-label">الحالة</span><span class="info-value">${emp.status==='approved'?'✅ معتمد':emp.status}</span></div>
+  </div>
+  ${schedHtml}
+  <div class="modal-section">
+    <div class="modal-section-title">💰 الراتب</div>
+    <div class="form-group"><label class="form-label">الراتب الأساسي (شهري)</label><input class="form-input" type="number" id="emp-salary-input" value="${emp.salary||0}"></div>
+    <div class="form-group"><label class="form-label">نسبة الاستقطاع لكل يوم غياب %</label><input class="form-input" type="number" id="emp-deduction-input" value="${emp.deductionPercent!=null?emp.deductionPercent:100}"></div>
+    <button class="action-btn-sm btn-blue" onclick="saveEmpSalary('${eid}')" style="width:100%">💾 حفظ بيانات الراتب</button>
+  </div>
+  <div class="modal-section">
+    <div class="modal-section-title">سجل اليوم</div>
+    <div class="info-row"><span class="info-label">وقت الحضور</span><span class="info-value">${td.checkIn?format12(td.checkIn):'--'}</span></div>
+    <div class="info-row"><span class="info-label">وقت الانصراف</span><span class="info-value">${td.checkOut?format12(td.checkOut):'--'}</span></div>
+    <div class="info-row"><span class="info-label">التأخير</span><span class="info-value" style="color:var(--orange)">${td.delayMins?td.delayMins+' دقيقة':'لا يوجد'}</span></div>
+    <div class="info-row"><span class="info-label">الموقع</span><span class="info-value" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:12px">${td.locationName||'غير محدد'}</span></div>
+    ${mapsLink?`<div class="info-row"><span class="info-label">خريطة</span><a href="${mapsLink}" target="_blank" style="color:var(--blue);font-size:13px">🗺 فتح الخريطة</a></div>`:''}
+  </div>
+  <div class="modal-actions">
+    <button class="modal-btn btn-green" onclick="overrideAttendance('${eid}','present')">✅ تعديل → حاضر</button>
+    <button class="modal-btn btn-red" onclick="overrideAttendance('${eid}','absent')">❌ تسجيل غياب</button>
+    <button class="modal-btn btn-blue" onclick="resetEmployeeBio('${eid}')">🔑 إعادة البصمة</button>
+    <button class="modal-btn btn-gray" onclick="confirmDeleteEmp('${eid}')">🗑 حذف</button>
+  </div>`;
+  modal.classList.add('active');
+}
+
+function closeEmpModal() { document.getElementById('emp-modal').classList.remove('active'); }
+
+async function saveEmpSalary(eid){
+  const salary=Number(document.getElementById('emp-salary-input').value)||0;
+  const deductionPercent=Number(document.getElementById('emp-deduction-input').value)||0;
+  try{
+    await DB.ref(`companies/${COMPANY_ID}/employees/${eid}`).update({salary,deductionPercent});
+    ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],salary,deductionPercent};
+    showToast('تم حفظ بيانات الراتب','success');
+  }catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+async function overrideAttendance(eid, status) {
+  try {
+    const now = new Date().toISOString();
+    const todayStr = now.split('T')[0];
+    if (status==='present') {
+      await DB.ref(`companies/${COMPANY_ID}/today/${eid}`).update({checkIn:now,dateKey:todayStr,empId:eid,empName:ALL_EMPLOYEES[eid]?.name||''});
+    } else {
+      await DB.ref(`companies/${COMPANY_ID}/today/${eid}`).remove();
+    }
+    showToast('تم التعديل بنجاح','success'); closeEmpModal();
+  } catch(e) { showToast('خطأ: '+e.message,'error'); }
+}
+
+function confirmDeleteEmp(eid) {
+  showConfirm('حذف الموظف',`هل أنت متأكد من حذف الموظف "${ALL_EMPLOYEES[eid]?.name}"؟ سيتم حذف جميع بياناته.`,()=>doDeleteEmp(eid));
+}
+
+async function doDeleteEmp(eid) {
+  closeConfirm(); closeEmpModal();
+  const overlay=document.getElementById('loading-overlay');
+  const loText=document.getElementById('lo-text');
+  overlay.classList.add('active');
+  const steps=[
+    {text:'حذف بيانات الموظف...',pct:10,fn:()=>DB.ref(`companies/${COMPANY_ID}/employees/${eid}`).remove()},
+    {text:'حذف السجلات...',pct:25,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/records`).update(ups);}},
+    {text:'حذف سجل اليوم...',pct:40,fn:()=>DB.ref(`companies/${COMPANY_ID}/today/${eid}`).remove()},
+    {text:'حذف الإشعارات...',pct:55,fn:()=>DB.ref(`companies/${COMPANY_ID}/notifications/${eid}`).remove()},
+    {text:'حذف الأعذار...',pct:65,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/excuses`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/excuses`).update(ups);}},
+    {text:'حذف الإجازات...',pct:75,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/leaves`).update(ups);}},
+    {text:'حذف الرسائل...',pct:88,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/private_messages`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/private_messages`).update(ups);}},
+    {text:'حذف المهام...',pct:94,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/missions`).update(ups);}},
+  ];
+  try {
+    for (const step of steps) { loText.textContent=step.text+` (${step.pct}%)`; await step.fn(); }
+    loText.textContent='اكتمل الحذف (100%)';
+    await new Promise(r=>setTimeout(r,800));
+    overlay.classList.remove('active');
+    showToast('تم حذف الموظف بنجاح','success');
+    await loadAllData(); filterEmps();
+  } catch(e) { overlay.classList.remove('active'); showToast('خطأ أثناء الحذف: '+e.message,'error'); }
+}
+
+// ==================== ① EMPLOYEE SCHEDULE ====================
+async function loadEmpSchedule() {
+  const eid = document.getElementById('sched-emp-sel').value;
+  const form = document.getElementById('sched-form');
+  if (!eid) { form.style.display='none'; return; }
+  form.style.display = 'block';
+  const emp = ALL_EMPLOYEES[eid] || {};
+  const sched = emp.schedule || {};
+  document.getElementById('sched-ci-from').value = sched.checkIn?.from || '';
+  document.getElementById('sched-ci-to').value   = sched.checkIn?.to   || '';
+  document.getElementById('sched-co-from').value = sched.checkOut?.from || '';
+  document.getElementById('sched-co-to').value   = sched.checkOut?.to   || '';
+}
+
+async function saveEmpSchedule() {
+  const eid = document.getElementById('sched-emp-sel').value;
+  if (!eid) return;
+  const schedule = {
+    checkIn:  { from: document.getElementById('sched-ci-from').value, to: document.getElementById('sched-ci-to').value },
+    checkOut: { from: document.getElementById('sched-co-from').value, to: document.getElementById('sched-co-to').value }
+  };
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/employees/${eid}/schedule`).set(schedule);
+    ALL_EMPLOYEES[eid] = { ...ALL_EMPLOYEES[eid], schedule };
+    showToast('تم حفظ جدول الموظف ✅','success');
+  } catch(e) { showToast('خطأ: '+e.message,'error'); }
+}
+
+async function clearEmpSchedule() {
+  const eid = document.getElementById('sched-emp-sel').value;
+  if (!eid) return;
+  if (!confirm('هل تريد إزالة الجدول الخاص وإعادة الموظف للمواعيد الافتراضية؟')) return;
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/employees/${eid}/schedule`).remove();
+    if (ALL_EMPLOYEES[eid]) delete ALL_EMPLOYEES[eid].schedule;
+    document.getElementById('sched-ci-from').value='';
+    document.getElementById('sched-ci-to').value='';
+    document.getElementById('sched-co-from').value='';
+    document.getElementById('sched-co-to').value='';
+    showToast('تم إزالة الجدول الخاص','info');
+  } catch(e) { showToast('خطأ: '+e.message,'error'); }
+}
+
+// ==================== APPROVALS ====================
+async function loadApprovals() {
+  const list=document.getElementById('approvals-list');
+  if(!list)return;
+  list.innerHTML='<div style="text-align:center;padding:30px"><div class="spinner-sm"></div></div>';
+  try {
+    const snap=await DB.ref(`companies/${COMPANY_ID}/employees`).orderByChild('status').equalTo('pending').once('value');
+    const items=[];
+    snap.forEach(c=>items.push({key:c.key,...c.val()}));
+    if(!items.length){list.innerHTML='<div class="empty-state"><div class="es-icon">✅</div><p>لا توجد طلبات</p></div>';return;}
+    list.innerHTML='';
+    items.forEach(emp=>{
+      const card=document.createElement('div');
+      card.className='approval-card';
+      card.innerHTML=`<div class="approval-card-head"><div><div style="font-size:15px;font-weight:700">${emp.name}</div><div style="font-size:12px;color:var(--text2)">${emp.empId||''} | ${emp.role||''}</div></div><span class="badge badge-gold">⏳ معلّق</span></div><div class="approval-actions"><button class="modal-btn btn-green" onclick="approveEmp('${emp.key}','${emp.name}')">✅ موافقة</button><button class="modal-btn btn-red" onclick="rejectEmp('${emp.key}','${emp.name}')">❌ رفض</button></div>`;
+      list.appendChild(card);
+    });
+  } catch(e) {}
+}
+
+async function approveEmp(key,name) {
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/employees/${key}`).update({status:'approved'});
+    await DB.ref(`companies/${COMPANY_ID}/notifications/${key}`).push({type:'approved',message:'✅ تمت الموافقة على طلب تسجيلك',timestamp:new Date().toISOString(),read:false});
+    showToast('تمت الموافقة على '+name,'success');
+    ALL_EMPLOYEES[key]={...ALL_EMPLOYEES[key],status:'approved'};
+    loadApprovals(); loadBadges();
+  } catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+async function rejectEmp(key,name) {
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/employees/${key}`).update({status:'rejected'});
+    await DB.ref(`companies/${COMPANY_ID}/notifications/${key}`).push({type:'rejected',message:'❌ تم رفض طلب تسجيلك',timestamp:new Date().toISOString(),read:false});
+    showToast('تم رفض '+name,'info');
+    loadApprovals(); loadBadges();
+  } catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+// ==================== EXCUSES ====================
+function loadExcuses() {
+  const list=document.getElementById('excuses-list');
+  if(!list)return;
+  list.innerHTML='<div style="text-align:center;padding:30px"><div class="spinner-sm"></div></div>';
+  if(excusesListener) DB.ref(`companies/${COMPANY_ID}/excuses`).off('value',excusesListener);
+  const typeMap={no_checkin:'❌ لم يسجل حضوراً',no_checkout:'🚪 لم يسجل انصرافاً',no_both:'⚠️ لم يسجل الحضور ولا الانصراف'};
+  excusesListener=DB.ref(`companies/${COMPANY_ID}/excuses`).on('value',snap=>{
+    const el=document.getElementById('excuses-list');
+    if(!el)return;
+    const items=[];
+    snap.forEach(c=>{const v=c.val();if(v&&typeof v==='object')items.push({key:c.key,...v});});
+    items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    if(!items.length){el.innerHTML='<div class="empty-state"><div class="es-icon">📭</div><p>لا توجد أعذار</p></div>';return;}
+    el.innerHTML='';
+    items.forEach(ex=>{
+      const card=document.createElement('div');card.className='approval-card';
+      const sb=ex.status==='approved'?'badge-green':ex.status==='rejected'?'badge-red':'badge-gold';
+      const st=ex.status==='approved'?'✅ مقبول':ex.status==='rejected'?'❌ مرفوض':'⏳ معلّق';
+      card.innerHTML=`<div class="approval-card-head"><div><div style="font-size:15px;font-weight:700">${ex.empName||''}</div><div style="font-size:12px;color:var(--text2)">${ex.warehouseName||''} | ${ex.date||''}</div><div style="font-size:12px;margin-top:4px">${typeMap[ex.type]||ex.type||''}</div><div style="font-size:13px;margin-top:6px">${ex.reason||''}</div></div><span class="badge ${sb}">${st}</span></div>${ex.status==='pending'?`<div class="approval-actions"><button class="modal-btn btn-green" onclick="approveExcuse('${ex.key}','${ex.empId}')">✅ قبول</button><button class="modal-btn btn-red" onclick="rejectExcuse('${ex.key}','${ex.empId}')">❌ رفض</button></div>`:''}`;
+      el.appendChild(card);
+    });
+  });
+}
+
+async function approveExcuse(key,empId){
+  try{await DB.ref(`companies/${COMPANY_ID}/excuses/${key}`).update({status:'approved'});await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({status:'excused',excuseCheckout:true,dateKey:new Date().toISOString().split('T')[0]});await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'excuse_res',message:'✅ تم قبول عذرك',timestamp:new Date().toISOString(),read:false});showToast('تم قبول العذر','success');loadExcuses();}catch(e){showToast('خطأ: '+e.message,'error');}
+}
+async function rejectExcuse(key,empId){
+  try{await DB.ref(`companies/${COMPANY_ID}/excuses/${key}`).update({status:'rejected'});await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({excuseCheckout:false,dateKey:new Date().toISOString().split('T')[0]});await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'excuse_res',message:'❌ تم رفض عذرك',timestamp:new Date().toISOString(),read:false});showToast('تم رفض العذر','info');loadExcuses();}catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+// ==================== ③ LEAVES (مخصص — يظهر نوع الإجازة) ====================
+const LEAVE_TYPE_LABELS = {
+  paid: '💵 مدفوعة',
+  unpaid: '🚫 غير مدفوعة',
+  sick: '🏥 مرضية',
+  emergency: '🚨 طارئة',
+  partial: '⏱ زمنية (ساعات)'
+};
+
+function loadLeaves() {
+  const list=document.getElementById('leaves-list');
+  if(!list)return;
+  list.innerHTML='<div style="text-align:center;padding:30px"><div class="spinner-sm"></div></div>';
+  if(leavesListener) DB.ref(`companies/${COMPANY_ID}/leaves`).off('value',leavesListener);
+  leavesListener=DB.ref(`companies/${COMPANY_ID}/leaves`).on('value',snap=>{
+    const el=document.getElementById('leaves-list');
+    if(!el)return;
+    const items=[];
+    snap.forEach(c=>{const v=c.val();if(v&&typeof v==='object')items.push({key:c.key,...v});});
+    items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    if(!items.length){el.innerHTML='<div class="empty-state"><div class="es-icon">🌴</div><p>لا توجد طلبات إجازة</p></div>';return;}
+    el.innerHTML='';
+    items.forEach(lv=>{
+      const card=document.createElement('div');card.className='approval-card';
+      const sb=lv.status==='approved'?'badge-green':lv.status==='rejected'?'badge-red':'badge-gold';
+      const st=lv.status==='approved'?'✅ مقبولة':lv.status==='rejected'?'❌ مرفوضة':'⏳ معلّقة';
+      const leaveTypeLabel = lv.leaveType ? (LEAVE_TYPE_LABELS[lv.leaveType]||lv.leaveType) : '';
+      const isPartial = lv.leaveType === 'partial';
+      const timeRange = isPartial && lv.fromTime && lv.toTime
+        ? `<div style="font-size:13px;color:var(--blue);margin-top:4px">⏰ من ${lv.fromTime} إلى ${lv.toTime}</div>` : '';
+      card.innerHTML=`
+      <div class="approval-card-head">
+        <div>
+          <div style="font-size:15px;font-weight:700">${lv.empName||''}</div>
+          <div style="font-size:12px;color:var(--text2)">${lv.warehouseName||''}</div>
+          <div style="font-size:13px;margin-top:4px;color:var(--gold)">📅 ${lv.date||''}</div>
+          ${timeRange}
+          ${leaveTypeLabel?`<div style="margin-top:4px"><span class="badge ${isPartial?'badge-blue':'badge-orange'}" style="font-size:12px">${leaveTypeLabel}</span></div>`:''}
+          <div style="font-size:13px;margin-top:4px">${lv.reason||''}</div>
+        </div>
+        <span class="badge ${sb}">${st}</span>
+      </div>
+      ${lv.status==='pending'?`<div class="approval-actions"><button class="modal-btn btn-green" onclick="approveLeave('${lv.key}','${lv.empId}','${lv.date}',${isPartial})">✅ قبول</button><button class="modal-btn btn-red" onclick="rejectLeave('${lv.key}','${lv.empId}')">❌ رفض</button></div>`:''}`;
+      el.appendChild(card);
+    });
+  });
+}
+
+async function approveLeave(key,empId,date,isPartial=false){
+  try{
+    // Fetch leave data first (need fromTime/toTime for partial)
+    const lvSnap = await DB.ref(`companies/${COMPANY_ID}/leaves/${key}`).once('value');
+    const lvData = lvSnap.val() || {};
+    await DB.ref(`companies/${COMPANY_ID}/leaves/${key}`).update({status:'approved'});
+    if(!isPartial){
+      await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({status:'leave',leaveDate:date});
+    } else {
+      // Write to dedicated node → employee listener fires instantly (no query index needed)
+      await DB.ref(`companies/${COMPANY_ID}/todayPartialLeave/${empId}`).set({
+        status:'approved', date, fromTime:lvData.fromTime||'', toTime:lvData.toTime||'', leaveKey:key, approvedAt:Date.now()
+      });
+    }
+    await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'leave_res',message:(isPartial?'⏱ تمت الموافقة على إجازتك الزمنية في ':'🌴 تمت الموافقة على إجازتك في ')+date,timestamp:new Date().toISOString(),read:false});
+    showToast('تمت الموافقة على الإجازة','success');loadLeaves();loadBadges();
+  }catch(e){showToast('خطأ: '+e.message,'error');}
+}
+async function rejectPartialLeave(empId){
+  // Remove the dedicated partial leave node when rejected
+  try{ await DB.ref(`companies/${COMPANY_ID}/todayPartialLeave/${empId}`).remove(); }catch(e){}
+}
+async function rejectLeave(key,empId){
+  try{
+    await DB.ref(`companies/${COMPANY_ID}/leaves/${key}`).update({status:'rejected'});
+    await rejectPartialLeave(empId); // clean up dedicated node if it exists
+    await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'leave_res',message:'❌ تم رفض طلب إجازتك',timestamp:new Date().toISOString(),read:false});
+    showToast('تم رفض الإجازة','info');loadLeaves();loadBadges();
+  }catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+// ==================== MESSAGES ====================
+async function loadMessages() {
+  try {
+    const freshSnap=await DB.ref(`companies/${COMPANY_ID}/employees`).once('value');
+    ALL_EMPLOYEES=freshSnap.val()||{};
+  } catch(e) {}
+  const sel=document.getElementById('msg-emp-select');
+  const prevVal=sel.value;
+  sel.innerHTML='<option value="">اختر موظفاً...</option>';
+  Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved').forEach(([id,e])=>{
+    const opt=document.createElement('option');opt.value=id;opt.textContent=e.name;sel.appendChild(opt);
+  });
+  if(prevVal)sel.value=prevVal;
+  const list=document.getElementById('sent-messages-list');
+  list.innerHTML='<div style="text-align:center;padding:20px"><div class="spinner-sm"></div></div>';
+  try {
+    const snap=await DB.ref(`companies/${COMPANY_ID}/private_messages`).once('value');
+    const items=[];
+    snap.forEach(c=>items.push({key:c.key,...c.val()}));
+    items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    if(!items.length){list.innerHTML='<div class="empty-state" style="padding:20px"><p>لا توجد رسائل</p></div>';return;}
+    list.innerHTML='';
+    items.forEach(m=>{
+      const el=document.createElement('div');el.className='msg-item';
+      el.innerHTML=`<div class="msg-head"><span class="msg-emp">${ALL_EMPLOYEES[m.empId]?.name||m.empName||'موظف'}</span><div style="display:flex;align-items:center;gap:8px"><span class="msg-read ${m.read?'read':'unread'}">${m.read?'قُرئت':'لم تُقرأ'}</span><span class="msg-date">${new Date(m.createdAt||0).toLocaleDateString('ar-SA')}</span></div></div><div class="msg-body">${m.message||''}</div>`;
+      list.appendChild(el);
+    });
+  } catch(e) {}
+}
+
+async function sendPrivateMsg(){
+  const empId=document.getElementById('msg-emp-select').value;
+  const body=document.getElementById('msg-body').value.trim();
+  if(!empId){showToast('اختر موظفاً','error');return;}
+  if(!body){showToast('اكتب نص الرسالة','error');return;}
+  try {
+    const empName=ALL_EMPLOYEES[empId]?.name||'';
+    await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'private_msg',message:body,timestamp:new Date().toISOString(),read:false});
+    await DB.ref(`companies/${COMPANY_ID}/private_messages`).push({empId,empName,message:body,createdAt:Date.now(),read:false});
+    showToast('تم إرسال الرسالة لـ '+empName,'success');
+    document.getElementById('msg-body').value='';
+    loadMessages();
+  } catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+// ==================== LOC REVIEW ====================
+async function loadLocReview(){
+  const list=document.getElementById('loc-list');
+  if(!list)return;
+  list.innerHTML='<div style="text-align:center;padding:30px"><div class="spinner-sm"></div></div>';
+  try{
+    const snap=await DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('locStatus').equalTo('pending').once('value');
+    const items=[];snap.forEach(c=>items.push({key:c.key,...c.val()}));
+    if(!items.length){list.innerHTML='<div class="empty-state"><div class="es-icon">✅</div><p>لا توجد مواقع معلّقة</p></div>';return;}
+    list.innerHTML='';
+    items.forEach(rec=>{
+      const card=document.createElement('div');card.className='approval-card';
+      const ts=rec.timestamp?new Date(rec.timestamp).toLocaleString('ar-SA'):'';
+      const mapsLink=rec.lat&&rec.lng?`https://www.google.com/maps?q=${rec.lat},${rec.lng}`:null;
+      card.innerHTML=`<div class="approval-card-head"><div><div style="font-size:15px;font-weight:700">${rec.empName||''}</div><div style="font-size:12px;color:var(--text2)">${ts}</div><div style="font-size:13px;margin-top:4px">${rec.locationName||'غير محدد'}</div>${mapsLink?`<a href="${mapsLink}" target="_blank" style="color:var(--blue);font-size:12px">🗺 فتح الخريطة</a>`:''}</div><span class="badge badge-gold">⏳ معلّق</span></div><div class="approval-actions"><button class="modal-btn btn-green" onclick="approveLocation('${rec.key}')">✅ قبول</button><button class="modal-btn btn-red" onclick="rejectLocation('${rec.key}','${rec.empId}','${rec.type}')">❌ رفض</button></div>`;
+      list.appendChild(card);
+    });
+  }catch(e){list.innerHTML='<div style="color:var(--red);text-align:center;padding:20px">خطأ في التحميل</div>';}
+}
+
+async function approveLocation(key){try{await DB.ref(`companies/${COMPANY_ID}/records/${key}`).update({locStatus:'approved'});showToast('تم قبول الموقع','success');loadLocReview();loadBadges();}catch(e){showToast('خطأ: '+e.message,'error');}}
+async function rejectLocation(key,empId,type){
+  try{
+    await DB.ref(`companies/${COMPANY_ID}/records/${key}`).update({locStatus:'rejected'});
+    if(type==='in')await DB.ref(`companies/${COMPANY_ID}/today/${empId}/checkIn`).remove();
+    if(type==='out')await DB.ref(`companies/${COMPANY_ID}/today/${empId}/checkOut`).remove();
+    await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'loc_rejected',message:`📍 تم رفض موقعك لتسجيل ${type==='in'?'الحضور':'الانصراف'}`,timestamp:new Date().toISOString(),read:false});
+    showToast('تم رفض الموقع','info');loadLocReview();loadBadges();
+  }catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+// ==================== WAREHOUSES ====================
+async function loadWarehouses(){
+  const list=document.getElementById('warehouses-list');
+  list.innerHTML='<div style="text-align:center;padding:20px"><div class="spinner-sm"></div></div>';
+  try{
+    const snap=await DB.ref(`companies/${COMPANY_ID}/warehouses`).once('value');
+    ALL_WAREHOUSES=snap.val()||{};list.innerHTML='';
+    const empSnap=await DB.ref(`companies/${COMPANY_ID}/employees`).once('value');
+    const emps=empSnap.val()||{};
+    for(const[id,wh]of Object.entries(ALL_WAREHOUSES)){
+      const empCount=Object.values(emps).filter(e=>e.warehouseId===id&&e.status==='approved').length;
+      const card=document.createElement('div');card.className='wh-card-admin';
+      const hasGz = wh.geoZone && wh.geoZone.lat;
+      const gzBadge = hasGz ? `<span style="font-size:11px;color:var(--green)">📍 موقع محدد (${wh.geoZone.radius||300}م)</span>` : `<span style="font-size:11px;color:var(--text2)">📍 لا يوجد موقع</span>`;
+      const sc = wh.schedule;
+      const scBadge = sc ? `<span style="font-size:11px;color:var(--gold)">⏰ ${sc.checkIn?.from||'--'} – ${sc.checkOut?.to||'--'}</span>` : `<span style="font-size:11px;color:var(--text2)">⏰ لا يوجد دوام خاص</span>`;
+      card.innerHTML=`<div class="wh-info"><div class="wh-name">🏭 ${wh.name}</div><div class="wh-meta">${empCount} موظف</div><div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">${gzBadge}${scBadge}</div></div><div class="wh-actions"><button class="modal-btn btn-gold" onclick="showWhScheduleModal('${id}','${wh.name}')">⏰</button><button class="modal-btn btn-green" onclick="whSetGeoZone('${id}','${wh.name}')">📍</button><button class="modal-btn btn-gray" onclick="editWH('${id}','${wh.name}')">✏️</button><button class="modal-btn btn-red" onclick="deleteWH('${id}')">🗑</button></div>`;
+      list.appendChild(card);
+    }
+    if(!Object.keys(ALL_WAREHOUSES).length)list.innerHTML='<div class="empty-state"><p>لا توجد فروع</p></div>';
+  }catch(e){}
+}
+
+async function addWarehouse(){
+  const name=document.getElementById('new-wh-name').value.trim();
+  if(!name){showToast('أدخل اسم الفرع','error');return;}
+  try{await DB.ref(`companies/${COMPANY_ID}/warehouses`).push({name,active:true});showToast('تم إضافة الفرع','success');document.getElementById('new-wh-name').value='';loadWarehouses();}catch(e){showToast('خطأ: '+e.message,'error');}
+}
+async function editWH(id,name){const newName=prompt('اسم الفرع:',name);if(!newName)return;try{await DB.ref(`companies/${COMPANY_ID}/warehouses/${id}`).update({name:newName});showToast('تم التعديل','success');loadWarehouses();}catch(e){showToast('خطأ','error');}}
+async function deleteWH(id){showConfirm('حذف الفرع','هل تريد حذف هذا الفرع؟',async()=>{closeConfirm();await DB.ref(`companies/${COMPANY_ID}/warehouses/${id}`).remove();showToast('تم الحذف','success');loadWarehouses();});}
+
+let whSchedCurrentId = null;
+async function showWhScheduleModal(id, name) {
+  whSchedCurrentId = id;
+  document.getElementById('wh-sched-modal-title').textContent = '⏰ دوام: ' + name;
+  const snap = await DB.ref(`companies/${COMPANY_ID}/warehouses/${id}/schedule`).once('value');
+  const sc = snap.val() || {};
+  document.getElementById('wh-ci-from').value = sc.checkIn?.from || '';
+  document.getElementById('wh-ci-to').value   = sc.checkIn?.to   || '';
+  document.getElementById('wh-co-from').value = sc.checkOut?.from || '';
+  document.getElementById('wh-co-to').value   = sc.checkOut?.to   || '';
+  document.getElementById('wh-sched-modal').style.display = 'flex';
+}
+async function saveWhSchedule() {
+  const ciFrom = document.getElementById('wh-ci-from').value;
+  const ciTo   = document.getElementById('wh-ci-to').value;
+  const coFrom = document.getElementById('wh-co-from').value;
+  const coTo   = document.getElementById('wh-co-to').value;
+  if (!ciFrom || !ciTo || !coFrom || !coTo) { showToast('أدخل جميع الأوقات', 'error'); return; }
+  await DB.ref(`companies/${COMPANY_ID}/warehouses/${whSchedCurrentId}/schedule`).set({ checkIn: { from: ciFrom, to: ciTo }, checkOut: { from: coFrom, to: coTo } });
+  document.getElementById('wh-sched-modal').style.display = 'none';
+  showToast('تم حفظ أوقات الدوام', 'success');
+  loadWarehouses();
+}
+async function clearWhSchedule() {
+  await DB.ref(`companies/${COMPANY_ID}/warehouses/${whSchedCurrentId}/schedule`).remove();
+  document.getElementById('wh-sched-modal').style.display = 'none';
+  showToast('تم إزالة الدوام الخاص بالفرع', 'success');
+  loadWarehouses();
+}
+
+// ==================== WAREHOUSE GEO-ZONE MAP ====================
+let whGzMap=null, whGzMarker=null, whGzCircle=null, whGzLat=null, whGzLng=null, whGzReady=false, whGzCurrentId=null;
+
+function whSetGeoZone(id, name) {
+  whGzCurrentId = id;
+  document.getElementById('wh-gz-modal-title').textContent = '📍 موقع: ' + name;
+  document.getElementById('wh-gz-modal').style.display = 'flex';
+  whGzLat = null; whGzLng = null;
+  setTimeout(() => {
+    if (!whGzReady) {
+      const el = document.getElementById('wh-gz-map');
+      if (!el || !window.L) return;
+      el.innerHTML = '';
+      whGzMap = L.map('wh-gz-map').setView([24.7136, 46.6753], 13);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'© Esri — Satellite', maxZoom:19 }).addTo(whGzMap);
+      whGzMap.on('click', e => whGzSetLoc(e.latlng.lat, e.latlng.lng));
+      whGzReady = true;
+    }
+    whGzMap.invalidateSize();
+    // Load existing geoZone if any
+    DB.ref(`companies/${COMPANY_ID}/warehouses/${id}/geoZone`).once('value').then(s => {
+      const gz = s.val();
+      if (gz && gz.lat) {
+        whGzSetLoc(gz.lat, gz.lng);
+        const r = gz.radius || 300;
+        document.getElementById('wh-gz-radius-val').value = r >= 1000 ? (r/1000).toFixed(1) : r;
+        document.getElementById('wh-gz-radius-unit').value = r >= 1000 ? 'km' : 'm';
+      }
+    });
+  }, 300);
+}
+
+function whGzSetLoc(lat, lng) {
+  whGzLat = lat; whGzLng = lng;
+  document.getElementById('wh-gz-coords').textContent = lat.toFixed(5) + ' ، ' + lng.toFixed(5);
+  if (whGzMarker) { whGzMarker.setLatLng([lat,lng]); } else {
+    whGzMarker = L.marker([lat,lng], {draggable:true}).addTo(whGzMap);
+    whGzMarker.on('dragend', e => { const p=e.target.getLatLng(); whGzSetLoc(p.lat,p.lng); });
+  }
+  whGzUpdateCircle();
+}
+
+function whGzGetRadius() {
+  const v = parseFloat(document.getElementById('wh-gz-radius-val').value)||300;
+  return document.getElementById('wh-gz-radius-unit').value==='km' ? v*1000 : v;
+}
+
+function whGzUpdateCircle() {
+  if (!whGzLat || !whGzMap) return;
+  const r = whGzGetRadius();
+  if (whGzCircle) { whGzCircle.setLatLng([whGzLat,whGzLng]); whGzCircle.setRadius(r); }
+  else { whGzCircle = L.circle([whGzLat,whGzLng], {radius:r,color:'#22c55e',fillColor:'#22c55e',fillOpacity:0.15,weight:2}).addTo(whGzMap); }
+  whGzMap.fitBounds(whGzCircle.getBounds());
+}
+
+async function whGzSearch() {
+  const q = document.getElementById('wh-gz-search').value.trim();
+  if (!q) return;
+  showToast('جاري البحث...','info');
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`);
+    const data = await res.json();
+    if (data.length) { whGzSetLoc(parseFloat(data[0].lat), parseFloat(data[0].lon)); showToast('تم تحديد الموقع ✅','success'); }
+    else showToast('لم يتم العثور على الموقع','error');
+  } catch(e) { showToast('خطأ في البحث','error'); }
+}
+
+function whGzMyLocation() {
+  if (!navigator.geolocation) { showToast('المتصفح لا يدعم الموقع','error'); return; }
+  showToast('جاري تحديد موقعك...','info');
+  navigator.geolocation.getCurrentPosition(
+    pos => { whGzSetLoc(pos.coords.latitude, pos.coords.longitude); showToast('تم تحديد موقعك ✅','success'); },
+    () => showToast('تعذّر تحديد الموقع','error'),
+    {enableHighAccuracy:true, timeout:12000}
+  );
+}
+
+async function whGzSave() {
+  if (!whGzLat || !whGzLng) { showToast('حدد الموقع على الخريطة أولاً','error'); return; }
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/warehouses/${whGzCurrentId}/geoZone`).set({
+      lat: whGzLat, lng: whGzLng, radius: whGzGetRadius(), enabled: true
+    });
+    showToast('تم حفظ موقع الفرع ✅','success');
+    document.getElementById('wh-gz-modal').style.display = 'none';
+    loadWarehouses();
+  } catch(e) { showToast('خطأ: '+e.message,'error'); }
+}
+
+function whGzClose() { document.getElementById('wh-gz-modal').style.display='none'; }
+
+// ==================== SETTINGS ====================
+async function loadSettings(){
+  try{
+    const snap=await DB.ref(`companies/${COMPANY_ID}/settings`).once('value');
+    const s=snap.val()||{};
+    document.getElementById('ci-from').value=s.checkIn?.from||'08:00';
+    document.getElementById('ci-to').value=s.checkIn?.to||'09:00';
+    document.getElementById('co-from').value=s.checkOut?.from||'16:00';
+    document.getElementById('co-to').value=s.checkOut?.to||'17:00';
+    loadHolidays(s.holidays||{});
+  }catch(e){}
+}
+
+async function saveTimeWindows(){
+  try{
+    await DB.ref(`companies/${COMPANY_ID}/settings`).update({
+      checkIn:{from:document.getElementById('ci-from').value,to:document.getElementById('ci-to').value},
+      checkOut:{from:document.getElementById('co-from').value,to:document.getElementById('co-to').value}
+    });
+    showToast('تم حفظ نوافذ الوقت','success');
+  }catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+function loadHolidays(holidays){
+  const list=document.getElementById('holidays-list');list.innerHTML='';
+  for(const[id,h]of Object.entries(holidays)){
+    const el=document.createElement('div');
+    el.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--surface);border-radius:10px;margin-bottom:8px;border:1px solid var(--border)';
+    el.innerHTML=`<div><b>${h.name||''}</b> <span style="font-size:12px;color:var(--text2)">${h.date||''}</span></div><button class="modal-btn btn-red" style="padding:6px 12px;font-size:12px" onclick="deleteHoliday('${id}')">حذف</button>`;
+    list.appendChild(el);
+  }
+}
+
+async function addHoliday(){
+  const date=document.getElementById('holiday-date').value;
+  const name=document.getElementById('holiday-name').value.trim();
+  if(!date||!name){showToast('أدخل التاريخ والاسم','error');return;}
+  try{await DB.ref(`companies/${COMPANY_ID}/settings/holidays`).push({date,name,active:true});showToast('تمت إضافة العطلة','success');document.getElementById('holiday-date').value='';document.getElementById('holiday-name').value='';loadSettings();}catch(e){showToast('خطأ','error');}
+}
+async function deleteHoliday(id){try{await DB.ref(`companies/${COMPANY_ID}/settings/holidays/${id}`).remove();showToast('تم حذف العطلة','success');loadSettings();}catch(e){showToast('خطأ','error');}}
+
+async function sendBroadcast(){
+  const msg=document.getElementById('broadcast-msg').value.trim();
+  if(!msg){showToast('اكتب الرسالة','error');return;}
+  try{
+    const freshSnap=await DB.ref(`companies/${COMPANY_ID}/employees`).once('value');
+    ALL_EMPLOYEES=freshSnap.val()||{};
+    const approved=Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
+    if(!approved.length){showToast('لا يوجد موظفون','error');return;}
+    const ts=new Date().toISOString();
+    for(const[id]of approved) await DB.ref(`companies/${COMPANY_ID}/notifications/${id}`).push({type:'broadcast',message:msg,timestamp:ts,read:false});
+    showToast(`تم الإرسال لـ ${approved.length} موظف`,'success');
+    document.getElementById('broadcast-msg').value='';
+  }catch(e){showToast('خطأ: '+e.message,'error');}
+}
+
+// ==================== ④ GEO-ZONE MAP (Leaflet) ====================
+let gzMap = null;
+let gzMarker = null;
+let gzCircle = null;
+let gzLat = null;
+let gzLng = null;
+let gzZonesList = [];
+let gzMapReady = false;
+
+function _initLeafletMap() {
+  if (gzMapReady) return;
+  const el = document.getElementById('gz-map');
+  if (!el || !window.L) return;
+  el.innerHTML = '';
+  gzMap = L.map('gz-map').setView([24.7136, 46.6753], 13);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© Esri — Satellite', maxZoom: 19
+  }).addTo(gzMap);
+  gzMap.on('click', e => gzSetLocation(e.latlng.lat, e.latlng.lng));
+  gzMapReady = true;
+  setTimeout(() => gzMap.invalidateSize(), 200);
+}
+
+function gzEnsureMap() {
+  if (!gzMapReady) _initLeafletMap();
+}
+
+function gzSetLocation(lat, lng) {
+  gzEnsureMap();
+  gzLat = lat; gzLng = lng;
+  document.getElementById('gz-coords-display').style.display = 'block';
+  document.getElementById('gz-lat-display').textContent = lat.toFixed(6);
+  document.getElementById('gz-lng-display').textContent = lng.toFixed(6);
+  if (gzMarker) {
+    gzMarker.setLatLng([lat, lng]);
+  } else {
+    gzMarker = L.marker([lat, lng], { draggable: true }).addTo(gzMap);
+    gzMarker.on('dragend', e => { const p = e.target.getLatLng(); gzSetLocation(p.lat, p.lng); });
+  }
+  gzUpdateCircle();
+}
+
+function gzGetRadiusMeters() {
+  const val = parseFloat(document.getElementById('gz-radius-value').value) || 300;
+  const unit = document.getElementById('gz-radius-unit').value;
+  return unit === 'km' ? val * 1000 : val;
+}
+
+function gzUpdateCircle() {
+  if (gzLat === null || !gzMap) return;
+  const r = gzGetRadiusMeters();
+  if (gzCircle) {
+    gzCircle.setLatLng([gzLat, gzLng]);
+    gzCircle.setRadius(r);
+  } else {
+    gzCircle = L.circle([gzLat, gzLng], {
+      radius: r, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.15, weight: 2
+    }).addTo(gzMap);
+  }
+  gzMap.fitBounds(gzCircle.getBounds());
+}
+
+async function gzSearch() {
+  const q = document.getElementById('gz-search-input').value.trim();
+  if (!q) return;
+  showToast('جاري البحث...', 'info');
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&accept-language=ar`);
+    const data = await res.json();
+    if (data.length) {
+      gzEnsureMap();
+      gzSetLocation(parseFloat(data[0].lat), parseFloat(data[0].lon));
+      if (!document.getElementById('gz-name-input').value)
+        document.getElementById('gz-name-input').value = data[0].display_name.split(',')[0];
+      showToast('تم تحديد الموقع ✅', 'success');
+    } else {
+      showToast('لم يتم العثور على الموقع، جرّب اسماً آخر', 'error');
+    }
+  } catch(e) { showToast('خطأ في البحث، تحقق من الاتصال', 'error'); }
+}
+
+function gzUseMyLocation() {
+  if (!navigator.geolocation) { showToast('المتصفح لا يدعم تحديد الموقع', 'error'); return; }
+  showToast('جاري تحديد موقعك...', 'info');
+  navigator.geolocation.getCurrentPosition(
+    pos => { gzEnsureMap(); gzSetLocation(pos.coords.latitude, pos.coords.longitude); showToast('تم تحديد موقعك ✅', 'success'); },
+    () => showToast('تعذّر تحديد الموقع، تأكد من إذن الموقع', 'error'),
+    { enableHighAccuracy: true, timeout: 12000 }
+  );
+}
+
+function gzAddZone() {
+  if (gzLat === null || gzLng === null) { showToast('يرجى تحديد موقع على الخريطة أولاً', 'error'); return; }
+  const name = document.getElementById('gz-name-input').value.trim() || `نطاق ${gzZonesList.length + 1}`;
+  const radius = gzGetRadiusMeters();
+  gzZonesList.push({ lat: gzLat, lng: gzLng, radius, name });
+  gzRenderZonesList();
+  document.getElementById('gz-name-input').value = '';
+  showToast(`تمت إضافة "${name}" ✅`, 'success');
+}
+
+function gzEditZone(idx) {
+  const z = gzZonesList[idx];
+  if (!z) return;
+  gzEnsureMap();
+  gzSetLocation(z.lat, z.lng);
+  const radiusM = z.radius || 300;
+  if (radiusM >= 1000) {
+    document.getElementById('gz-radius-value').value = (radiusM / 1000).toFixed(2);
+    document.getElementById('gz-radius-unit').value = 'km';
+  } else {
+    document.getElementById('gz-radius-value').value = radiusM;
+    document.getElementById('gz-radius-unit').value = 'm';
+  }
+  document.getElementById('gz-name-input').value = z.name || '';
+  gzZonesList.splice(idx, 1);
+  gzRenderZonesList();
+  showToast('عدّل الموقع ثم اضغط "+ إضافة هذا النطاق"', 'info');
+}
+
+function gzRemoveZone(idx) {
+  gzZonesList.splice(idx, 1);
+  gzRenderZonesList();
+}
+
+function gzRenderZonesList() {
+  const container = document.getElementById('gz-zones-list');
+  if (!gzZonesList.length) { container.innerHTML = ''; return; }
+  container.innerHTML = `<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">النطاقات المضافة (${gzZonesList.length})</div>` +
+    gzZonesList.map((z, i) => {
+      const rText = z.radius >= 1000 ? `${(z.radius/1000).toFixed(1)} كم` : `${z.radius} متر`;
+      return `<div style="background:var(--surface);border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border)">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--gold)">📍 ${z.name}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px">نصف القطر: ${rText}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="gzEditZone(${i})" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">✏️ تعديل</button>
+          <button onclick="gzRemoveZone(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:18px">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+function loadGeoZoneUI(geoZone) {
+  document.getElementById('geo-enabled').checked = !!geoZone.enabled;
+  const zones = geoZone.zones || (geoZone.lat != null ? [{ lat: geoZone.lat, lng: geoZone.lng, radius: geoZone.radius || 300, name: 'النطاق الرئيسي' }] : []);
+  gzZonesList = zones.map(z => ({ ...z }));
+  gzRenderZonesList();
+  if (zones.length && zones[0].lat) {
+    setTimeout(() => {
+      gzEnsureMap();
+      const z = zones[0];
+      gzSetLocation(z.lat, z.lng);
+      const r = z.radius || 300;
+      document.getElementById('gz-radius-value').value = r >= 1000 ? (r / 1000).toFixed(2) : r;
+      document.getElementById('gz-radius-unit').value = r >= 1000 ? 'km' : 'm';
+      document.getElementById('gz-name-input').value = z.name || '';
+    }, 500);
+  }
+}
+
+async function saveGeoZone() {
+  const enabled = document.getElementById('geo-enabled').checked;
+  if (gzLat !== null && gzLng !== null) {
+    const name = document.getElementById('gz-name-input').value.trim() || (gzZonesList.length ? `نطاق ${gzZonesList.length + 1}` : 'النطاق الرئيسي');
+    const exists = gzZonesList.some(z => Math.abs(z.lat - gzLat) < 0.0001 && Math.abs(z.lng - gzLng) < 0.0001);
+    if (!exists) gzZonesList.push({ lat: gzLat, lng: gzLng, radius: gzGetRadiusMeters(), name });
+  }
+  if (!gzZonesList.length && enabled) { showToast('يرجى تحديد نطاق واحد على الأقل على الخريطة', 'error'); return; }
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/settings/geoZone`).set({ enabled, zones: gzZonesList });
+    showToast('تم حفظ إعدادات الموقع الجغرافي ✅', 'success');
+    gzRenderZonesList();
+  } catch(e) { showToast('خطأ: ' + e.message, 'error'); }
+}
+
+// ==================== REPORTS (مخصص — يضيف delayMins + ملخص تأخيرات) ====================
+function updateRepDates(){
+  const type=document.getElementById('rep-type').value;
+  const now=new Date();let from,to;
+  const today=now.toISOString().split('T')[0];
+  if(type==='daily'){from=to=today;}
+  else if(type==='weekly'){const day=now.getDay();const diff=now.getDate()-day;from=new Date(now.setDate(diff)).toISOString().split('T')[0];to=new Date(new Date(from).getTime()+6*86400000).toISOString().split('T')[0];}
+  else{from=new Date(now.getFullYear(),now.getMonth(),1).toISOString().split('T')[0];to=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().split('T')[0];}
+  // Clamp to today if future
+  if(to>today)to=today;
+  if(from>today)from=today;
+  document.getElementById('rep-from').value=from;
+  document.getElementById('rep-to').value=to;
+  document.getElementById('rep-from').max=today;
+  document.getElementById('rep-to').max=today;
+  // Populate employee filter
+  const empSel=document.getElementById('rep-emp');
+  if(empSel){
+    const cur=empSel.value;
+    empSel.innerHTML='<option value="all">كل الموظفين</option>';
+    Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved').sort((a,b)=>(a[1].name||'').localeCompare(b[1].name||'')).forEach(([id,e])=>{
+      const o=document.createElement('option');o.value=id;o.textContent=e.name||id;empSel.appendChild(o);
+    });
+    if(cur)empSel.value=cur;
+  }
+}
+
+async function generateReport(){
+  const from=document.getElementById('rep-from').value;
+  const to=document.getElementById('rep-to').value;
+  const whFilter=document.getElementById('rep-wh').value;
+  const empFilter=document.getElementById('rep-emp')?.value||'all';
+  const today=new Date().toISOString().split('T')[0];
+  if(!from||!to){showToast('اختر نطاق التاريخ','error');return;}
+  if(from>today||to>today){showToast('لا يمكن اختيار تاريخ مستقبلي','error');return;}
+  showLoading('جاري إنشاء التقرير...');
+  try{
+    const[recSnap,todaySnap,excSnap,leaveSnap,settSnap,plRecSnap]=await Promise.all([
+      DB.ref(`companies/${COMPANY_ID}/records`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/today`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/excuses`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/leaves`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/settings`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/partialLeaveRecords`).once('value')
+    ]);
+    // Build partial leave fingerprint map: { empId: { dateStr: { departureAt, returnAt } } }
+    const plRecs={};
+    plRecSnap.forEach(empNode=>{
+      plRecs[empNode.key]={};
+      empNode.forEach(dateNode=>{ plRecs[empNode.key][dateNode.key]=dateNode.val(); });
+    });
+    const settings=settSnap.val()||{};
+    // Build records map with delayMins
+    const records={};
+    recSnap.forEach(c=>{
+      const r=c.val();if(!r||!r.empId||!r.timestamp)return;
+      if(!records[r.empId])records[r.empId]={};
+      const d=new Date(r.timestamp).toISOString().split('T')[0];
+      if(!records[r.empId][d])records[r.empId][d]={};
+      if(r.type==='in'&&!records[r.empId][d].in){records[r.empId][d].in=r.timestamp;records[r.empId][d].delayMins=r.delayMins||0;}
+      else if(r.type==='out'&&!records[r.empId][d].out)records[r.empId][d].out=r.timestamp;
+    });
+    const LEAVE_LABELS={'paid':'🌴 مدفوعة','unpaid':'🔴 غير مدفوعة','sick':'🏥 مرضية','emergency':'🚨 طارئة','partial':'⏱ زمنية'};
+    const excuses={};excSnap.forEach(c=>{const e=c.val();if(!excuses[e.empId])excuses[e.empId]={};excuses[e.empId][e.date]=e;});
+    const leaves={};leaveSnap.forEach(c=>{const l=c.val();if(l&&l.empId){if(!leaves[l.empId])leaves[l.empId]={};leaves[l.empId][l.date]=l;}});
+    const rows=[];
+    let stats={total:0,present:0,absent:0,onLeave:0,excused:0,holidays:0,totalDelayMins:0,totalWorkMins:0};
+    const fmtMins=m=>{if(!m)return'—';const h=Math.floor(m/60),mn=m%60;return h>0?(mn>0?`${h} س ${mn} د`:`${h} س`):`${mn} د`;};
+    const delayMap={};
+    // leave type breakdown for single-employee mode
+    const leaveTypeCounts={};
+    const approved=Object.entries(ALL_EMPLOYEES).filter(([id,e])=>e.status==='approved'&&(whFilter==='all'||e.warehouseId===whFilter)&&(empFilter==='all'||id===empFilter));
+    const dateRange=getDates(from,to);
+    for(const[eid,emp]of approved){
+      if(!delayMap[eid]) delayMap[eid]={name:emp.name,days:0,totalMins:0};
+      for(const dateStr of dateRange){
+        const dateObj=new Date(dateStr);
+        const isHoliday=dateObj.getDay()===5||Object.values(settings.holidays||{}).some(h=>h.date===dateStr&&h.active!==false);
+        if(isHoliday){rows.push({emp:emp.name,date:dateStr,in:'--',out:'--',hrs:'--',delay:'--',note:'🎉 عطلة',noteType:'holiday'});stats.holidays++;stats.total++;continue;}
+        const lv=leaves[eid]?.[dateStr];
+        if(lv&&lv.status==='approved'){
+          const lt=lv.leaveType||'paid';
+          if(lt!=='partial'){
+            // Full-day leave
+            const lbl=LEAVE_LABELS[lt]||'🌴 إجازة';
+            rows.push({emp:emp.name,date:dateStr,in:'--',out:'--',hrs:'--',delay:'--',note:lbl,noteType:'leave'});
+            stats.onLeave++;stats.total++;
+            leaveTypeCounts[lbl]=(leaveTypeCounts[lbl]||0)+1;
+            continue;
+          }
+          // ── Partial leave: uses dedicated departure/return fingerprints ──
+          const plRec=plRecs[eid]?.[dateStr]||{};
+          const hasDep=!!plRec.departureAt, hasRet=!!plRec.returnAt;
+          const dayRec=records[eid]?.[dateStr]||{};
+          const exc=excuses[eid]?.[dateStr];
+          let partialDelayMins=0;
+          if(lv.fromTime&&lv.toTime){
+            const wFrom=lv.fromTime.split(':').reduce((h,m,i)=>h+(i===0?+m*60:+m),0);
+            const wTo  =lv.toTime.split(':').reduce((h,m,i)=>h+(i===0?+m*60:+m),0);
+            if(wTo>wFrom)partialDelayMins=wTo-wFrom;
+          }
+          const timeLabel=lv.fromTime&&lv.toTime?` (${lv.fromTime}–${lv.toTime})`:'';
+          if(hasDep&&hasRet){
+            // Both departure & return fingerprints recorded → valid partial leave
+            const dm=dayRec.delayMins||0;
+            const depTime=plRec.departureAt?format12(plRec.departureAt):'--';
+            const retTime=plRec.returnAt?format12(plRec.returnAt):'--';
+            if(dm>0){delayMap[eid].days++;delayMap[eid].totalMins+=dm;stats.totalDelayMins+=dm;}
+            rows.push({emp:emp.name,date:dateStr,in:depTime,out:retTime,hrs:'—',delay:dm>0?`${dm} د`:'—',note:`✅ مكتمل + ⏱ زمنية${timeLabel}`,noteType:'present'});
+            stats.present++;stats.total++;
+            leaveTypeCounts['⏱ زمنية']=(leaveTypeCounts['⏱ زمنية']||0)+1;
+          } else {
+            // Missing departure or return fingerprint → window counts as delay
+            const totalDelay=(dayRec.delayMins||0)+partialDelayMins;
+            const delayStr=totalDelay>0?`${totalDelay} د`:'—';
+            let note,noteType;
+            if(hasDep&&!hasRet){
+              note=`❌ بصّم المغادرة — لم يسجل العودة (⏱ زمنية غير مكتملة${timeLabel})`;noteType='absent';stats.absent++;
+            } else if(!hasDep&&!hasRet){
+              if(exc?.status==='approved'){note='📝 غائب — معذور';noteType='excused';stats.excused++;}
+              else{note=`❌ غائب (⏱ إجازة زمنية لم يبصم${timeLabel})`;noteType='absent';stats.absent++;}
+            } else {
+              note=`❌ إجازة زمنية غير مكتملة${timeLabel}`;noteType='absent';stats.absent++;
+            }
+            if(totalDelay>0){delayMap[eid].days++;delayMap[eid].totalMins+=totalDelay;stats.totalDelayMins+=totalDelay;}
+            stats.total++;
+            rows.push({emp:emp.name,date:dateStr,in:plRec.departureAt?format12(plRec.departureAt):'--',out:plRec.returnAt?format12(plRec.returnAt):'--',hrs:'--',delay:delayStr,note,noteType});
+          }
+          continue;
+        }
+        const dayRec=records[eid]?.[dateStr]||{};
+        const hasIn=!!dayRec.in,hasOut=!!dayRec.out;
+        const exc=excuses[eid]?.[dateStr];
+        let note,noteType,hrs='--';
+        const delayMins=dayRec.delayMins||0;
+        const delayStr=delayMins>0?`${delayMins} د`:'—';
+        if(hasIn&&hasOut){const diff=(new Date(dayRec.out)-new Date(dayRec.in))/3600000;hrs=diff.toFixed(1)+' س';stats.totalWorkMins+=Math.round(diff*60);note='✅ مكتمل';noteType='present';stats.present++;}
+        else if(hasIn&&!hasOut){if(exc?.status==='approved'){note='📝 حضر — معذور';noteType='excused';stats.excused++;}else{note='❌ حضر — لم يسجل انصراف';noteType='absent';stats.absent++;}}
+        else{if(exc?.status==='approved'){note='📝 غائب — معذور';noteType='excused';stats.excused++;}else{note='❌ غائب';noteType='absent';stats.absent++;}}
+        if(delayMins>0){delayMap[eid].days++;delayMap[eid].totalMins+=delayMins;stats.totalDelayMins+=delayMins;}
+        stats.total++;
+        rows.push({emp:emp.name,date:dateStr,in:dayRec.in?format12(dayRec.in):'--',out:dayRec.out?format12(dayRec.out):'--',hrs,delay:delayStr,note,noteType});
+      }
+    }
+    reportData=rows;
+    hideLoading();
+
+    // ── SINGLE EMPLOYEE: enhanced summary ──────────────────────────
+    const empDetailEl=document.getElementById('emp-detail-summary');
+    const isSingleEmp=empFilter!=='all';
+    if(isSingleEmp){
+      const empName=ALL_EMPLOYEES[empFilter]?.name||empFilter;
+      const leaveSummaryHtml=Object.entries(leaveTypeCounts).length
+        ? Object.entries(leaveTypeCounts).map(([lbl,cnt])=>`<span style="background:var(--surface);border-radius:8px;padding:4px 10px;font-size:13px;margin:3px">${lbl}: <b>${cnt}</b></span>`).join('')
+        : '<span style="color:var(--text2);font-size:13px">لا توجد إجازات</span>';
+      empDetailEl.innerHTML=`
+        <div class="section-card" style="border:1px solid var(--purple)">
+          <div class="section-title" style="color:var(--purple)">👤 ملخص الموظف: ${empName}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
+            <div class="report-stat"><div class="rsn note-present">${stats.present}</div><div class="rsl">أيام الحضور</div></div>
+            <div class="report-stat"><div class="rsn note-holiday">${stats.holidays}</div><div class="rsl">أيام العطل</div></div>
+            <div class="report-stat"><div class="rsn note-leave">${stats.onLeave}</div><div class="rsl">أيام الإجازة</div></div>
+            <div class="report-stat"><div class="rsn note-absent">${stats.absent}</div><div class="rsl">أيام الغياب</div></div>
+            <div class="report-stat"><div class="rsn note-excused">${stats.excused}</div><div class="rsl">معذور</div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+            <div style="background:rgba(34,197,94,.08);border:1px solid var(--green);border-radius:12px;padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:900;color:var(--green)">${fmtMins(stats.totalWorkMins)}</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:4px">⏱ إجمالي ساعات العمل</div>
+            </div>
+            <div style="background:rgba(251,146,60,.08);border:1px solid var(--orange);border-radius:12px;padding:12px;text-align:center">
+              <div style="font-size:20px;font-weight:900;color:var(--orange)">${fmtMins(stats.totalDelayMins)}</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:4px">🔴 إجمالي التأخير</div>
+            </div>
+          </div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--gold)">🌴 تفصيل الإجازات:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">${leaveSummaryHtml}</div>
+        </div>`;
+      empDetailEl.style.display='block';
+      document.getElementById('rep-stats').innerHTML='';
+      document.getElementById('delay-summary-section').style.display='none';
+      document.getElementById('rep-table-title').textContent='📋 تفصيل كل يوم';
+    } else {
+      empDetailEl.style.display='none';
+      document.getElementById('rep-stats').innerHTML=`
+        <div class="report-stat"><div class="rsn" style="color:var(--text)">${stats.total}</div><div class="rsl">إجمالي</div></div>
+        <div class="report-stat"><div class="rsn note-present">${stats.present}</div><div class="rsl">حضور كامل</div></div>
+        <div class="report-stat"><div class="rsn note-absent">${stats.absent}</div><div class="rsl">غياب</div></div>
+        <div class="report-stat"><div class="rsn note-leave">${stats.onLeave}</div><div class="rsl">إجازات</div></div>
+        <div class="report-stat"><div class="rsn note-excused">${stats.excused}</div><div class="rsl">معذور</div></div>
+        <div class="report-stat"><div class="rsn note-holiday">${stats.holidays}</div><div class="rsl">عطلات</div></div>`;
+      const delaySec=document.getElementById('delay-summary-section');
+      const delayTbody=document.getElementById('delay-summary-tbody');
+      const delayEntries=Object.values(delayMap).filter(d=>d.totalMins>0);
+      if(delayEntries.length){
+        delayEntries.sort((a,b)=>b.totalMins-a.totalMins);
+        delayTbody.innerHTML='';
+        delayEntries.forEach(d=>{
+          const tr=document.createElement('tr');
+          tr.innerHTML=`<td><b>${d.name}</b></td><td>${d.days} يوم</td><td style="color:var(--orange);font-weight:700">${d.totalMins} د</td><td>${d.days>0?Math.round(d.totalMins/d.days)+' د':'—'}</td>`;
+          delayTbody.appendChild(tr);
+        });
+        delaySec.style.display='block';
+      } else { delaySec.style.display='none'; }
+      document.getElementById('rep-table-title').textContent='📋 جدول التقرير (أول 50 سجل)';
+    }
+
+    const tbody=document.getElementById('rep-tbody');
+    tbody.innerHTML='';
+    // Show all rows for single employee, first 50 for all
+    const displayRows=isSingleEmp?rows:rows.slice(0,50);
+    displayRows.forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${r.emp}</td><td>${r.date}</td><td>${r.in}</td><td>${r.out}</td><td>${r.hrs}</td><td style="color:var(--orange)">${r.delay}</td><td class="note-${r.noteType}">${r.note}</td>`;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('report-output').style.display='block';
+  }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
+}
+
+function getDates(from,to){
+  const dates=[];const cur=new Date(from);const end=new Date(to);
+  while(cur<=end){dates.push(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}
+  return dates;
+}
+
+let payrollData=[];
+async function calculatePayroll(){
+  const monthVal=document.getElementById('pr-month').value;
+  if(!monthVal){showToast('اختر الشهر','error');return;}
+  const[y,m]=monthVal.split('-').map(Number);
+  const firstDay=`${monthVal}-01`;
+  const lastDateObj=new Date(y,m,0);
+  const todayStr=new Date().toISOString().split('T')[0];
+  let lastDay=lastDateObj.toISOString().split('T')[0];
+  if(lastDay>todayStr)lastDay=todayStr;
+  showLoading('جاري احتساب الرواتب...');
+  try{
+    const[recSnap,excSnap,leaveSnap,settSnap]=await Promise.all([
+      DB.ref(`companies/${COMPANY_ID}/records`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/excuses`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/leaves`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/settings`).once('value')
+    ]);
+    const settings=settSnap.val()||{};
+    const records={};
+    recSnap.forEach(c=>{
+      const r=c.val();if(!r||!r.empId||!r.timestamp)return;
+      const d=new Date(r.timestamp).toISOString().split('T')[0];
+      if(!records[r.empId])records[r.empId]={};
+      if(!records[r.empId][d])records[r.empId][d]={};
+      if(r.type==='in'&&!records[r.empId][d].in)records[r.empId][d].in=r.timestamp;
+      else if(r.type==='out'&&!records[r.empId][d].out)records[r.empId][d].out=r.timestamp;
+    });
+    const excuses={};excSnap.forEach(c=>{const e=c.val();if(!excuses[e.empId])excuses[e.empId]={};excuses[e.empId][e.date]=e;});
+    const leaves={};leaveSnap.forEach(c=>{const l=c.val();if(l&&l.empId){if(!leaves[l.empId])leaves[l.empId]={};leaves[l.empId][l.date]=l;}});
+    const dateRange=getDates(firstDay,lastDay);
+    const isHolidayDate=dateStr=>{const d=new Date(dateStr);return d.getDay()===5||Object.values(settings.holidays||{}).some(h=>h.date===dateStr&&h.active!==false);};
+    const workingDays=dateRange.filter(d=>!isHolidayDate(d)).length;
+    const approved=Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
+    const rows=[];
+    let totalSalary=0,totalDeduction=0,totalNet=0;
+    for(const[eid,emp]of approved){
+      let absentDays=0;
+      for(const dateStr of dateRange){
+        if(isHolidayDate(dateStr))continue;
+        const lv=leaves[eid]?.[dateStr];
+        if(lv&&lv.status==='approved'&&(lv.leaveType||'paid')!=='partial')continue;
+        const dayRec=records[eid]?.[dateStr]||{};
+        const exc=excuses[eid]?.[dateStr];
+        if(!dayRec.in&&exc?.status!=='approved')absentDays++;
+      }
+      const salary=Number(emp.salary)||0;
+      const deductPct=emp.deductionPercent!=null?Number(emp.deductionPercent):100;
+      const dailyRate=workingDays>0?salary/workingDays:0;
+      const deduction=Math.round(absentDays*dailyRate*(deductPct/100));
+      const net=Math.max(0,Math.round(salary-deduction));
+      totalSalary+=salary;totalDeduction+=deduction;totalNet+=net;
+      rows.push({name:emp.name,empId:emp.empId||'--',salary,absentDays,deductPct,deduction,net});
+    }
+    payrollData={rows,monthVal,workingDays};
+    hideLoading();
+    document.getElementById('pr-stats').innerHTML=`
+      <div class="report-stat"><div class="rsn" style="color:var(--text)">${workingDays}</div><div class="rsl">أيام العمل بالشهر</div></div>
+      <div class="report-stat"><div class="rsn" style="color:var(--gold)">${totalSalary.toLocaleString()}</div><div class="rsl">إجمالي الرواتب الأساسية</div></div>
+      <div class="report-stat"><div class="rsn note-absent">${totalDeduction.toLocaleString()}</div><div class="rsl">إجمالي الاستقطاعات</div></div>
+      <div class="report-stat"><div class="rsn note-present">${totalNet.toLocaleString()}</div><div class="rsl">إجمالي الصافي</div></div>`;
+    const tbody=document.getElementById('pr-tbody');
+    tbody.innerHTML='';
+    rows.forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td><b>${r.name}</b></td><td>${r.empId}</td><td>${r.salary.toLocaleString()}</td><td style="color:var(--orange)">${r.absentDays}</td><td>${r.deductPct}%</td><td style="color:var(--red)">${r.deduction.toLocaleString()}</td><td style="color:var(--green);font-weight:700">${r.net.toLocaleString()}</td>`;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('payroll-output').style.display='block';
+  }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
+}
+
+function generatePayrollPDF(){
+  const rows=payrollData.rows||[];
+  const monthVal=payrollData.monthVal||'';
+  const tableRows=rows.map(r=>`<tr><td>${r.name}</td><td>${r.empId}</td><td>${r.salary.toLocaleString()}</td><td style="color:#ef4444">${r.absentDays}</td><td>${r.deductPct}%</td><td style="color:#ef4444">${r.deduction.toLocaleString()}</td><td style="color:#22c55e;font-weight:700">${r.net.toLocaleString()}</td></tr>`).join('');
+  const totalNet=rows.reduce((s,r)=>s+r.net,0);
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الرواتب</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>body{font-family:'Cairo',sans-serif;background:#fff;color:#1a1a2e;padding:24px}h1{font-size:22px;color:#f5a623;margin-bottom:4px}.sub{font-size:13px;color:#666;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#161b2e;color:#f5a623;padding:10px;text-align:right}td{padding:8px 10px;border-bottom:1px solid #eee}.print-btn{background:#f5a623;color:#0a0c14;border:none;border-radius:50px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:20px;font-family:'Cairo',sans-serif}@media print{.print-btn{display:none}}</style></head>
+  <body>
+  <h1>💰 كشف الرواتب — ${COMPANY_INFO.nameAr||''}</h1>
+  <div class="sub">شهر: ${monthVal}</div>
+  <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
+  <table><thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>نسبة الاستقطاع</th><th>مبلغ الاستقطاع</th><th>الصافي</th></tr></thead>
+  <tbody>${tableRows}</tbody>
+  <tfoot><tr><td colspan="6" style="font-weight:900;text-align:left">إجمالي الصافي</td><td style="font-weight:900;color:#22c55e">${totalNet.toLocaleString()}</td></tr></tfoot>
+  </table>
+  </body></html>`);
+  win.document.close();
+}
+
+function generatePDF(){
+  const from=document.getElementById('rep-from').value;
+  const to=document.getElementById('rep-to').value;
+  const wh=document.getElementById('rep-wh').value;
+  const empId=document.getElementById('rep-emp')?.value||'all';
+  const whName=wh==='all'?'جميع الفروع':(ALL_WAREHOUSES[wh]?.name||wh);
+  const empName=empId==='all'?'كل الموظفين':(ALL_EMPLOYEES[empId]?.name||empId);
+  const rows=reportData;
+  const tableRows=rows.map(r=>`<tr><td>${r.emp}</td><td>${r.date}</td><td>${r.in}</td><td>${r.out}</td><td>${r.hrs}</td><td style="color:#f97316">${r.delay}</td><td class="note-${r.noteType}">${r.note}</td></tr>`).join('');
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>تقرير الحضور</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>body{font-family:'Cairo',sans-serif;background:#fff;color:#1a1a2e;padding:24px}h1{font-size:22px;color:#f5a623;margin-bottom:4px}.sub{font-size:13px;color:#666;margin-bottom:20px}.stats{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}.stat{background:#f5f5f5;border-radius:10px;padding:10px 16px;text-align:center}.stat .n{font-size:22px;font-weight:900}.stat .l{font-size:11px;color:#666}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#161b2e;color:#f5a623;padding:10px;text-align:right}td{padding:8px 10px;border-bottom:1px solid #eee}.note-present{color:#22c55e;font-weight:700}.note-absent{color:#ef4444;font-weight:700}.note-excused{color:#3b82f6;font-weight:700}.note-leave{color:#a855f7;font-weight:700}.note-holiday{color:#f5a623;font-weight:700}.print-btn{background:#f5a623;color:#0a0c14;border:none;border-radius:50px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:20px;font-family:'Cairo',sans-serif}@media print{.print-btn{display:none}}</style></head>
+  <body><h1>${COMPANY_INFO.nameAr||'الشركة'} — تقرير الحضور</h1><div class="sub">الفترة: ${from} — ${to} | الفرع: ${whName} | الموظف: ${empName}</div>
+  <button class="print-btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+  <table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الحضور</th><th>الانصراف</th><th>الساعات</th><th>التأخير</th><th>ملاحظات</th></tr></thead><tbody>${tableRows}</tbody></table>
+  </body></html>`);
+  win.document.close();
+}
+
+// ==================== ⑤ MISSIONS (الزمنيات) ====================
+function openMissionModal(key) {
+  document.getElementById('mission-modal-title').textContent = key ? '✏️ تعديل مهمة' : '📋 إضافة مهمة';
+  document.getElementById('mission-edit-key').value = key || '';
+  document.getElementById('mission-location').value = '';
+  document.getElementById('mission-desc').value = '';
+  document.getElementById('mission-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('mission-time').value = '';
+  // Populate emp select
+  const sel = document.getElementById('mission-emp-select');
+  sel.innerHTML = '<option value="">اختر موظفاً...</option>';
+  Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved').forEach(([id,e])=>{
+    const opt=document.createElement('option');opt.value=id;opt.textContent=e.name;sel.appendChild(opt);
+  });
+  if (key) {
+    DB.ref(`companies/${COMPANY_ID}/missions/${key}`).once('value').then(snap=>{
+      const m=snap.val();if(!m)return;
+      sel.value=m.empId||'';
+      document.getElementById('mission-location').value=m.location||'';
+      document.getElementById('mission-desc').value=m.description||'';
+      document.getElementById('mission-date').value=m.date||'';
+      document.getElementById('mission-time').value=m.expectedTime||'';
+    });
+  }
+  document.getElementById('mission-modal').classList.add('active');
+}
+
+function closeMissionModal() { document.getElementById('mission-modal').classList.remove('active'); }
+
+async function saveMission() {
+  const empId = document.getElementById('mission-emp-select').value;
+  const location = document.getElementById('mission-location').value.trim();
+  const desc = document.getElementById('mission-desc').value.trim();
+  const date = document.getElementById('mission-date').value;
+  const expectedTime = document.getElementById('mission-time').value;
+  const editKey = document.getElementById('mission-edit-key').value;
+  if (!empId) { showToast('اختر موظفاً', 'error'); return; }
+  if (!location) { showToast('أدخل موقع / عنوان المهمة', 'error'); return; }
+  if (!date) { showToast('اختر التاريخ', 'error'); return; }
+  const emp = ALL_EMPLOYEES[empId] || {};
+  const missionData = {
+    empId, empName: emp.name||'',
+    location, description: desc,
+    date, expectedTime,
+    status: editKey ? undefined : 'assigned',
+    assignedAt: editKey ? undefined : new Date().toISOString()
+  };
+  // Remove undefined
+  Object.keys(missionData).forEach(k => missionData[k]===undefined && delete missionData[k]);
+  try {
+    if (editKey) {
+      await DB.ref(`companies/${COMPANY_ID}/missions/${editKey}`).update(missionData);
+      showToast('تم تعديل المهمة ✅', 'success');
+    } else {
+      await DB.ref(`companies/${COMPANY_ID}/missions`).push(missionData);
+      // Notify employee
+      await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({
+        type:'mission', message:`📋 مهمة جديدة: ${location} — بتاريخ ${date}`,
+        timestamp:new Date().toISOString(), read:false
+      });
+      showToast('تم إسناد المهمة ✅', 'success');
+    }
+    closeMissionModal();
+    loadMissions();
+  } catch(e) { showToast('خطأ: '+e.message, 'error'); }
+}
+
+async function loadMissions() {
+  const list = document.getElementById('missions-list');
+  if (!list) return;
+  list.innerHTML='<div style="text-align:center;padding:30px;color:var(--text2)"><div class="spinner-sm"></div></div>';
+  try {
+    const empFilter = document.getElementById('mission-filter-emp')?.value || 'all';
+    const statusFilter = document.getElementById('mission-filter-status')?.value || 'all';
+    const dateFilter = document.getElementById('mission-filter-date')?.value || '';
+    const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).once('value');
+    const items = [];
+    snap.forEach(c => { const v=c.val(); if(v&&typeof v==='object') items.push({key:c.key,...v}); });
+    items.sort((a,b)=>((b.assignedAt||b.date||'') > (a.assignedAt||a.date||'') ? 1 : -1));
+    const filtered = items.filter(m=>{
+      if(empFilter!=='all'&&m.empId!==empFilter)return false;
+      if(statusFilter!=='all'&&m.status!==statusFilter)return false;
+      if(dateFilter&&m.date!==dateFilter)return false;
+      return true;
+    });
+    if(!filtered.length){list.innerHTML='<div class="empty-state"><div class="es-icon">📋</div><p>لا توجد مهام</p></div>';return;}
+    list.innerHTML='';
+    const statusLabel={assigned:'🔔 مُسندة',started:'⚡ جارية',completed:'✅ مكتملة'};
+    const statusBadge={assigned:'badge-gold',started:'badge-orange',completed:'badge-green'};
+    filtered.forEach(m=>{
+      const card=document.createElement('div');
+      card.className=`mission-card mission-status-${m.status||'assigned'}`;
+      const ts = m.startedAt ? `بدأت: ${format12(m.startedAt)}` : '';
+      const te = m.completedAt ? `• انتهت: ${format12(m.completedAt)}` : '';
+      card.innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div>
+          <div style="font-size:15px;font-weight:700">${m.empName||'--'}</div>
+          <div style="font-size:13px;color:var(--gold);margin-top:2px">📍 ${m.location||''}</div>
+          ${m.description?`<div style="font-size:12px;color:var(--text2);margin-top:4px">${m.description}</div>`:''}
+        </div>
+        <span class="badge ${statusBadge[m.status||'assigned']}">${statusLabel[m.status||'assigned']}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap">
+        <span>📅 ${m.date||''}</span>
+        ${m.expectedTime?`<span>🕐 ${m.expectedTime}</span>`:''}
+        ${ts?`<span style="color:var(--orange)">${ts} ${te}</span>`:''}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="action-btn-sm btn-blue" onclick="openMissionModal('${m.key}')">✏️ تعديل</button>
+        <button class="action-btn-sm btn-red" onclick="deleteMission('${m.key}')">🗑 حذف</button>
+        ${m.status==='completed'?'':'<button class="action-btn-sm btn-green" onclick="completeMission(\''+m.key+'\',\''+m.empId+'\')">✅ إتمام</button>'}
+      </div>`;
+      list.appendChild(card);
+    });
+  } catch(e) { list.innerHTML='<div style="color:var(--red);text-align:center;padding:20px">خطأ في التحميل</div>'; }
+}
+
+async function completeMission(key, empId) {
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/missions/${key}`).update({status:'completed', completedAt:new Date().toISOString()});
+    if(empId) await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'mission',message:'✅ تم تسجيل إتمام المهمة من قِبل المدير',timestamp:new Date().toISOString(),read:false});
+    showToast('تم تسجيل إتمام المهمة','success');
+    loadMissions();
+  } catch(e) { showToast('خطأ: '+e.message,'error'); }
+}
+
+async function deleteMission(key) {
+  showConfirm('حذف المهمة','هل تريد حذف هذه المهمة؟',async()=>{
+    closeConfirm();
+    try{await DB.ref(`companies/${COMPANY_ID}/missions/${key}`).remove();showToast('تم حذف المهمة','success');loadMissions();}
+    catch(e){showToast('خطأ: '+e.message,'error');}
+  });
+}
+
+// ==================== NAVIGATION ====================
+const pageLoaders = {
+  dash: loadDashboard,
+  attend: ()=>{ const d=document.getElementById('att-date');if(!d.value)d.value=new Date().toISOString().split('T')[0];loadAttendance(); },
+  emps: loadEmployees,
+  excuses: loadExcuses,
+  leaves: ()=>{ loadLeaves(); loadMissions(); },
+  messages: loadMessages,
+  warehouses: loadWarehouses,
+  settings: ()=>{ loadSettings(); updateRepDates(); },
+  reports: updateRepDates,
+  payroll: ()=>{ const el=document.getElementById('pr-month'); if(el&&!el.value) el.value=new Date().toISOString().slice(0,7); },
+  'admin-notifs': loadAdminNotifPage
+};
+
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page)?.classList.add('active');
+  document.querySelector(`.nav-item[onclick*="${page}"]`)?.classList.add('active');
+  const titles={dash:'لوحة التحكم',attend:'سجلات الحضور',emps:'الموظفون',excuses:'الأعذار',leaves:'الإجازات والمهام',messages:'الرسائل الخاصة',warehouses:'إدارة الفروع',settings:'الإعدادات',reports:'تقارير PDF',payroll:'الرواتب','admin-notifs':'إشعارات النشاط'};
+  document.getElementById('page-title').textContent = titles[page]||page;
+  currentPage = page;
+  pageLoaders[page]?.();
+  document.getElementById('sidebar').classList.remove('open');
+}
+
+function refreshCurrentPage(){ pageLoaders[currentPage]?.(); }
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); }
+
+// ==================== CONFIRM MODAL ====================
+let confirmCallback=null;
+function showConfirm(title,msg,cb){
+  document.getElementById('confirm-title').textContent=title;
+  document.getElementById('confirm-msg').textContent=msg;
+  confirmCallback=cb;
+  document.getElementById('confirm-ok').onclick=()=>{if(confirmCallback)confirmCallback();};
+  document.getElementById('confirm-modal').classList.add('active');
+}
+function closeConfirm(){ document.getElementById('confirm-modal').classList.remove('active'); confirmCallback=null; }
+
+// ==================== HELPERS ====================
+function format12(isoStr){
+  if(!isoStr)return'--';
+  return new Date(isoStr).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit',hour12:true});
+}
+function showToast(msg,type='info'){
+  const tc=document.getElementById('toast-container');
+  const el=document.createElement('div');
+  el.className='toast '+type;el.textContent=msg;tc.appendChild(el);
+  setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),300);},3000);
+}
+function showLoading(text='جاري التحميل...'){document.getElementById('lo-text').textContent=text;document.getElementById('loading-overlay').classList.add('active');}
+function hideLoading(){document.getElementById('loading-overlay').classList.remove('active');}
+
+// ==================== EMPLOYEE ACTIVATION ====================
+function toggleAddEmpPanel(){
+  const panel=document.getElementById('add-emp-panel');
+  const isHidden=panel.style.display==='none';
+  panel.style.display=isHidden?'block':'none';
+  if(isHidden){
+    ['ae-name','ae-empid','ae-role'].forEach(id=>document.getElementById(id).value='');
+    const sel=document.getElementById('ae-wh');
+    sel.innerHTML='<option value="">اختر الفرع...</option>';
+    DB.ref(`companies/${COMPANY_ID}/warehouses`).once('value',snap=>{
+      Object.entries(snap.val()||{}).forEach(([id,wh])=>{sel.innerHTML+=`<option value="${id}">${wh.name}</option>`;});
+    });
+  }
+}
+
+function genEmpUsername(name, empId){
+  const base=(empId||name||'emp').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,10)||'emp';
+  const suffix=Math.floor(1000+Math.random()*9000);
+  return base+suffix;
+}
+function genEmpPassword(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';let p='';
+  for(let i=0;i<8;i++)p+=chars[Math.floor(Math.random()*chars.length)];
+  return p;
+}
+
+// ينشئ حساب دخول (يوزر/باسورد) بمشروع الدليل المركزي لموظف جديد،
+// عبر تطبيق Firebase ثانوي مؤقت حتى لا تتأثر جلسة دخول المدير الحالية.
+async function createEmployeeDirectoryAccount(employeeRecordId, name, empId){
+  const tenantConfig=JSON.parse(localStorage.getItem('tenant_cfg'));
+  const managerUid=localStorage.getItem('manager_dir_uid');
+  const username=genEmpUsername(name, empId);
+  const password=genEmpPassword();
+  const tempAppName='dirTemp_'+Date.now();
+  const dirApp=firebase.initializeApp(DIRECTORY_CONFIG, tempAppName);
+  try{
+    const email=`${username}@${DIRECTORY_EMAIL_DOMAIN}`;
+    const cred=await dirApp.auth().createUserWithEmailAndPassword(email, password);
+    const uid=cred.user.uid;
+    await dirApp.database().ref(`directory/employees/${uid}`).set({
+      username, managerUid, companyId: COMPANY_ID, companyName: COMPANY_INFO.nameAr||'',
+      employeeId: employeeRecordId, tenantConfig, createdAt: Date.now(), active: true
+    });
+    return { username, password, uid };
+  } finally { await dirApp.delete(); }
+}
+
+function showActLinkModal(title,desc,username,password,empName){
+  document.getElementById('act-link-modal-title').textContent=title;
+  document.getElementById('act-link-desc').textContent=desc;
+  document.getElementById('act-link-username').textContent=username;
+  document.getElementById('act-link-password').textContent=password;
+  const msg=encodeURIComponent(`مرحباً ${empName}،\nبيانات دخولك بتطبيق الموظف:\n\n👤 اسم المستخدم: ${username}\n🔑 الرقم السري: ${password}\n\nحمّل تطبيق "الموظف" من المتجر وسجّل دخولك بهذه البيانات، ثم سجّل بصمتك لتفعيل حسابك.`);
+  document.getElementById('act-link-wa-btn').onclick=()=>window.open(`https://wa.me/?text=${msg}`,'_blank');
+  document.getElementById('act-link-modal').classList.add('active');
+}
+function closeActLinkModal(){ document.getElementById('act-link-modal').classList.remove('active'); }
+
+async function addEmployee(){
+  const name=document.getElementById('ae-name').value.trim();
+  const empId=document.getElementById('ae-empid').value.trim();
+  const role=document.getElementById('ae-role').value.trim();
+  const whSel=document.getElementById('ae-wh');
+  const warehouseId=whSel.value;
+  const warehouseName=whSel.selectedOptions[0]?.text||'';
+  const salary=Number(document.getElementById('ae-salary').value)||0;
+  const deductionPercent=document.getElementById('ae-deduction').value!==''?Number(document.getElementById('ae-deduction').value):100;
+  if(!name||!empId||!role||!warehouseId){showToast('يرجى ملء جميع الحقول','error');return;}
+  showLoading('جاري إضافة الموظف...');
+  try{
+    const existing=await DB.ref(`companies/${COMPANY_ID}/employees`).orderByChild('empId').equalTo(empId).once('value');
+    if(existing.exists()){hideLoading();showToast('رقم الموظف مستخدم مسبقاً','error');return;}
+    const ref=DB.ref(`companies/${COMPANY_ID}/employees`).push();
+    const uid=ref.key;
+    await ref.set({name,empId,role,warehouseId,warehouseName,salary,deductionPercent,status:'pending_activation',createdAt:Date.now()});
+    const {username,password}=await createEmployeeDirectoryAccount(uid, name, empId);
+    hideLoading();
+    toggleAddEmpPanel();
+    await loadEmployees();
+    showActLinkModal('✅ تم إضافة الموظف',`أعطِ هذه البيانات لـ ${name} ليسجّل دخوله بتطبيق الموظف:`,username,password,name);
+  }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
+}
+
+async function regenerateActLink(eid){
+  const emp=ALL_EMPLOYEES[eid];if(!emp)return;
+  showLoading('جاري إنشاء بيانات دخول جديدة...');
+  try{
+    const {username,password}=await createEmployeeDirectoryAccount(eid, emp.name, emp.empId);
+    hideLoading();
+    showActLinkModal('🔑 بيانات دخول جديدة',`بيانات دخول ${emp.name}:`,username,password,emp.name);
+  }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
+}
+
+async function resetEmployeeBio(eid){
+  const emp=ALL_EMPLOYEES[eid];if(!emp)return;
+  closeEmpModal();
+  showConfirm('🔑 إعادة تعيين البصمة',`هل تريد إعادة تعيين بصمة "${emp.name}"؟\nسيحتاج الموظف لبيانات دخول جديدة لتفعيل الجهاز من جديد.`,async()=>{
+    showLoading('جاري إعادة التعيين...');
+    try{
+      await DB.ref(`companies/${COMPANY_ID}/employees/${eid}`).update({credId:null,deviceFingerprint:null,status:'pending_activation'});
+      const {username,password}=await createEmployeeDirectoryAccount(eid, emp.name, emp.empId);
+      hideLoading();
+      ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],credId:null,status:'pending_activation'};
+      closeConfirm();
+      showActLinkModal('🔑 تم إعادة التعيين',`بيانات دخول جديدة لـ ${emp.name}:`,username,password,emp.name);
+    }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
+  });
+}
+
+// copy helpers
+function fallbackCopy(text){
+  const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;top:0;left:0;opacity:0;pointer-events:none';document.body.appendChild(ta);ta.focus();ta.select();
+  try{document.execCommand('copy');showToast('✅ تم نسخ الرابط!','success');}catch(e){prompt('انسخ هذا الرابط:',text);}
+  document.body.removeChild(ta);
+}
+function copyLink(elementId){
+  const text=(document.getElementById(elementId)?.textContent||'').trim();if(!text)return;
+  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(text).then(()=>showToast('✅ تم نسخ الرابط!','success')).catch(()=>fallbackCopy(text));
+  else fallbackCopy(text);
+}
+</script>
+
+<!-- Branch Schedule Modal -->
+<div id="wh-sched-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--card);border-radius:20px;padding:24px;width:92%;max-width:420px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div id="wh-sched-modal-title" style="font-size:16px;font-weight:900;color:var(--gold)">⏰ دوام الفرع</div>
+      <button onclick="document.getElementById('wh-sched-modal').style.display='none'" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">×</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+      <div><div class="form-label" style="margin-bottom:6px">وقت الحضور — من</div><input class="form-input" type="time" id="wh-ci-from"></div>
+      <div><div class="form-label" style="margin-bottom:6px">وقت الحضور — إلى</div><input class="form-input" type="time" id="wh-ci-to"></div>
+      <div><div class="form-label" style="margin-bottom:6px">وقت الانصراف — من</div><input class="form-input" type="time" id="wh-co-from"></div>
+      <div><div class="form-label" style="margin-bottom:6px">وقت الانصراف — إلى</div><input class="form-input" type="time" id="wh-co-to"></div>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:14px">ملاحظة: هذه الأوقات تُطبَّق على موظفي الفرع ما لم يكن للموظف جدول خاص به</div>
+    <div style="display:flex;gap:10px">
+      <button class="action-btn-full" onclick="saveWhSchedule()" style="flex:1">💾 حفظ</button>
+      <button class="modal-btn btn-red" onclick="clearWhSchedule()">🗑 إزالة</button>
+    </div>
+  </div>
+</div>
+
+<!-- Warehouse Geo-Zone Modal -->
+<div id="wh-gz-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:flex-end;justify-content:center">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div id="wh-gz-modal-title" style="font-size:16px;font-weight:900;color:var(--green)">📍 موقع الفرع</div>
+      <button onclick="whGzClose()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input class="form-input" id="wh-gz-search" placeholder="ابحث عن موقع..." style="flex:1" onkeydown="if(event.key==='Enter')whGzSearch()">
+      <button class="modal-btn btn-gold" onclick="whGzSearch()">🔍</button>
+    </div>
+    <button class="modal-btn" style="background:var(--blue);color:#fff;width:100%;margin-bottom:10px;padding:10px" onclick="whGzMyLocation()">📱 موقعي الحالي</button>
+    <div id="wh-gz-map" style="height:280px;border-radius:12px;margin-bottom:10px;border:1px solid var(--border);overflow:hidden;background:var(--surface)">
+      <div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:13px">ابحث أو اضغط "موقعي الحالي"</div>
+    </div>
+    <div id="wh-gz-coords" style="font-size:12px;color:var(--text2);margin-bottom:10px;background:var(--surface);border-radius:8px;padding:8px 12px">لم يتم تحديد موقع بعد</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+      <label class="form-label" style="flex-shrink:0;margin:0">نصف القطر:</label>
+      <input type="number" class="form-input" id="wh-gz-radius-val" value="300" min="1" style="flex:1" oninput="whGzUpdateCircle()">
+      <select class="form-input form-select" id="wh-gz-radius-unit" onchange="whGzUpdateCircle()" style="width:120px;flex-shrink:0">
+        <option value="m">متر</option>
+        <option value="km">كيلومتر</option>
+      </select>
+    </div>
+    <button class="action-btn-full" onclick="whGzSave()">💾 حفظ موقع الفرع</button>
+  </div>
+</div>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
