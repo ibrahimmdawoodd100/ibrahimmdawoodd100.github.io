@@ -1,1 +1,2234 @@
-x
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>تسجيل الحضور</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#22c55e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="بصمة - الموظف">
+<link rel="apple-touch-icon" href="./icon-employee-192.png">
+<link rel="icon" href="./icon-employee-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0c14;--card:#161b2e;--surface:#1e2438;
+  --gold:#f5a623;--gold2:#ffd27f;
+  --green:#22c55e;--red:#ef4444;--blue:#3b82f6;--purple:#a855f7;--orange:#f97316;
+  --text:#e8eaf0;--text2:#8892a4;--border:#2a3050;
+  --radius-card:16px;--radius-btn:50px;--radius-input:12px;
+}
+body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+.screen{display:none;min-height:100vh;animation:fadeUp .4s ease}
+.screen.active{display:flex;flex-direction:column}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes glow{0%,100%{box-shadow:0 0 20px var(--gold)}50%{box-shadow:0 0 50px var(--gold),0 0 80px #f5a62366}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes scanRing{0%{transform:scale(.9);opacity:1}100%{transform:scale(1.4);opacity:0}}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+#toast-container{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;width:90%;max-width:360px}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;color:var(--text);font-size:14px;font-weight:600;text-align:center;animation:fadeUp .3s ease;opacity:1;transition:opacity .3s}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--red);color:var(--red)}
+.toast.info{border-color:var(--blue);color:var(--blue)}
+
+#s-splash{background:var(--bg);justify-content:center;align-items:center;flex-direction:column;gap:24px}
+.splash-logo{width:120px;height:120px;border-radius:50%;background:linear-gradient(135deg,#1e2438,#2a3050);border:3px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:56px;animation:float 3s ease-in-out infinite,glow 2s ease-in-out infinite}
+.splash-title{font-size:28px;font-weight:900;color:var(--gold)}
+.splash-sub{font-size:14px;color:var(--text2)}
+.spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite}
+
+#s-wh{padding:20px;gap:16px}
+.wh-header{text-align:center;padding:20px 0}
+.wh-header h1{font-size:22px;font-weight:900;color:var(--gold)}
+.wh-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;flex:1}
+.wh-card{background:var(--card);border:2px solid var(--border);border-radius:var(--radius-card);padding:20px 12px;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;transition:all .3s}
+.wh-card.selected{border-color:var(--gold);box-shadow:0 0 20px #f5a62344}
+.wh-card .icon{font-size:36px}
+.wh-card .name{font-size:14px;font-weight:700;text-align:center}
+.wh-enter-btn{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#0a0c14;border:none;border-radius:var(--radius-btn);padding:16px 32px;font-size:16px;font-weight:900;font-family:'Cairo',sans-serif;cursor:pointer;width:100%;opacity:.5;transition:opacity .3s}
+.wh-enter-btn:not(:disabled){opacity:1}
+.wh-enter-btn:disabled{cursor:not-allowed}
+
+.modal-overlay{display:none;position:fixed;inset:0;background:#000a;z-index:1000;align-items:flex-end;justify-content:center}
+.modal-overlay.active{display:flex}
+.pin-modal{background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;width:100%;max-width:480px;animation:slideIn .3s ease}
+.pin-modal h3{text-align:center;font-size:18px;font-weight:700;margin-bottom:16px}
+.pin-display{display:flex;justify-content:center;gap:12px;margin-bottom:24px}
+.pin-dot{width:16px;height:16px;border-radius:50%;background:var(--border);transition:background .2s}
+.pin-dot.filled{background:var(--gold)}
+.pin-keyboard{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.pin-key{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;font-size:22px;font-weight:700;font-family:'Cairo',sans-serif;color:var(--text);cursor:pointer;transition:all .15s;text-align:center}
+.pin-key:active{background:var(--gold);color:#0a0c14;transform:scale(.95)}
+.pin-key.del{font-size:18px;color:var(--red)}
+.pin-key.empty{visibility:hidden}
+.pin-error{text-align:center;color:var(--red);font-size:13px;margin-top:12px;min-height:20px}
+
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{font-size:13px;font-weight:600;color:var(--text2)}
+.form-input{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-input);padding:14px 16px;color:var(--text);font-size:15px;font-family:'Cairo',sans-serif;outline:none;transition:border-color .2s;width:100%}
+.form-input:focus{border-color:var(--gold)}
+.form-select{appearance:none}
+.bio-section{background:var(--card);border-radius:var(--radius-card);padding:20px;text-align:center;border:1.5px solid var(--border)}
+.bio-btn{width:80px;height:80px;border-radius:50%;background:var(--surface);border:2px solid var(--border);font-size:40px;cursor:pointer;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;transition:all .3s;position:relative}
+.bio-btn.scanning{border-color:var(--gold);animation:glow 1.5s ease-in-out infinite}
+.bio-btn.success{border-color:var(--green)}
+.bio-status{font-size:13px;color:var(--text2)}
+.bio-lock-note{font-size:12px;color:var(--text2);margin-top:8px;display:flex;align-items:center;justify-content:center;gap:4px}
+.submit-btn{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#0a0c14;border:none;border-radius:var(--radius-btn);padding:16px;font-size:16px;font-weight:900;font-family:'Cairo',sans-serif;cursor:pointer;width:100%;opacity:.5;transition:opacity .3s}
+.submit-btn:not(:disabled){opacity:1}
+
+#s-pending{justify-content:center;align-items:center;padding:40px 24px;gap:24px;text-align:center}
+.pending-icon{font-size:80px;animation:float 2s ease-in-out infinite}
+.pending-title{font-size:24px;font-weight:900;color:var(--gold)}
+.pending-desc{font-size:14px;color:var(--text2);line-height:1.8}
+.logout-btn{background:var(--surface);border:1.5px solid var(--red);color:var(--red);border-radius:var(--radius-btn);padding:12px 32px;font-size:14px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer}
+
+#s-main{flex-direction:column;overflow-y:auto;padding-bottom:80px}
+.top-bar{background:var(--card);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.top-bar-right{display:flex;align-items:center;gap:10px}
+.tb-logo{font-size:28px}
+.tb-info h2{font-size:14px;font-weight:700;line-height:1.2}
+.tb-info p{font-size:11px;color:var(--text2)}
+.top-bar-left{display:flex;align-items:center;gap:12px}
+.clock-block{text-align:center}
+.clock-time{font-size:16px;font-weight:900;color:var(--gold);font-variant-numeric:tabular-nums}
+.clock-date{font-size:10px;color:var(--text2)}
+.notif-bell{position:relative;background:var(--surface);border-radius:10px;padding:8px;cursor:pointer}
+.notif-bell span{font-size:20px}
+.notif-badge{position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:10px;font-weight:700;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center}
+.main-content{padding:16px;display:flex;flex-direction:column;gap:14px}
+.profile-card{background:var(--card);border-radius:var(--radius-card);padding:16px;display:flex;align-items:center;gap:14px;border:1px solid var(--border)}
+.avatar{width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:#0a0c14;flex-shrink:0}
+.profile-info{flex:1}
+.profile-name{font-size:16px;font-weight:700}
+.profile-id{font-size:12px;color:var(--text2)}
+.profile-tags{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.tag{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.tag-blue{background:#1e3a5f;color:var(--blue)}
+.tag-purple{background:#2d1b4e;color:var(--purple)}
+.status-badge{padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700}
+.badge-green{background:#1a3329;color:var(--green)}
+.badge-red{background:#3a1a1a;color:var(--red)}
+.badge-gray{background:#2a2a3a;color:var(--text2)}
+.badge-purple{background:#2d1b4e;color:var(--purple)}
+.badge-blue{background:#1e2a4a;color:var(--blue)}
+.badge-orange{background:#3d1a00;color:var(--orange)}
+
+/* Delay card */
+.delay-card{background:linear-gradient(135deg,#2a1500,#3d2000);border:1px solid var(--orange);border-radius:var(--radius-card);padding:14px;display:flex;align-items:center;gap:14px}
+.delay-card .dc-icon{font-size:32px}
+.delay-card .dc-body{}
+.delay-card .dc-title{font-size:11px;color:var(--orange);font-weight:700}
+.delay-card .dc-value{font-size:24px;font-weight:900;color:var(--orange)}
+.delay-card .dc-label{font-size:11px;color:var(--text2)}
+
+/* Geo zone alert */
+.geo-zone-alert{background:#3a1a1a;border:1px solid var(--red);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px}
+.geo-zone-alert .gz-icon{font-size:24px;flex-shrink:0}
+.geo-zone-alert .gz-text{font-size:12px;color:var(--red);font-weight:600}
+
+/* Mission banner */
+.mission-banner{background:linear-gradient(135deg,#1a2e3d,#0f2130);border:1.5px solid var(--blue);border-radius:var(--radius-card);padding:14px}
+.mission-banner .mb-title{font-size:13px;font-weight:700;color:var(--blue);margin-bottom:6px}
+.mission-banner .mb-info{font-size:12px;color:var(--text2);line-height:1.8}
+
+.gps-bar{background:var(--card);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px;border:1px solid var(--border)}
+.gps-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.gps-ok{background:var(--green)}
+.gps-err{background:var(--red)}
+.gps-loading{background:#f5a623;animation:pulse 1s ease-in-out infinite}
+.gps-text{flex:1;font-size:12px;color:var(--text2)}
+.gps-retry{background:none;border:none;color:var(--gold);font-size:16px;cursor:pointer;padding:4px}
+.holiday-banner{background:linear-gradient(135deg,#3d2800,#5a3c00);border:1.5px solid var(--gold);border-radius:var(--radius-card);padding:20px;text-align:center}
+.holiday-banner .hb-icon{font-size:40px;margin-bottom:8px}
+.holiday-banner .hb-text{font-size:16px;font-weight:700;color:var(--gold)}
+.leave-banner{background:linear-gradient(135deg,#2d1b4e,#3d2460);border:1.5px solid var(--purple);border-radius:var(--radius-card);padding:20px;text-align:center}
+.leave-banner .lb-icon{font-size:40px;margin-bottom:8px}
+.leave-banner .lb-text{font-size:16px;font-weight:700;color:var(--purple)}
+.time-windows-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border)}
+.tw-title{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:12px}
+.tw-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
+.tw-row:last-child{border-bottom:none}
+.tw-label{font-size:13px;font-weight:600}
+.tw-range{font-size:12px;color:var(--text2)}
+.tw-status{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px}
+.tw-open{background:#1a3329;color:var(--green)}
+.tw-closed{background:#3a1a1a;color:var(--red)}
+.fp-card{background:var(--card);border-radius:var(--radius-card);padding:20px;border:1px solid var(--border);text-align:center}
+.re-bio-banner{background:#3a2000;border:1px solid var(--gold);border-radius:12px;padding:14px;margin-bottom:16px;display:none}
+.re-bio-banner p{font-size:12px;color:var(--gold);margin-bottom:10px}
+.re-bio-btn{background:var(--gold);color:#0a0c14;border:none;border-radius:var(--radius-btn);padding:10px 20px;font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer}
+.fp-main{display:flex;flex-direction:column;align-items:center;gap:12px;margin:16px 0}
+.fp-btn{width:90px;height:90px;border-radius:50%;background:var(--surface);border:2px solid var(--border);font-size:44px;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;transition:all .3s}
+.fp-btn.scanning{border-color:var(--gold)}
+.fp-btn.scanning::after{content:'';position:absolute;inset:-8px;border-radius:50%;border:2px solid var(--gold);animation:scanRing 1.5s ease-out infinite}
+.fp-hint{font-size:13px;color:var(--text2)}
+.fp-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%}
+.fp-act-btn{border:none;border-radius:var(--radius-btn);padding:14px;font-size:14px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;transition:all .3s;display:flex;align-items:center;justify-content:center;gap:6px}
+.fp-act-btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-checkin{background:linear-gradient(135deg,#15803d,#22c55e);color:#fff}
+.btn-checkout{background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff}
+.win-msg{font-size:13px;font-weight:600;padding:10px;border-radius:10px;background:var(--surface);border:1px solid var(--border);color:var(--text2)}
+.win-msg.success{background:#1a3329;border-color:var(--green);color:var(--green)}
+.win-msg.warning{background:#3a2000;border-color:var(--gold);color:var(--gold)}
+.win-msg.error{background:#3a1a1a;border-color:var(--red);color:var(--red)}
+.stats-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border)}
+.stats-title{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:12px}
+.stats-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
+.stats-row:last-child{border-bottom:none}
+.stats-icon{font-size:20px;width:30px;text-align:center}
+.stats-label{font-size:13px;color:var(--text2);flex:1}
+.stats-value{font-size:14px;font-weight:700;color:var(--gold)}
+
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);display:flex;z-index:200;padding:8px 0 12px}
+.nav-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:4px 0;position:relative;transition:color .2s}
+.nav-tab.active .nav-icon,.nav-tab.active .nav-label{color:var(--gold)}
+.nav-icon{font-size:20px}
+.nav-label{font-size:10px;color:var(--text2);font-weight:600}
+.nav-badge{position:absolute;top:0;right:calc(50% - 18px);background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
+
+.page-header{background:var(--card);padding:16px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between}
+.page-header h2{font-size:18px;font-weight:900}
+.hist-list{padding:16px;display:flex;flex-direction:column;gap:10px}
+.hist-date-group{font-size:12px;font-weight:700;color:var(--text2);padding:8px 0 4px}
+.hist-record{background:var(--card);border-radius:12px;padding:14px;border:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.rec-type-badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;flex-shrink:0}
+.rec-in{background:#1a3329;color:var(--green)}
+.rec-out{background:#3a1a1a;color:var(--red)}
+.rec-mission{background:#1e2a4a;color:var(--blue)}
+.rec-info{flex:1}
+.rec-time{font-size:15px;font-weight:700}
+.rec-loc{font-size:11px;color:var(--text2);margin-top:2px}
+.rec-delay{font-size:11px;color:var(--orange);margin-top:2px;font-weight:600}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text2)}
+.empty-state .es-icon{font-size:48px;margin-bottom:12px}
+.empty-state p{font-size:14px}
+
+/* Missions tab */
+.missions-content{padding:16px;display:flex;flex-direction:column;gap:12px}
+.mission-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border)}
+.mission-card.active-mission{border-color:var(--blue);background:linear-gradient(135deg,#1a2e3d,#161b2e)}
+.mission-title{font-size:15px;font-weight:700;color:var(--blue);margin-bottom:6px}
+.mission-meta{font-size:12px;color:var(--text2);line-height:1.9}
+.mission-status-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px}
+.ms-pending{background:#1e2a4a;color:var(--blue)}
+.ms-started{background:#1a3329;color:var(--green)}
+.ms-completed{background:#2a2a3a;color:var(--text2)}
+
+/* Excuse */
+.excuse-hero{background:var(--card);padding:24px;text-align:center;border-bottom:1px solid var(--border)}
+.excuse-content{padding:16px;display:flex;flex-direction:column;gap:14px}
+.today-status-card{background:var(--card);border-radius:var(--radius-card);padding:14px;border:1px solid var(--border)}
+.ts-label{font-size:12px;color:var(--text2);margin-bottom:6px}
+.ts-value{font-size:15px;font-weight:700}
+.excuse-form{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);display:flex;flex-direction:column;gap:12px}
+.excuse-form h3{font-size:15px;font-weight:700}
+.radio-group{display:flex;flex-direction:column;gap:8px}
+.radio-opt{display:flex;align-items:center;gap:10px;background:var(--surface);border-radius:10px;padding:12px;cursor:pointer}
+.radio-opt input[type=radio]{accent-color:var(--gold);width:18px;height:18px}
+.radio-opt label{font-size:13px;cursor:pointer;flex:1}
+.form-textarea{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-input);padding:12px;color:var(--text);font-size:14px;font-family:'Cairo',sans-serif;resize:none;width:100%;min-height:90px;outline:none}
+.form-textarea:focus{border-color:var(--gold)}
+.action-btn{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#0a0c14;border:none;border-radius:var(--radius-btn);padding:14px;font-size:15px;font-weight:900;font-family:'Cairo',sans-serif;cursor:pointer;width:100%}
+.prev-excuses-list{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.excuse-item{background:var(--card);border-radius:12px;padding:12px;border:1px solid var(--border)}
+.excuse-item-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.excuse-item-type{font-size:12px;font-weight:600}
+.excuse-item-msg{font-size:13px}
+.status-pending{color:var(--blue)}
+.status-approved{color:var(--green)}
+.status-rejected{color:var(--red)}
+
+/* Leave */
+.leave-hero{background:var(--card);padding:24px;text-align:center;border-bottom:1px solid var(--border)}
+.leave-content{padding:16px;display:flex;flex-direction:column;gap:14px}
+.leave-form{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);display:flex;flex-direction:column;gap:12px}
+.leave-form h3{font-size:15px;font-weight:700}
+.leave-item{background:var(--card);border-radius:12px;padding:12px;border:1px solid var(--border)}
+.leave-item-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.leave-item-date{font-size:14px;font-weight:700;color:var(--gold)}
+.leave-item-reason{font-size:13px;color:var(--text2)}
+.leave-type-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin:4px 0;display:inline-block}
+.leave-paid{background:#1a3329;color:var(--green)}
+.leave-unpaid{background:#3a1a1a;color:var(--red)}
+.leave-sick{background:#1e2a4a;color:var(--blue)}
+.leave-emergency{background:#3d1a00;color:var(--orange)}
+.leave-partial{background:#1e2a4a;color:var(--blue)}
+
+/* Notifications */
+.notif-list{padding:16px;display:flex;flex-direction:column;gap:10px}
+.notif-item{background:var(--card);border-radius:12px;padding:14px;border:1px solid var(--border)}
+.notif-item.unread{border-color:var(--gold);background:#1e2438}
+.notif-item.private{border-color:var(--purple)}
+.notif-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.notif-icon-type{font-size:20px}
+.notif-date{font-size:11px;color:var(--text2)}
+.notif-msg{font-size:13px;line-height:1.6}
+
+.loading-overlay{display:none;position:fixed;inset:0;background:#000a;z-index:500;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.loading-overlay.active{display:flex}
+.lo-spinner{width:50px;height:50px;border:4px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite}
+.lo-text{font-size:14px;color:var(--text2)}
+</style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+<div class="loading-overlay" id="loading-overlay">
+  <div class="lo-spinner"></div>
+  <div class="lo-text" id="lo-text">جاري التحميل...</div>
+</div>
+
+<!-- SPLASH -->
+<div class="screen active" id="s-splash">
+  <div class="splash-logo" id="splash-logo">🏭</div>
+  <div class="splash-title" id="splash-company-name">نظام الحضور</div>
+  <div class="spinner" id="splash-spinner"></div>
+  <div class="splash-sub" id="splash-status">جاري الاتصال...</div>
+  <button class="action-btn" id="retry-btn" style="display:none;width:160px" onclick="initFirebase()">إعادة المحاولة</button>
+</div>
+
+<!-- DIRECTORY LOGIN (يظهر مرة واحدة فقط عند أول استخدام للجهاز) -->
+<div class="screen" id="s-dirlogin" style="overflow-y:auto;padding:40px 24px">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0">
+    <div style="font-size:48px" id="dirlogin-logo">🏭</div>
+    <div style="font-size:20px;font-weight:900;color:var(--gold)">تسجيل دخول الموظف</div>
+    <div style="font-size:13px;color:var(--text2);text-align:center">أدخل اسم المستخدم والرقم السري اللي أعطاك إياهم مديرك</div>
+  </div>
+  <div class="form-group" style="margin-top:20px">
+    <label class="form-label">اسم المستخدم</label>
+    <input class="form-input" id="dl-emp-username" type="text" placeholder="اسم المستخدم">
+  </div>
+  <div class="form-group">
+    <label class="form-label">الرقم السري</label>
+    <input class="form-input" id="dl-emp-password" type="password" placeholder="الرقم السري">
+  </div>
+  <div id="dl-emp-error" style="color:var(--red);font-size:13px;text-align:center;display:none;margin-bottom:8px"></div>
+  <button class="submit-btn" id="dl-emp-submit" onclick="directoryEmployeeLogin()">✅ دخول</button>
+</div>
+
+<!-- WAREHOUSE SELECTION -->
+<div class="screen" id="s-wh">
+  <div class="wh-header">
+    <div style="font-size:48px" id="wh-logo">🏭</div>
+    <h1 id="wh-company-name">اختر الموقع</h1>
+    <p style="font-size:13px;color:var(--text2)">اختر موقع عملك للمتابعة</p>
+  </div>
+  <div class="wh-grid" id="wh-grid"></div>
+  <button class="wh-enter-btn" id="wh-enter-btn" disabled onclick="enterWarehouse()">← الدخول للموقع</button>
+</div>
+
+<!-- PIN MODAL -->
+<div class="modal-overlay" id="pin-modal">
+  <div class="pin-modal">
+    <h3>أدخل رمز الموقع</h3>
+    <div class="pin-display" id="pin-display">
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="pin-keyboard">
+      <button class="pin-key" onclick="pinKey('1')">1</button>
+      <button class="pin-key" onclick="pinKey('2')">2</button>
+      <button class="pin-key" onclick="pinKey('3')">3</button>
+      <button class="pin-key" onclick="pinKey('4')">4</button>
+      <button class="pin-key" onclick="pinKey('5')">5</button>
+      <button class="pin-key" onclick="pinKey('6')">6</button>
+      <button class="pin-key" onclick="pinKey('7')">7</button>
+      <button class="pin-key" onclick="pinKey('8')">8</button>
+      <button class="pin-key" onclick="pinKey('9')">9</button>
+      <button class="pin-key empty"></button>
+      <button class="pin-key" onclick="pinKey('0')">0</button>
+      <button class="pin-key del" onclick="pinDel()">⌫</button>
+    </div>
+    <div class="pin-error" id="pin-error"></div>
+    <button onclick="closePinModal()" style="margin-top:12px;background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:14px;cursor:pointer;width:100%;padding:8px">إلغاء</button>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div class="screen" id="s-login" style="overflow-y:auto;padding:40px 24px">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0">
+    <div class="reg-logo" id="login-logo" style="font-size:48px">🏭</div>
+    <div style="font-size:20px;font-weight:900;color:var(--gold)">مرحباً بعودتك</div>
+    <div style="font-size:14px;color:var(--text2)" id="login-emp-name"></div>
+  </div>
+  <div class="bio-section" style="margin-top:32px">
+    <div class="bio-btn" id="login-bio-btn" onclick="loginWithBio()">🫆</div>
+    <div class="bio-status" id="login-bio-status">اضغط لتسجيل الدخول ببصمتك</div>
+    <div class="bio-lock-note"><span>🔒</span><span>بصمتك محفوظة على جهازك فقط</span></div>
+  </div>
+  <button onclick="loadWarehouses()" style="margin-top:28px;background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%;padding:10px">← العودة لاختيار الموقع</button>
+</div>
+
+<!-- REGISTRATION -->
+<div class="screen" id="s-reg" style="overflow-y:auto;padding:20px;gap:16px">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0">
+    <div style="font-size:48px" id="reg-logo">🏭</div>
+    <div style="font-size:20px;font-weight:900;color:var(--gold)" id="reg-company-name">تسجيل موظف جديد</div>
+    <div style="font-size:12px;color:var(--text2)" id="reg-wh-name"></div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">الاسم الكامل *</label>
+    <input class="form-input" id="reg-name" type="text" placeholder="أدخل اسمك الكامل" oninput="checkRegReady()">
+  </div>
+  <div class="form-group">
+    <label class="form-label">رقم/كود الموظف *</label>
+    <input class="form-input" id="reg-eid" type="text" placeholder="أدخل رقمك الوظيفي" oninput="checkRegReady()">
+  </div>
+  <div class="form-group">
+    <label class="form-label">المسمى الوظيفي *</label>
+    <input class="form-input" id="reg-role" type="text" placeholder="مثال: محاسب، مشرف، مهندس..." oninput="checkRegReady()">
+  </div>
+  <div class="bio-section">
+    <div class="bio-btn" id="bio-btn" onclick="registerBio()">🫆</div>
+    <div class="bio-status" id="bio-status">اضغط لتسجيل بصمتك</div>
+    <div class="bio-lock-note"><span>🔒</span><span>بصمتك محفوظة على جهازك فقط</span></div>
+  </div>
+  <button class="submit-btn" id="reg-submit" disabled onclick="submitRegistration()">✅ إرسال طلب التسجيل</button>
+  <div style="text-align:center;margin:16px 0 8px">
+    <button onclick="showScreen('s-recover')" style="background:none;border:none;color:var(--gold);font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;text-decoration:underline">📱 غيّرت موبايلك؟ استرجع حسابك هنا</button>
+  </div>
+  <div style="height:20px"></div>
+</div>
+
+<!-- RECOVER ACCOUNT -->
+<div class="screen" id="s-recover" style="overflow-y:auto;padding:24px 20px">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0">
+    <div style="font-size:48px">🔍</div>
+    <div style="font-size:20px;font-weight:900;color:var(--gold)">استرجاع الحساب</div>
+    <div style="font-size:12px;color:var(--text2)">أدخل رقمك الوظيفي للبحث عن حسابك</div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">الرقم الوظيفي *</label>
+    <input class="form-input" id="rec-eid" type="text" placeholder="أدخل رقمك الوظيفي">
+  </div>
+  <button class="submit-btn" onclick="searchByEmpId()" style="margin-bottom:16px">🔍 بحث عن حسابي</button>
+  <div id="rec-result" style="display:none"></div>
+  <button onclick="showScreen('s-reg')" style="background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:14px;cursor:pointer;width:100%;padding:12px;text-align:center">← العودة</button>
+</div>
+
+<!-- ACTIVATE (admin-managed) -->
+<div class="screen" id="s-activate" style="overflow-y:auto;padding:24px 20px">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0">
+    <div style="font-size:48px" id="act-logo">🏭</div>
+    <div style="font-size:20px;font-weight:900;color:var(--gold)">تفعيل الحساب</div>
+    <div style="font-size:12px;color:var(--text2)">سجّل بصمتك لتفعيل حسابك</div>
+  </div>
+  <div style="background:var(--card);border-radius:16px;padding:4px 16px;margin-bottom:20px;border:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2);font-size:13px">الاسم</span><span id="act-emp-name" style="font-weight:700;font-size:14px"></span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2);font-size:13px">الرقم الوظيفي</span><span id="act-emp-id" style="font-weight:700;color:var(--gold);font-size:14px"></span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2);font-size:13px">المسمى</span><span id="act-emp-role" style="font-size:14px"></span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0"><span style="color:var(--text2);font-size:13px">الموقع</span><span id="act-emp-wh" style="font-size:14px"></span></div>
+  </div>
+  <div class="bio-section">
+    <div class="bio-btn" id="act-bio-btn" onclick="activateBio()">🫆</div>
+    <div class="bio-status" id="act-bio-status">اضغط لتسجيل بصمتك</div>
+    <div class="bio-lock-note"><span>🔒</span><span>بصمتك محفوظة على جهازك فقط</span></div>
+    <button id="bypass-req-btn" onclick="requestDeviceBypass()" style="display:none;margin-top:12px;background:none;border:1px solid var(--gold);color:var(--gold);font-family:'Cairo',sans-serif;font-size:13px;padding:10px 20px;border-radius:20px;cursor:pointer">📨 تخطي بإذن المدير</button>
+    <div id="bypass-status" style="display:none;font-size:13px;color:var(--text2);margin-top:10px;text-align:center"></div>
+  </div>
+</div>
+
+<!-- PENDING -->
+<div class="screen" id="s-pending">
+  <div class="pending-icon">⏳</div>
+  <div class="pending-title">في انتظار الموافقة</div>
+  <div class="pending-desc">تم إرسال طلب تسجيلك بنجاح.<br>انتظر موافقة المدير للدخول.</div>
+  <button class="logout-btn" onclick="doLogout()">تسجيل الخروج</button>
+</div>
+
+<!-- MAIN -->
+<div class="screen" id="s-main">
+  <div class="top-bar">
+    <div class="top-bar-right">
+      <div class="tb-logo" id="main-logo">🏭</div>
+      <div class="tb-info">
+        <h2 id="main-company-name">الشركة</h2>
+        <p id="main-wh-name">الموقع</p>
+      </div>
+    </div>
+    <div class="top-bar-left">
+      <div class="clock-block">
+        <div class="clock-time" id="main-clock">--:--:--</div>
+        <div class="clock-date" id="main-date"></div>
+      </div>
+      <div class="notif-bell" id="notif-bell" onclick="showTab('notifs')">
+        <span>🔔</span>
+        <div class="notif-badge" id="notif-badge" style="display:none">0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOME TAB -->
+  <div id="main-tab-home" style="display:flex;flex-direction:column">
+    <div class="main-content">
+      <div class="profile-card">
+        <div class="avatar" id="profile-avatar">?</div>
+        <div class="profile-info">
+          <div class="profile-name" id="profile-name"></div>
+          <div class="profile-id" id="profile-id"></div>
+          <div class="profile-tags">
+            <span class="tag tag-blue" id="profile-role"></span>
+            <span class="tag tag-purple" id="profile-wh"></span>
+          </div>
+        </div>
+        <div class="status-badge badge-gray" id="profile-status">جاري التحميل</div>
+      </div>
+
+      <!-- Today delay card -->
+      <div class="delay-card" id="delay-card" style="display:none">
+        <div class="dc-icon">⏱</div>
+        <div class="dc-body">
+          <div class="dc-title">تأخير اليوم</div>
+          <div class="dc-value"><span id="monthly-delay-val">0</span> دقيقة</div>
+          <div class="dc-label" id="monthly-delay-label"></div>
+        </div>
+      </div>
+
+      <!-- Active mission banner -->
+      <div class="mission-banner" id="active-mission-banner" style="display:none">
+        <div class="mb-title">📋 مهمة خارجية مسندة إليك</div>
+        <div class="mb-info" id="active-mission-info"></div>
+      </div>
+
+      <!-- GPS -->
+      <div class="gps-bar" id="gps-bar">
+        <div class="gps-dot gps-loading" id="gps-dot"></div>
+        <div class="gps-text" id="gps-text">جاري تحديد الموقع...</div>
+        <button class="gps-retry" onclick="getGPS()" title="إعادة المحاولة">↻</button>
+      </div>
+
+      <!-- Geo zone alert -->
+      <div class="geo-zone-alert" id="geo-zone-alert" style="display:none">
+        <span class="gz-icon">🚫</span>
+        <span class="gz-text">أنت خارج نطاق الموقع المسموح به — لا يمكن تسجيل البصمة من هنا</span>
+      </div>
+
+      <!-- Holiday / Leave banners -->
+      <div class="holiday-banner" id="holiday-banner" style="display:none">
+        <div class="hb-icon">🎉</div>
+        <div class="hb-text" id="holiday-text">اليوم عطلة</div>
+      </div>
+      <div class="leave-banner" id="leave-banner" style="display:none">
+        <div class="lb-icon">🌴</div>
+        <div class="lb-text">أنت في إجازة اليوم</div>
+      </div>
+
+      <!-- Time windows -->
+      <div class="time-windows-card" id="tw-card">
+        <div class="tw-title">⏰ جدول دوامك الشخصي</div>
+        <div class="tw-row">
+          <div>
+            <div class="tw-label">تسجيل الحضور</div>
+            <div class="tw-range" id="tw-in-range">-- — --</div>
+          </div>
+          <div class="tw-status tw-closed" id="tw-in-status">مغلق</div>
+        </div>
+        <div class="tw-row">
+          <div>
+            <div class="tw-label">تسجيل الانصراف</div>
+            <div class="tw-range" id="tw-out-range">-- — --</div>
+          </div>
+          <div class="tw-status tw-closed" id="tw-out-status">مغلق</div>
+        </div>
+      </div>
+
+      <!-- Fingerprint card -->
+      <div class="fp-card" id="fp-card">
+        <div class="re-bio-banner" id="re-bio-banner">
+          <p>⚠️ لم يتم التعرف على بصمتك — أعد التسجيل</p>
+          <button class="re-bio-btn" onclick="doReBioReg()">إعادة تسجيل البصمة</button>
+        </div>
+        <div class="win-msg" id="win-msg">جاري التحميل...</div>
+        <div class="fp-main">
+          <div class="fp-btn" id="fp-icon">🫆</div>
+          <div class="fp-hint" id="fp-hint">اضغط أحد الزرين أدناه للتسجيل</div>
+        </div>
+        <div class="fp-actions">
+          <button class="fp-act-btn btn-checkin" id="btn-checkin" disabled onclick="recBio('in')">☀️ تسجيل الحضور</button>
+          <button class="fp-act-btn btn-checkout" id="btn-checkout" disabled onclick="recBio('out')">🌙 تسجيل الانصراف</button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-card">
+        <div class="stats-title">📊 إحصائيات اليوم</div>
+        <div class="stats-row"><div class="stats-icon">⏰</div><div class="stats-label">وقت الحضور</div><div class="stats-value" id="stat-in">--</div></div>
+        <div class="stats-row"><div class="stats-icon">🚪</div><div class="stats-label">وقت الانصراف</div><div class="stats-value" id="stat-out">--</div></div>
+        <div class="stats-row"><div class="stats-icon">⏱</div><div class="stats-label">ساعات العمل</div><div class="stats-value" id="stat-hrs">--</div></div>
+        <div class="stats-row"><div class="stats-icon">⚠️</div><div class="stats-label">تأخير اليوم</div><div class="stats-value" id="stat-delay" style="color:var(--orange)">--</div></div>
+        <div class="stats-row"><div class="stats-icon">📍</div><div class="stats-label">الموقع المسجّل</div><div class="stats-value" id="stat-loc" style="font-size:11px;color:var(--text2)">--</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY TAB -->
+  <div id="main-tab-hist" style="display:none;flex-direction:column"></div>
+
+  <!-- EXCUSE TAB -->
+  <div id="main-tab-excuse" style="display:none;flex-direction:column"></div>
+
+  <!-- LEAVE TAB -->
+  <div id="main-tab-leave" style="display:none;flex-direction:column"></div>
+
+  <!-- NOTIFICATIONS TAB -->
+  <div id="main-tab-notifs" style="display:none;flex-direction:column"></div>
+
+  <!-- BOTTOM NAV -->
+  <div class="bottom-nav">
+    <div class="nav-tab active" id="nav-home" onclick="showTab('home')">
+      <span class="nav-icon">🏠</span><span class="nav-label">الرئيسية</span>
+    </div>
+    <div class="nav-tab" id="nav-hist" onclick="showTab('hist')">
+      <span class="nav-icon">📅</span><span class="nav-label">سجلاتي</span>
+    </div>
+    <div class="nav-tab" id="nav-excuse" onclick="showTab('excuse')">
+      <span class="nav-icon">📝</span><span class="nav-label">عذر</span>
+    </div>
+    <div class="nav-tab" id="nav-leave" onclick="showTab('leave')">
+      <span class="nav-icon">🌴</span><span class="nav-label">إجازة</span>
+    </div>
+    <div class="nav-tab" id="nav-notifs" onclick="showTab('notifs')">
+      <span class="nav-icon">🔔</span><span class="nav-label">إشعارات</span>
+      <div class="nav-badge" id="nav-notif-badge" style="display:none">0</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let DB, COMPANY_ID, COMPANY_INFO = {}, EMP = null, SETTINGS = null;
+let GPS_DATA = { lat: null, lng: null, name: null };
+let CRED_ID = null, SERVER_TIME_OFFSET = 0, SELECTED_WH = null, WAREHOUSE_GEO_ZONE = null, WAREHOUSE_SCHEDULE = null;
+let clockInterval = null, notifListener = null, notifPageListener = null;
+let pendingListener = null, todayChangeListener = null;
+let ACTIVATION_TOKEN = null, ACTIVATION_UID = null, bypassApproved = false;
+let GEO_ZONE_OK = null;
+
+function serverNow() { return new Date(Date.now() + SERVER_TIME_OFFSET); }
+
+function getDeviceFingerprint() {
+  let id = localStorage.getItem('ap_device_id');
+  if (!id) { id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('ap_device_id', id); }
+  return id;
+}
+
+// ==================== الدليل المركزي (Directory) ====================
+// مشروع Firebase ثابت مشترك: يحوّل اسم مستخدم/رقم سري إلى إعدادات
+// Firebase الخاصة بشركة هذا الموظف + معرّف سجله داخل قاعدة بيانات الشركة.
+const DIRECTORY_CONFIG = {
+  apiKey: "AIzaSyA569Cn0DbbJ-gZIAEtAI4-Y1qOU9Wzfps",
+  authDomain: "signature-7706e.firebaseapp.com",
+  databaseURL: "https://signature-7706e-default-rtdb.firebaseio.com",
+  projectId: "signature-7706e",
+  storageBucket: "signature-7706e.firebasestorage.app",
+  messagingSenderId: "25739438341",
+  appId: "1:25739438341:web:a394b046ed29d96bd36f6c"
+};
+const DIRECTORY_EMAIL_DOMAIN = 'basma.app';
+
+function getStoredTenant() {
+  const cfg = localStorage.getItem('emp_tenant_cfg');
+  const cid = localStorage.getItem('emp_tenant_company_id');
+  if (cfg && cid) { try { return { tenantConfig: JSON.parse(cfg), companyId: cid }; } catch(e) {} }
+  return null;
+}
+
+// ==================== INIT ====================
+async function initFirebase() {
+  document.getElementById('splash-status').textContent = 'جاري الاتصال...';
+  document.getElementById('splash-spinner').style.display = 'block';
+  document.getElementById('retry-btn').style.display = 'none';
+
+  const stored = getStoredTenant();
+  if (!stored) {
+    // أول استخدام على هذا الجهاز — نطلب اسم المستخدم والرقم السري
+    document.getElementById('splash-spinner').style.display = 'none';
+    showScreen('s-dirlogin');
+    return;
+  }
+  try {
+    COMPANY_ID = stored.companyId;
+    if (!firebase.apps.length) firebase.initializeApp(stored.tenantConfig);
+    DB = firebase.database();
+    const offSnap = await DB.ref('.info/serverTimeOffset').once('value');
+    SERVER_TIME_OFFSET = offSnap.val() || 0;
+    await loadCompanyInfo();
+    restoreSession();
+  } catch(e) {
+    document.getElementById('splash-status').textContent = 'فشل الاتصال — تحقق من الإنترنت';
+    document.getElementById('splash-spinner').style.display = 'none';
+    document.getElementById('retry-btn').style.display = 'block';
+  }
+}
+
+async function directoryEmployeeLogin() {
+  const username = document.getElementById('dl-emp-username').value.trim();
+  const password = document.getElementById('dl-emp-password').value;
+  const err = document.getElementById('dl-emp-error');
+  err.style.display = 'none';
+  if (!username || !password) {
+    err.textContent = 'يرجى إدخال اسم المستخدم والرقم السري';
+    err.style.display = 'block'; return;
+  }
+  const btn = document.getElementById('dl-emp-submit');
+  btn.disabled = true; btn.textContent = 'جاري التحقق...';
+  try {
+    const dirApp = firebase.apps.find(a => a.name === 'directoryApp') || firebase.initializeApp(DIRECTORY_CONFIG, 'directoryApp');
+    const email = `${username}@${DIRECTORY_EMAIL_DOMAIN}`;
+    const cred = await dirApp.auth().signInWithEmailAndPassword(email, password);
+    const uid = cred.user.uid;
+    const snap = await dirApp.database().ref(`directory/employees/${uid}`).once('value');
+    const record = snap.val();
+    if (!record || record.active === false) {
+      await dirApp.auth().signOut();
+      err.textContent = 'الحساب غير موجود أو معطّل — تواصل مع مديرك';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = '✅ دخول';
+      return;
+    }
+    localStorage.setItem('emp_tenant_cfg', JSON.stringify(record.tenantConfig));
+    localStorage.setItem('emp_tenant_company_id', record.companyId);
+    COMPANY_ID = record.companyId;
+    const tenantApp = firebase.initializeApp(record.tenantConfig, 'tenantApp');
+    DB = tenantApp.database();
+    const offSnap = await DB.ref('.info/serverTimeOffset').once('value');
+    SERVER_TIME_OFFSET = offSnap.val() || 0;
+    await loadCompanyInfo();
+    // مطابق تمامًا لمسار التفعيل القديم، بدون حاجة لرابط أو رمز تفعيل
+    const empSnap = await DB.ref(`companies/${COMPANY_ID}/employees/${record.employeeId}`).once('value');
+    const empData = empSnap.val();
+    if (!empData) {
+      err.textContent = 'لم يُعثر على بيانات الموظف — تواصل مع مديرك';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = '✅ دخول';
+      return;
+    }
+    ACTIVATION_TOKEN = null;
+    ACTIVATION_UID = record.employeeId;
+    localStorage.removeItem('ap_emp'); localStorage.removeItem('ap_wh');
+    Object.keys(localStorage).filter(k => k.startsWith('ap_cred_')).forEach(k => localStorage.removeItem(k));
+    document.getElementById('act-logo').textContent = COMPANY_INFO.logo || '🏭';
+    document.getElementById('act-emp-name').textContent = empData.name || '';
+    document.getElementById('act-emp-id').textContent = empData.empId || '';
+    document.getElementById('act-emp-role').textContent = empData.role || '--';
+    document.getElementById('act-emp-wh').textContent = empData.warehouseName || '--';
+    showScreen('s-activate');
+  } catch(e) {
+    err.textContent = 'اسم المستخدم أو الرقم السري غير صحيح';
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = '✅ دخول';
+  }
+}
+
+async function loadCompanyInfo() {
+  const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
+  COMPANY_INFO = snap.val() || {};
+  const logo = COMPANY_INFO.logo || '🏭';
+  const name = COMPANY_INFO.nameAr || COMPANY_INFO.name || 'نظام الحضور';
+  document.getElementById('splash-logo').textContent = logo;
+  document.getElementById('splash-company-name').textContent = name;
+  document.title = name + ' — تسجيل الحضور';
+  ['wh-logo','reg-logo','login-logo','main-logo'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = logo; });
+  ['wh-company-name','reg-company-name'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = name; });
+}
+
+async function restoreSession() {
+  const savedEmp = localStorage.getItem('ap_emp');
+  if (!savedEmp) { loadWarehouses(); return; }
+  try {
+    const parsed = JSON.parse(savedEmp);
+    const snap = await DB.ref(`companies/${COMPANY_ID}/employees/${parsed.id}`).once('value');
+    const emp = snap.val();
+    if (!emp || emp.status !== 'approved') { localStorage.removeItem('ap_emp'); loadWarehouses(); return; }
+    EMP = { id: parsed.id, ...emp };
+    CRED_ID = localStorage.getItem('ap_cred_' + parsed.id);
+    if (!CRED_ID) { loadWarehouses(); return; }
+    // Skip login screen — go directly to main
+    await setupMainScreen();
+  } catch(e) { localStorage.removeItem('ap_emp'); loadWarehouses(); }
+}
+
+async function loginWithBio() {
+  const btn = document.getElementById('login-bio-btn');
+  const status = document.getElementById('login-bio-status');
+  btn.classList.add('scanning');
+  status.textContent = 'جاري التحقق...';
+  try {
+    await verifyBio();
+    btn.classList.remove('scanning');
+    status.textContent = '✅ تم التحقق — جاري التحميل...';
+    await setupMainScreen();
+  } catch(e) {
+    btn.classList.remove('scanning');
+    if (e.name === 'DeviceReplaced') { showToast('تم استبدال الجهاز — أعد التسجيل', 'error'); loadWarehouses(); }
+    else { status.textContent = 'فشل التحقق — حاول مرة أخرى'; }
+  }
+}
+
+// ==================== WAREHOUSES ====================
+async function loadWarehouses() {
+  showScreen('s-wh');
+  const grid = document.getElementById('wh-grid');
+  grid.innerHTML = '<div style="grid-column:span 2;text-align:center;padding:40px;color:var(--text2)"><div class="spinner" style="margin:0 auto"></div></div>';
+  document.getElementById('wh-enter-btn').disabled = true;
+  SELECTED_WH = null;
+  try {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/warehouses`).once('value');
+    const warehouses = snap.val() || {};
+    grid.innerHTML = '';
+    for (const [id, wh] of Object.entries(warehouses)) {
+      if (wh.active === false) continue;
+      const card = document.createElement('div');
+      card.className = 'wh-card';
+      card.dataset.id = id;
+      card.onclick = () => selectWH(card, id, wh);
+      card.innerHTML = `<div class="icon">🏢</div><div class="name">${wh.name}</div>`;
+      grid.appendChild(card);
+    }
+    if (!grid.children.length) grid.innerHTML = '<div style="grid-column:span 2;text-align:center;padding:40px;color:var(--text2)">لا توجد مواقع</div>';
+    const savedEmp = localStorage.getItem('ap_emp');
+    if (!savedEmp) return;
+    const parsed = JSON.parse(savedEmp);
+    const snap2 = await DB.ref(`companies/${COMPANY_ID}/employees/${parsed.id}`).once('value');
+    const emp = snap2.val();
+    if (!emp) return;
+    const matchCard = grid.querySelector(`[data-id="${emp.warehouseId}"]`);
+    if (matchCard) selectWH(matchCard, emp.warehouseId, warehouses[emp.warehouseId]);
+  } catch(e) { grid.innerHTML = '<div style="grid-column:span 2;text-align:center;color:var(--red);padding:20px">خطأ في التحميل</div>'; }
+}
+
+function selectWH(card, id, wh) {
+  document.querySelectorAll('.wh-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  SELECTED_WH = { id, ...wh };
+  document.getElementById('wh-enter-btn').disabled = false;
+}
+
+function enterWarehouse() {
+  if (!SELECTED_WH) return;
+  const savedEmp = localStorage.getItem('ap_emp');
+  if (savedEmp) { try { if (JSON.parse(savedEmp).id) { showScreen('s-login'); return; } } catch(_) {} }
+  showPinModal();
+}
+
+let pinVal = '';
+function showPinModal() {
+  pinVal = '';
+  updatePinDisplay();
+  document.getElementById('pin-error').textContent = '';
+  document.getElementById('pin-modal').classList.add('active');
+}
+function closePinModal() { document.getElementById('pin-modal').classList.remove('active'); pinVal = ''; }
+function pinKey(k) {
+  if (pinVal.length >= 6) return;
+  pinVal += k;
+  updatePinDisplay();
+  if (pinVal.length >= 4) checkPin();
+}
+function pinDel() { pinVal = pinVal.slice(0,-1); updatePinDisplay(); }
+function updatePinDisplay() {
+  const dots = document.querySelectorAll('#pin-display .pin-dot');
+  dots.forEach((d,i) => d.classList.toggle('filled', i < pinVal.length));
+}
+async function checkPin() {
+  if (!SELECTED_WH) return;
+  const snap = await DB.ref(`companies/${COMPANY_ID}/warehouses/${SELECTED_WH.id}`).once('value');
+  const wh = snap.val();
+  if (!wh) return;
+  if (pinVal === (wh.pin || '0000')) {
+    closePinModal();
+    showScreen('s-reg');
+    document.getElementById('reg-wh-name').textContent = SELECTED_WH.name;
+    localStorage.setItem('ap_wh', JSON.stringify({ id: SELECTED_WH.id, name: SELECTED_WH.name }));
+  } else if (pinVal.length >= 4) {
+    document.getElementById('pin-error').textContent = 'رمز خاطئ — حاول مجدداً';
+    pinVal = ''; updatePinDisplay();
+  }
+}
+
+// ==================== REGISTRATION ====================
+let bioCredential = null;
+async function registerBio() {
+  const btn = document.getElementById('bio-btn');
+  const status = document.getElementById('bio-status');
+  btn.classList.add('scanning');
+  status.textContent = 'جاري تسجيل البصمة...';
+  try {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name: 'نظام الحضور', id: location.hostname },
+        user: { id: new Uint8Array(16), name: 'employee', displayName: 'موظف' },
+        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        timeout: 60000
+      }
+    });
+    bioCredential = credential;
+    btn.classList.remove('scanning'); btn.classList.add('success'); btn.innerHTML = '✅';
+    status.textContent = 'تم تسجيل البصمة بنجاح'; status.style.color = 'var(--green)';
+    checkRegReady();
+  } catch(e) {
+    btn.classList.remove('scanning');
+    status.textContent = e.name === 'NotAllowedError' ? 'لم تسمح بالبصمة — حاول مجدداً' : 'فشل تسجيل البصمة';
+    status.style.color = 'var(--red)';
+  }
+}
+
+function checkRegReady() {
+  const name = document.getElementById('reg-name').value.trim();
+  const eid = document.getElementById('reg-eid').value.trim();
+  const role = document.getElementById('reg-role').value.trim();
+  document.getElementById('reg-submit').disabled = !(name && eid && role && bioCredential);
+}
+
+async function submitRegistration() {
+  const name = document.getElementById('reg-name').value.trim();
+  const eid = document.getElementById('reg-eid').value.trim();
+  const role = document.getElementById('reg-role').value.trim();
+  const wh = JSON.parse(localStorage.getItem('ap_wh') || 'null');
+  if (!name || !eid || !role || !wh || !bioCredential) return;
+  showLoading('جاري التسجيل...');
+  try {
+    const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(bioCredential.rawId)));
+    const newEmp = {
+      name, empId: eid, role,
+      warehouseId: wh.id, warehouseName: wh.name,
+      credId: credIdB64, deviceFingerprint: getDeviceFingerprint(),
+      status: 'pending', createdAt: Date.now() + SERVER_TIME_OFFSET
+    };
+    const ref = DB.ref(`companies/${COMPANY_ID}/employees`).push();
+    await ref.set(newEmp);
+    const uid = ref.key;
+    localStorage.setItem('ap_emp', JSON.stringify({ id: uid }));
+    localStorage.setItem('ap_cred_' + uid, credIdB64);
+    EMP = { id: uid, ...newEmp };
+    CRED_ID = credIdB64;
+    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
+      type: 'new_reg', empId: uid, empName: name,
+      message: `👤 ${name} طلب التسجيل في ${wh.name}`,
+      timestamp: new Date().toISOString(), read: false
+    });
+    hideLoading();
+    showScreen('s-pending');
+    listenPending();
+  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+}
+
+async function searchByEmpId() {
+  const eid = document.getElementById('rec-eid').value.trim();
+  if (!eid) { showToast('أدخل رقمك الوظيفي', 'error'); return; }
+  showLoading('جاري البحث...');
+  const resultDiv = document.getElementById('rec-result');
+  try {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/employees`).orderByChild('empId').equalTo(eid).once('value');
+    hideLoading();
+    if (!snap.exists()) { resultDiv.innerHTML = '<div style="color:var(--red);text-align:center;padding:16px;background:var(--card);border-radius:12px">❌ لم يُعثر على حساب بهذا الرقم</div>'; resultDiv.style.display = 'block'; return; }
+    let uid, empData;
+    snap.forEach(c => { uid = c.key; empData = c.val(); });
+    if (empData.status === 'pending') { resultDiv.innerHTML = '<div style="color:var(--gold);text-align:center;padding:16px;background:var(--card);border-radius:12px">⏳ حسابك لا يزال في انتظار موافقة المدير</div>'; resultDiv.style.display = 'block'; return; }
+    if (empData.status !== 'approved') { resultDiv.innerHTML = '<div style="color:var(--red);text-align:center;padding:16px;background:var(--card);border-radius:12px">⛔ حسابك غير مفعّل</div>'; resultDiv.style.display = 'block'; return; }
+    resultDiv.innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--gold);border-radius:14px;padding:16px;margin-bottom:16px;text-align:center">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:6px">✅ تم العثور على حسابك</div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:4px">${empData.name}</div>
+        <div style="font-size:13px;color:var(--gold)">${empData.role}</div>
+      </div>
+      <div class="bio-btn" id="rec-bio-btn" onclick="recoverBio('${uid}')" style="margin:0 auto 10px;display:flex">🫆</div>
+      <div id="rec-bio-status" style="text-align:center;font-size:13px;color:var(--text2);margin-bottom:8px">اضغط لتسجيل البصمة على جهازك الجديد</div>`;
+    resultDiv.style.display = 'block';
+  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+}
+
+async function recoverBio(uid) {
+  const bioBtn = document.getElementById('rec-bio-btn');
+  const bioStatus = document.getElementById('rec-bio-status');
+  bioBtn.classList.add('scanning');
+  try {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge, rp: { name: 'نظام الحضور', id: location.hostname },
+        user: { id: new Uint8Array(16), name: 'employee', displayName: 'موظف' },
+        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        timeout: 60000
+      }
+    });
+    const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+    await DB.ref(`companies/${COMPANY_ID}/employees/${uid}`).update({ credId: credIdB64, deviceFingerprint: getDeviceFingerprint() });
+    localStorage.setItem('ap_emp', JSON.stringify({ id: uid }));
+    localStorage.setItem('ap_cred_' + uid, credIdB64);
+    bioBtn.classList.remove('scanning'); bioBtn.innerHTML = '✅';
+    bioStatus.textContent = 'تم! جاري تحميل حسابك...'; bioStatus.style.color = 'var(--green)';
+    setTimeout(() => location.reload(), 1200);
+  } catch(e) {
+    bioBtn.classList.remove('scanning');
+    bioStatus.textContent = 'فشل تسجيل البصمة — حاول مرة أخرى'; bioStatus.style.color = 'var(--red)';
+  }
+}
+
+function listenPending() {
+  if (!EMP) return;
+  pendingListener = DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}/status`).on('value', snap => {
+    const s = snap.val();
+    if (s === 'approved') { EMP.status = 'approved'; showToast('تمت الموافقة على حسابك!', 'success'); setupMainScreen(); }
+    else if (s === 'rejected') { showToast('تم رفض طلب تسجيلك', 'error'); localStorage.removeItem('ap_emp'); loadWarehouses(); }
+  });
+}
+
+// ==================== MAIN SCREEN ====================
+async function setupMainScreen() {
+  showScreen('s-main');
+  showTab('home');
+  updateClock();
+  if (clockInterval) clearInterval(clockInterval);
+  clockInterval = setInterval(updateClock, 1000);
+  document.getElementById('profile-avatar').textContent = (EMP.name || '?')[0];
+  document.getElementById('profile-name').textContent = EMP.name;
+  document.getElementById('profile-id').textContent = 'الرقم الوظيفي: ' + EMP.empId;
+  document.getElementById('profile-role').textContent = EMP.role;
+  document.getElementById('main-company-name').textContent = COMPANY_INFO.nameAr || COMPANY_INFO.name || 'الشركة';
+  document.getElementById('main-logo').textContent = COMPANY_INFO.logo || '🏭';
+  getGPS();
+  await loadWinStatus();
+  await loadTodayStats();
+  await loadMonthlyDelay();
+  loadNotifBadge();
+  checkActiveMissions();
+  if (todayChangeListener) DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).off('value', todayChangeListener);
+  todayChangeListener = DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).on('value', () => {
+    loadWinStatus(); loadTodayStats();
+  });
+}
+
+function updateClock() {
+  const now = serverNow();
+  document.getElementById('main-clock').textContent = now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  document.getElementById('main-date').textContent = now.toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function toArabicTime12(hhmm) {
+  if (!hhmm) return '--';
+  const [h, m] = hhmm.split(':').map(Number);
+  const suffix = h >= 12 ? 'م' : 'ص';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2,'0')} ${suffix}`;
+}
+
+function timeToMins(hhmm) {
+  const [h, m] = (hhmm || '00:00').split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+// ==================== FEATURE 1: PER-EMPLOYEE SCHEDULE ====================
+// Returns the schedule applicable to this employee.
+// Priority: per-employee schedule > branch schedule > company-wide settings
+function getEmpSchedule() {
+  if (EMP && EMP.schedule && EMP.schedule.checkIn && EMP.schedule.checkOut) {
+    return { checkIn: EMP.schedule.checkIn, checkOut: EMP.schedule.checkOut };
+  }
+  if (WAREHOUSE_SCHEDULE && WAREHOUSE_SCHEDULE.checkIn && WAREHOUSE_SCHEDULE.checkOut) {
+    return { checkIn: WAREHOUSE_SCHEDULE.checkIn, checkOut: WAREHOUSE_SCHEDULE.checkOut };
+  }
+  if (SETTINGS) {
+    return {
+      checkIn: SETTINGS.checkIn || { from: '08:00', to: '09:00' },
+      checkOut: SETTINGS.checkOut || { from: '16:00', to: '17:00' }
+    };
+  }
+  return { checkIn: { from: '08:00', to: '09:00' }, checkOut: { from: '16:00', to: '17:00' } };
+}
+
+// ==================== FEATURE 2: MONTHLY DELAY ====================
+async function loadMonthlyDelay() {
+  try {
+    const now = serverNow();
+    const todayStr = now.toISOString().split('T')[0];
+    const snap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
+    let d = snap.val() || {};
+    if (d.dateKey && d.dateKey !== todayStr) d = {};
+    const card = document.getElementById('delay-card');
+    if (d.checkIn && d.delayMins > 0) {
+      document.getElementById('monthly-delay-val').textContent = d.delayMins;
+      const hrs = Math.floor(d.delayMins / 60);
+      const mins = d.delayMins % 60;
+      document.getElementById('monthly-delay-label').textContent = hrs > 0 ? `(${hrs} ساعة و${mins} دقيقة)` : '';
+      card.style.display = 'flex';
+    } else {
+      card.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+// ==================== FEATURE 4: GEO ZONE CHECK ====================
+function checkGeoZone() {
+  const alertEl = document.getElementById('geo-zone-alert');
+
+  // Warehouse-specific geo-zone takes priority over company-wide
+  const hasWarehouseGz = WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false;
+  const hasCompanyGz = SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled;
+
+  if (!hasWarehouseGz && !hasCompanyGz) {
+    GEO_ZONE_OK = true; alertEl.style.display = 'none'; return;
+  }
+
+  if (!GPS_DATA.lat || !GPS_DATA.lng) {
+    GEO_ZONE_OK = false; alertEl.style.display = 'flex';
+    alertEl.querySelector('.gz-text').textContent = 'لم يتم تحديد موقعك — لا يمكن البصمة حتى يتم تحديد الموقع';
+    return;
+  }
+
+  let inside = false;
+
+  if (hasWarehouseGz) {
+    // Use warehouse-specific zone (single zone per warehouse)
+    const gz = WAREHOUSE_GEO_ZONE;
+    inside = getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, gz.lat, gz.lng) <= (gz.radius || 300);
+    if (!inside) {
+      alertEl.style.display = 'flex';
+      alertEl.querySelector('.gz-text').textContent = `أنت خارج نطاق ${EMP.warehouseName || 'الفرع'} — لا يمكن تسجيل البصمة من هنا`;
+    } else {
+      alertEl.style.display = 'none';
+    }
+  } else {
+    // Fall back to company-wide zones
+    const geoZone = SETTINGS.geoZone;
+    const zones = geoZone.zones && geoZone.zones.length ? geoZone.zones : [{ lat: geoZone.lat, lng: geoZone.lng, radius: geoZone.radius || 200 }];
+    for (const z of zones) {
+      if (!z.lat || !z.lng) continue;
+      if (getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, z.lat, z.lng) <= (z.radius || 200)) { inside = true; break; }
+    }
+    if (!inside) {
+      alertEl.style.display = 'flex';
+      alertEl.querySelector('.gz-text').textContent = 'أنت خارج نطاق الموقع المسموح به — لا يمكن تسجيل البصمة من هنا';
+    } else {
+      alertEl.style.display = 'none';
+    }
+  }
+
+  GEO_ZONE_OK = inside;
+  // Refresh button states now that geo-zone is known
+  loadWinStatus();
+}
+
+function getDistanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ==================== WIN STATUS ====================
+async function loadWinStatus() {
+  try {
+    const [settSnap, empSnap] = await Promise.all([
+      DB.ref(`companies/${COMPANY_ID}/settings`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value')
+    ]);
+    SETTINGS = settSnap.val() || {};
+    const empData = empSnap.val() || {};
+    if (empData.schedule) EMP.schedule = empData.schedule; // Refresh per-employee schedule
+    updateTimeWindows();
+    document.getElementById('main-wh-name').textContent = empData.warehouseName || EMP.warehouseName || '';
+    document.getElementById('profile-wh').textContent = empData.warehouseName || EMP.warehouseName || '';
+
+    const now = serverNow();
+    const todayStr = now.toISOString().split('T')[0];
+
+    // Load warehouse-specific geo-zone
+    if (EMP.warehouseId) {
+      try {
+        const [whGzSnap, whScSnap] = await Promise.all([
+          DB.ref(`companies/${COMPANY_ID}/warehouses/${EMP.warehouseId}/geoZone`).once('value'),
+          DB.ref(`companies/${COMPANY_ID}/warehouses/${EMP.warehouseId}/schedule`).once('value')
+        ]);
+        WAREHOUSE_GEO_ZONE = whGzSnap.val() || null;
+        WAREHOUSE_SCHEDULE = whScSnap.val() || null;
+      } catch(e) { WAREHOUSE_GEO_ZONE = null; WAREHOUSE_SCHEDULE = null; }
+    }
+
+    // Check leave
+    const leaveSnap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).once('value');
+    let onLeave = false;
+    let partialLeaveToday = null; // approved partial leave for today
+    leaveSnap.forEach(c => {
+      const l = c.val();
+      if (l.date !== todayStr || l.status !== 'approved') return;
+      if (l.isPartial) { partialLeaveToday = l; }
+      else { onLeave = true; }
+    });
+    if (onLeave) {
+      document.getElementById('leave-banner').style.display = 'block';
+      document.getElementById('fp-card').style.display = 'none';
+      document.getElementById('holiday-banner').style.display = 'none';
+      setProfileStatus('في إجازة', 'badge-purple');
+      return;
+    }
+
+    const isHoliday = checkHoliday(now, SETTINGS);
+    if (isHoliday) {
+      document.getElementById('holiday-banner').style.display = 'block';
+      document.getElementById('fp-card').style.display = 'none';
+      document.getElementById('leave-banner').style.display = 'none';
+      document.getElementById('tw-card').style.display = 'none';
+      document.getElementById('holiday-text').textContent = '🎉 ' + (getHolidayName(now, SETTINGS) || 'اليوم عطلة') + ' — لا يوجد دوام';
+      setProfileStatus('عطلة', 'badge-gray');
+      return;
+    }
+
+    document.getElementById('holiday-banner').style.display = 'none';
+    document.getElementById('leave-banner').style.display = 'none';
+    document.getElementById('fp-card').style.display = 'block';
+    document.getElementById('tw-card').style.display = 'block';
+
+    const todaySnap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
+    let todayData = todaySnap.val() || {};
+    if (todayData.dateKey && todayData.dateKey !== todayStr) { await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).remove(); todayData = {}; }
+
+    const schedule = getEmpSchedule();
+    const ci = schedule.checkIn;
+    const co = schedule.checkOut;
+    const nm = now.getHours() * 60 + now.getMinutes();
+    const inOpen = nm >= timeToMins(ci.from) && nm <= timeToMins(ci.to);
+    const outOpen = nm >= timeToMins(co.from) && nm <= timeToMins(co.to);
+    const hasIn = !!todayData.checkIn;
+    const hasOut = !!todayData.checkOut;
+
+    let msgText = '', msgClass = '', ciEnabled = false, coEnabled = false;
+    if (hasIn && hasOut) {
+      msgText = '✅ تم تسجيل حضورك وانصرافك اليوم'; msgClass = 'success'; setProfileStatus('انصرف', 'badge-gray');
+    } else if (hasIn && !hasOut) {
+      if (nm < timeToMins(co.from)) { msgText = `✅ تم تسجيل حضورك — الانصراف يبدأ ${toArabicTime12(co.from)}`; msgClass = 'success'; }
+      else if (outOpen) { msgText = '🚪 وقت الانصراف مفتوح — سجّل انصرافك'; msgClass = 'warning'; coEnabled = true; }
+      else { msgText = '🚪 انتهى وقت الانصراف'; msgClass = 'error'; }
+      setProfileStatus('حاضر الآن', 'badge-green');
+    } else {
+      if (todayData.excuseCheckout === true) {
+        if (outOpen) { msgText = '✅ تم قبول عذرك — سجّل انصرافك'; msgClass = 'success'; coEnabled = true; }
+        else if (nm < timeToMins(co.from)) { msgText = `✅ تم قبول عذرك — الانصراف يبدأ ${toArabicTime12(co.from)}`; msgClass = 'success'; }
+        else { msgText = '🚪 تم قبول عذرك — انتهى وقت الانصراف'; msgClass = 'error'; }
+        setProfileStatus('عذر مقبول', 'badge-blue');
+      } else if (todayData.excuseCheckout === false) {
+        msgText = '❌ تم رفض عذرك'; msgClass = 'error'; setProfileStatus('رُفض العذر', 'badge-red');
+      } else if (nm < timeToMins(ci.from)) {
+        msgText = `⏳ لم يبدأ وقت الحضور — يبدأ ${toArabicTime12(ci.from)}`; setProfileStatus('لم يبدأ الدوام', 'badge-gray');
+      } else if (inOpen) {
+        msgText = '✅ وقت الحضور مفتوح — سجّل حضورك الآن'; msgClass = 'success'; ciEnabled = true; setProfileStatus('غائب', 'badge-red');
+      } else {
+        msgText = '⛔ انتهى وقت الحضور — يمكنك تقديم عذر'; msgClass = 'error'; setProfileStatus('غائب', 'badge-red');
+      }
+    }
+    document.getElementById('win-msg').textContent = msgText;
+    document.getElementById('win-msg').className = 'win-msg ' + msgClass;
+    document.getElementById('btn-checkin').disabled = !ciEnabled;
+    document.getElementById('btn-checkout').disabled = !coEnabled;
+
+    // ── Partial leave time-window override ──────────────────────────
+    if (partialLeaveToday && partialLeaveToday.fromTime && partialLeaveToday.toTime) {
+      const plFrom = timeToMins(partialLeaveToday.fromTime);
+      const plTo   = timeToMins(partialLeaveToday.toTime);
+      if (nm >= plFrom && nm <= plTo) {
+        // Currently inside the leave window — block fingerprint
+        document.getElementById('btn-checkin').disabled  = true;
+        document.getElementById('btn-checkout').disabled = true;
+        document.getElementById('win-msg').textContent = `⏱ أنت في إجازة زمنية الآن (${partialLeaveToday.fromTime} — ${partialLeaveToday.toTime})`;
+        document.getElementById('win-msg').className = 'win-msg warning';
+        setProfileStatus('إجازة زمنية', 'badge-purple');
+      } else if (nm < plFrom) {
+        // Before leave — allow check-in normally (already handled above), just add info
+        const curMsg = document.getElementById('win-msg').textContent;
+        document.getElementById('win-msg').textContent = curMsg + ` | إجازة زمنية: ${partialLeaveToday.fromTime}–${partialLeaveToday.toTime}`;
+      } else {
+        // After leave — allow check-out normally, just add info
+        const curMsg = document.getElementById('win-msg').textContent;
+        document.getElementById('win-msg').textContent = curMsg + ` | انتهت الإجازة الزمنية ${partialLeaveToday.toTime}`;
+      }
+    }
+
+    // Block fingerprint if outside geo-zone — override time-window state
+    const hasGz = (WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false)
+               || (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled);
+    if (hasGz && GEO_ZONE_OK === false) {
+      document.getElementById('btn-checkin').disabled = true;
+      document.getElementById('btn-checkout').disabled = true;
+    }
+  } catch(e) { document.getElementById('win-msg').textContent = 'خطأ في تحميل الإعدادات: ' + e.message; }
+}
+
+function checkHoliday(date, settings) {
+  if (date.getDay() === 5) return true;
+  const ds = date.toISOString().split('T')[0];
+  if (settings && settings.holidays) {
+    for (const h of Object.values(settings.holidays)) { if (h.date === ds && h.active !== false) return true; }
+  }
+  return false;
+}
+function getHolidayName(date, settings) {
+  if (date.getDay() === 5) return 'الجمعة';
+  const ds = date.toISOString().split('T')[0];
+  if (settings && settings.holidays) {
+    for (const h of Object.values(settings.holidays)) { if (h.date === ds) return h.name || 'عطلة'; }
+  }
+  return 'عطلة';
+}
+
+function updateTimeWindows() {
+  const schedule = getEmpSchedule();
+  const ci = schedule.checkIn; const co = schedule.checkOut;
+  document.getElementById('tw-in-range').textContent = `${toArabicTime12(ci.from)} — ${toArabicTime12(ci.to)}`;
+  document.getElementById('tw-out-range').textContent = `${toArabicTime12(co.from)} — ${toArabicTime12(co.to)}`;
+  const now = serverNow();
+  const nm = now.getHours() * 60 + now.getMinutes();
+  const ciOpen = nm >= timeToMins(ci.from) && nm <= timeToMins(ci.to);
+  const coOpen = nm >= timeToMins(co.from) && nm <= timeToMins(co.to);
+  const inSt = document.getElementById('tw-in-status'); const outSt = document.getElementById('tw-out-status');
+  inSt.textContent = ciOpen ? 'مفتوح' : 'مغلق'; inSt.className = 'tw-status ' + (ciOpen ? 'tw-open' : 'tw-closed');
+  outSt.textContent = coOpen ? 'مفتوح' : 'مغلق'; outSt.className = 'tw-status ' + (coOpen ? 'tw-open' : 'tw-closed');
+}
+
+function setProfileStatus(text, cls) {
+  const el = document.getElementById('profile-status');
+  el.textContent = text; el.className = 'status-badge ' + cls;
+}
+
+async function loadTodayStats() {
+  try {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
+    let d = snap.val() || {};
+    const todayStr = serverNow().toISOString().split('T')[0];
+    if (d.dateKey && d.dateKey !== todayStr) d = {};
+    document.getElementById('stat-in').textContent = d.checkIn ? format12(d.checkIn) : '--';
+    document.getElementById('stat-out').textContent = d.checkOut ? format12(d.checkOut) : '--';
+    if (d.checkIn && d.checkOut) {
+      document.getElementById('stat-hrs').textContent = ((new Date(d.checkOut) - new Date(d.checkIn)) / 3600000).toFixed(1) + ' ساعة';
+    } else document.getElementById('stat-hrs').textContent = '--';
+    document.getElementById('stat-loc').textContent = d.locationName || GPS_DATA.name || '--';
+    // Today's delay
+    if (d.checkIn) {
+      const schedule = getEmpSchedule();
+      const ciFromMins = timeToMins(schedule.checkIn.from);
+      const t = new Date(d.checkIn);
+      const delayMins = Math.max(0, (t.getHours() * 60 + t.getMinutes()) - ciFromMins);
+      document.getElementById('stat-delay').textContent = delayMins > 0 ? delayMins + ' دقيقة' : '✅ لا يوجد تأخير';
+    } else document.getElementById('stat-delay').textContent = '--';
+  } catch(e) {}
+}
+
+function format12(isoStr) {
+  if (!isoStr) return '--';
+  return new Date(isoStr).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+// ==================== GPS ====================
+function getGPS() {
+  const dot = document.getElementById('gps-dot');
+  const text = document.getElementById('gps-text');
+  dot.className = 'gps-dot gps-loading';
+  text.textContent = 'جاري تحديد الموقع...';
+  GPS_DATA = { lat: null, lng: null, name: null };
+  GEO_ZONE_OK = null;
+  if (!navigator.geolocation) { dot.className = 'gps-dot gps-err'; text.textContent = 'الموقع غير متاح على هذا الجهاز'; GEO_ZONE_OK = true; return; }
+  navigator.geolocation.getCurrentPosition(
+    async pos => {
+      GPS_DATA.lat = pos.coords.latitude; GPS_DATA.lng = pos.coords.longitude;
+      dot.className = 'gps-dot gps-ok';
+      text.textContent = 'جاري تحديد اسم الموقع...';
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${GPS_DATA.lat}&lon=${GPS_DATA.lng}&format=json&accept-language=ar`);
+        const j = await res.json();
+        GPS_DATA.name = j.display_name ? j.display_name.split(',').slice(0,3).join('، ') : 'موقع محدد';
+        text.textContent = GPS_DATA.name;
+      } catch { GPS_DATA.name = `${GPS_DATA.lat.toFixed(4)}, ${GPS_DATA.lng.toFixed(4)}`; text.textContent = GPS_DATA.name; }
+      checkGeoZone();
+    },
+    () => { dot.className = 'gps-dot gps-err'; text.textContent = 'تعذّر تحديد الموقع — اضغط ↻ للمحاولة'; GEO_ZONE_OK = false; checkGeoZone(); },
+    { timeout: 12000, enableHighAccuracy: true }
+  );
+}
+
+// ==================== BIO / RECORD ====================
+async function recBio(type) {
+  const now = serverNow();
+  if (checkHoliday(now, SETTINGS)) { showToast('اليوم عطلة — لا يمكن التسجيل', 'error'); return; }
+
+  // FEATURE 4: Geo zone enforcement
+  if (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled && GEO_ZONE_OK === false) {
+    showToast('أنت خارج نطاق الموقع المسموح به', 'error'); return;
+  }
+  if (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled && GEO_ZONE_OK === null) {
+    showToast('جاري تحديد موقعك — انتظر لحظة', 'info'); return;
+  }
+
+  const [sSnap, empSnap, offSnap, todaySnapEarly] = await Promise.all([
+    DB.ref(`companies/${COMPANY_ID}/settings`).once('value'),
+    DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value'),
+    DB.ref('.info/serverTimeOffset').once('value'),
+    DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value')
+  ]);
+  SETTINGS = sSnap.val() || {};
+  const empData = empSnap.val() || {};
+  if (empData.schedule) EMP.schedule = empData.schedule;
+  SERVER_TIME_OFFSET = offSnap.val() || 0;
+  const freshNow = serverNow();
+  const todayKey = freshNow.toISOString().split('T')[0];
+  let todayData = todaySnapEarly.val() || {};
+  if (todayData.dateKey && todayData.dateKey !== todayKey) { await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).remove(); todayData = {}; }
+  const schedule = getEmpSchedule();
+  const ci = schedule.checkIn; const co = schedule.checkOut;
+  const nm = freshNow.getHours() * 60 + freshNow.getMinutes();
+  if (type === 'in' && !(nm >= timeToMins(ci.from) && nm <= timeToMins(ci.to))) { showToast('ليس وقت تسجيل الحضور حالياً', 'error'); return; }
+  if (type === 'out' && !(nm >= timeToMins(co.from) && nm <= timeToMins(co.to))) { showToast('ليس وقت تسجيل الانصراف حالياً', 'error'); return; }
+  const empSnap2 = await DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value');
+  if (!empSnap2.exists() || empSnap2.val().status !== 'approved') { showToast('حسابك غير مفعّل', 'error'); localStorage.removeItem('ap_emp'); location.reload(); return; }
+  if (type === 'in' && todayData.checkIn) { showToast('سجّلت حضورك مسبقاً اليوم', 'error'); return; }
+  if (type === 'out' && todayData.checkOut) { showToast('سجّلت انصرافك مسبقاً اليوم', 'error'); return; }
+
+  const fpIcon = document.getElementById('fp-icon');
+  fpIcon.classList.add('scanning');
+  try {
+    await verifyBio();
+    fpIcon.classList.remove('scanning'); fpIcon.innerHTML = '✅';
+    setTimeout(() => { fpIcon.innerHTML = '🫆'; }, 2000);
+  } catch(e) {
+    fpIcon.classList.remove('scanning');
+    if (e.name === 'DeviceReplaced') { showToast('تم استبدال جهازك — يُعاد تحميل التطبيق', 'error'); setTimeout(() => location.reload(), 2500); }
+    else if (e.name === 'NotAllowedError') { showReBioBanner(); }
+    else { showToast('فشل التحقق من البصمة', 'error'); }
+    return;
+  }
+
+  showLoading(type === 'in' ? 'جاري تسجيل الحضور...' : 'جاري تسجيل الانصراف...');
+  try {
+    const isoNow = freshNow.toISOString();
+    // FEATURE 2: Calculate delay for check-in
+    let delayMins = 0;
+    if (type === 'in') {
+      const ciFromMins = timeToMins(ci.from);
+      delayMins = Math.max(0, nm - ciFromMins);
+    }
+    await DB.ref(`companies/${COMPANY_ID}/records`).push({
+      empId: EMP.id, empName: EMP.name, type, timestamp: isoNow,
+      lat: GPS_DATA.lat, lng: GPS_DATA.lng, locationName: GPS_DATA.name || '',
+      locStatus: 'pending', warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
+      delayMins
+    });
+    const todayUpdate = { dateKey: todayKey, empId: EMP.id, empName: EMP.name, warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName };
+    if (type === 'in') { todayUpdate.checkIn = isoNow; todayUpdate.locationName = GPS_DATA.name || ''; todayUpdate.delayMins = delayMins; }
+    else { todayUpdate.checkOut = isoNow; }
+    await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).update(todayUpdate);
+    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
+      type: type === 'in' ? 'checkin' : 'checkout', empId: EMP.id, empName: EMP.name,
+      message: `${EMP.name} سجّل ${type === 'in' ? 'حضوره' : 'انصرافه'} الساعة ${format12(isoNow)}${type === 'in' && delayMins > 0 ? ` (تأخير ${delayMins} د)` : ''}`,
+      timestamp: isoNow, read: false
+    });
+    hideLoading();
+    showToast(type === 'in' ? '✅ تم تسجيل الحضور' : '🚪 تم تسجيل الانصراف', 'success');
+    await loadWinStatus(); await loadTodayStats(); await loadMonthlyDelay();
+  } catch(e) { hideLoading(); showToast('خطأ في التسجيل: ' + e.message, 'error'); }
+}
+
+async function verifyBio() {
+  if (!CRED_ID) throw { name: 'NotAllowedError' };
+  const empSnap = await DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value');
+  const empData = empSnap.val();
+  if (empData) {
+    if (empData.credId && empData.credId !== CRED_ID) { localStorage.removeItem('ap_emp'); localStorage.removeItem('ap_cred_' + EMP.id); throw { name: 'DeviceReplaced' }; }
+    if (empData.deviceFingerprint && empData.deviceFingerprint !== getDeviceFingerprint()) { localStorage.removeItem('ap_emp'); localStorage.removeItem('ap_cred_' + EMP.id); throw { name: 'DeviceReplaced' }; }
+  }
+  const challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+  const credIdBytes = Uint8Array.from(atob(CRED_ID), c => c.charCodeAt(0));
+  await navigator.credentials.get({ publicKey: { challenge, allowCredentials: [{ id: credIdBytes, type: 'public-key' }], userVerification: 'required', timeout: 30000 } });
+}
+
+function showReBioBanner() { document.getElementById('re-bio-banner').style.display = 'block'; }
+
+async function doReBioReg() {
+  try {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge, rp: { name: 'نظام الحضور', id: location.hostname },
+        user: { id: Uint8Array.from(EMP.id, c => c.charCodeAt(0)), name: EMP.empId, displayName: EMP.name },
+        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        timeout: 60000
+      }
+    });
+    const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+    CRED_ID = credIdB64;
+    localStorage.setItem('ap_cred_' + EMP.id, credIdB64);
+    await DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).update({ credId: credIdB64 });
+    document.getElementById('re-bio-banner').style.display = 'none';
+    showToast('تم إعادة تسجيل البصمة بنجاح', 'success');
+  } catch(e) { showToast('فشل إعادة التسجيل', 'error'); }
+}
+
+// ==================== FEATURE 5: MISSIONS (الزمنيات) ====================
+async function checkActiveMissions() {
+  try {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const today = serverNow().toISOString().split('T')[0];
+    let activeMission = null;
+    snap.forEach(c => {
+      const m = c.val();
+      if (!m) return;
+      if ((m.status === 'assigned' || m.status === 'started') && m.date === today) activeMission = { key: c.key, ...m };
+    });
+    const banner = document.getElementById('active-mission-banner');
+    if (activeMission) {
+      banner.style.display = 'block';
+      document.getElementById('active-mission-info').innerHTML =
+        `<b>${activeMission.name || 'مهمة'}</b><br>${activeMission.location ? '📍 ' + activeMission.location + '<br>' : ''}⏰ ${toArabicTime12(activeMission.startTime)} — ${toArabicTime12(activeMission.endTime)}<br>الحالة: ${activeMission.status === 'started' ? '🟢 جارية' : '⏳ بانتظار البدء'}`;
+      // Allow biometric when there's an active started mission (override geo zone)
+      if (activeMission.status === 'started') GEO_ZONE_OK = true;
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+async function loadMissionsPage() {
+  const container = document.getElementById('missions-in-leave');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text2)"><div class="spinner" style="margin:0 auto"></div></div>';
+  try {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const missions = [];
+    snap.forEach(c => missions.push({ key: c.key, ...c.val() }));
+    missions.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    if (!missions.length) { container.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div><p>لا توجد زمنيات مسندة إليك</p></div>'; return; }
+    container.innerHTML = '';
+    const today = serverNow().toISOString().split('T')[0];
+    for (const m of missions) {
+      const card = document.createElement('div');
+      const isActive = (m.status === 'assigned' || m.status === 'started') && m.date === today;
+      card.className = 'mission-card' + (isActive ? ' active-mission' : '');
+      const statusLabel = { assigned: '⏳ بانتظار البدء', started: '🟢 جارية الآن', completed: '✅ مكتملة', cancelled: '❌ ملغاة' };
+      const statusClass = { assigned: 'ms-pending', started: 'ms-started', completed: 'ms-completed', cancelled: 'ms-completed' };
+      const canStart = m.status === 'assigned' && m.date === today;
+      const canEnd = m.status === 'started' && m.date === today;
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div class="mission-title">📋 ${m.name || 'مهمة'}</div>
+          <span class="mission-status-badge ${statusClass[m.status]||'ms-pending'}">${statusLabel[m.status]||m.status}</span>
+        </div>
+        <div class="mission-meta">
+          ${m.location ? '📍 ' + m.location + '<br>' : ''}
+          📅 التاريخ: ${m.date || '--'}<br>
+          ⏰ الوقت: ${toArabicTime12(m.startTime)} — ${toArabicTime12(m.endTime)}
+          ${m.description ? '<br>📝 ' + m.description : ''}
+        </div>
+        ${m.startedAt ? `<div style="font-size:12px;color:var(--green);margin-top:6px">▶️ بدأت: ${format12(m.startedAt)}</div>` : ''}
+        ${m.completedAt ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">⏹ انتهت: ${format12(m.completedAt)}</div>` : ''}
+        ${canStart ? `<button class="action-btn" style="margin-top:14px" onclick="startMission('${m.key}')">▶️ بدء الزمنية — تسجيل بالبصمة</button>` : ''}
+        ${canEnd ? `<button class="action-btn" style="margin-top:14px;background:linear-gradient(135deg,var(--purple),#7c3aed)" onclick="endMission('${m.key}')">⏹ إنهاء الزمنية — تسجيل بالبصمة</button>` : ''}`;
+      container.appendChild(card);
+    }
+  } catch(e) { container.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px">خطأ في التحميل</div>'; }
+}
+
+async function startMission(missionKey) {
+  showLoading('جاري التحقق من البصمة...');
+  try {
+    await verifyBio();
+    const now = serverNow().toISOString();
+    await DB.ref(`companies/${COMPANY_ID}/missions/${missionKey}`).update({ status: 'started', startedAt: now });
+    await DB.ref(`companies/${COMPANY_ID}/records`).push({
+      empId: EMP.id, empName: EMP.name, type: 'mission_start', timestamp: now,
+      lat: GPS_DATA.lat, lng: GPS_DATA.lng, locationName: GPS_DATA.name || '',
+      locStatus: 'approved', warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
+      missionKey, delayMins: 0
+    });
+    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
+      type: 'mission_start', empId: EMP.id, empName: EMP.name,
+      message: `📋 ${EMP.name} بدأ الزمنية الساعة ${format12(now)}`,
+      timestamp: now, read: false
+    });
+    hideLoading();
+    showToast('▶️ تم تسجيل بدء الزمنية بالبصمة', 'success');
+    GEO_ZONE_OK = true; // Allow fingerprint from mission location
+    loadMissionsPage(); checkActiveMissions();
+  } catch(e) {
+    hideLoading();
+    if (e.name === 'NotAllowedError') showToast('فشل التحقق من البصمة', 'error');
+    else showToast('خطأ: ' + (e.message||''), 'error');
+  }
+}
+
+async function endMission(missionKey) {
+  showLoading('جاري التحقق من البصمة...');
+  try {
+    await verifyBio();
+    const now = serverNow().toISOString();
+    await DB.ref(`companies/${COMPANY_ID}/missions/${missionKey}`).update({ status: 'completed', completedAt: now });
+    await DB.ref(`companies/${COMPANY_ID}/records`).push({
+      empId: EMP.id, empName: EMP.name, type: 'mission_end', timestamp: now,
+      lat: GPS_DATA.lat, lng: GPS_DATA.lng, locationName: GPS_DATA.name || '',
+      locStatus: 'approved', warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
+      missionKey, delayMins: 0
+    });
+    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
+      type: 'mission_end', empId: EMP.id, empName: EMP.name,
+      message: `⏹ ${EMP.name} أنهى الزمنية الساعة ${format12(now)}`,
+      timestamp: now, read: false
+    });
+    hideLoading();
+    showToast('⏹ تم تسجيل إنهاء الزمنية بالبصمة', 'success');
+    loadMissionsPage(); checkActiveMissions();
+  } catch(e) {
+    hideLoading();
+    if (e.name === 'NotAllowedError') showToast('فشل التحقق من البصمة', 'error');
+    else showToast('خطأ: ' + (e.message||''), 'error');
+  }
+}
+
+// ==================== TABS ====================
+function showTab(tab) {
+  if (tab !== 'notifs' && notifPageListener) {
+    DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).off('value', notifPageListener);
+    notifPageListener = null;
+  }
+  // Clean up partial leave listeners when leaving the leave tab
+  if (tab !== 'leave') {
+    if (window._partialLeaveListener) {
+      DB.ref(`companies/${COMPANY_ID}/todayPartialLeave/${EMP.id}`).off('value', window._partialLeaveListener);
+      window._partialLeaveListener = null;
+    }
+    if (window._partialRecordsListener && window._partialRecordsRef) {
+      window._partialRecordsRef.off('value', window._partialRecordsListener);
+      window._partialRecordsListener = null;
+      window._partialRecordsRef = null;
+    }
+  }
+  ['home','hist','excuse','leave','notifs'].forEach(t => {
+    const el = document.getElementById('main-tab-' + t);
+    if (el) el.style.display = 'none';
+    const nav = document.getElementById('nav-' + t);
+    if (nav) nav.classList.remove('active');
+  });
+  const tabEl = document.getElementById('main-tab-' + tab);
+  if (tabEl) tabEl.style.display = 'flex';
+  const navEl = document.getElementById('nav-' + tab);
+  if (navEl) navEl.classList.add('active');
+  if (tab === 'hist') loadHistory();
+  if (tab === 'excuse') loadExcusePage();
+  if (tab === 'leave') { loadLeavePage(); loadMissionsPage(); }
+  if (tab === 'notifs') loadNotifPage();
+}
+
+// ==================== HISTORY ====================
+async function loadHistory() {
+  const container = document.getElementById('main-tab-hist');
+  container.innerHTML = '<div class="page-header"><h2>📋 سجلاتي</h2></div><div class="hist-list" id="hist-list"><div style="text-align:center;padding:40px;color:var(--text2)"><div class="spinner" style="margin:0 auto"></div></div></div>';
+  try {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const list = document.getElementById('hist-list');
+    const records = [];
+    snap.forEach(c => records.push({ key: c.key, ...c.val() }));
+    records.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    if (!records.length) { list.innerHTML = '<div class="empty-state"><div class="es-icon">📭</div><p>لا توجد سجلات بعد</p></div>'; return; }
+    const groups = {};
+    records.forEach(r => {
+      const d = new Date(r.timestamp).toLocaleDateString('ar-SA', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+      if (!groups[d]) groups[d] = [];
+      groups[d].push(r);
+    });
+    list.innerHTML = '';
+    const typeLabel = { in: 'حضور', out: 'انصراف', mission_start: 'بدء زمنية', mission_end: 'إنهاء زمنية' };
+    const typeClass = { in: 'rec-in', out: 'rec-out', mission_start: 'rec-mission', mission_end: 'rec-mission' };
+    for (const [date, recs] of Object.entries(groups)) {
+      const dg = document.createElement('div');
+      dg.className = 'hist-date-group'; dg.textContent = date;
+      list.appendChild(dg);
+      recs.forEach(r => {
+        const el = document.createElement('div');
+        el.className = 'hist-record';
+        const delayStr = r.type === 'in' && r.delayMins > 0 ? `<div class="rec-delay">⚠️ تأخير ${r.delayMins} دقيقة</div>` : '';
+        el.innerHTML = `<span class="rec-type-badge ${typeClass[r.type]||'rec-in'}">${typeLabel[r.type]||r.type}</span><div class="rec-info"><div class="rec-time">${format12(r.timestamp)}</div><div class="rec-loc">${r.locationName||'موقع غير محدد'}</div>${delayStr}</div>`;
+        list.appendChild(el);
+      });
+    }
+  } catch(e) { document.getElementById('hist-list').innerHTML = '<div class="empty-state"><p>خطأ في التحميل</p></div>'; }
+}
+
+// ==================== EXCUSE ====================
+async function loadExcusePage() {
+  const container = document.getElementById('main-tab-excuse');
+  container.innerHTML = `
+  <div class="excuse-hero"><div style="font-size:40px;text-align:center">📝</div><h2 style="font-size:20px;font-weight:900;color:var(--gold);text-align:center;margin-top:8px">تسجيل عذر</h2></div>
+  <div class="excuse-content">
+    <div class="today-status-card"><div class="ts-label">حالة اليوم</div><div class="ts-value" id="excuse-ts-val">جاري التحميل...</div></div>
+    <div class="excuse-form">
+      <h3>إرسال عذر جديد</h3>
+      <div class="form-group"><label class="form-label">نوع العذر</label>
+        <div class="radio-group">
+          <div class="radio-opt"><input type="radio" name="excuse-type" id="et1" value="no_checkin"><label for="et1">❌ لم أسجل حضوراً</label></div>
+          <div class="radio-opt"><input type="radio" name="excuse-type" id="et2" value="no_checkout"><label for="et2">🚪 سجلت حضوراً ولم أسجل انصرافاً</label></div>
+          <div class="radio-opt"><input type="radio" name="excuse-type" id="et3" value="no_both"><label for="et3">⚠️ لم أسجل الحضور ولا الانصراف</label></div>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">سبب العذر</label><textarea class="form-textarea" id="excuse-reason" placeholder="اكتب سبب عذرك هنا..."></textarea></div>
+      <button class="action-btn" onclick="submitExcuse()">📤 إرسال العذر للمدير</button>
+    </div>
+    <div><div class="stats-title" style="padding:8px 0;font-size:14px">الأعذار السابقة</div><div id="prev-excuses-list" class="prev-excuses-list"></div></div>
+  </div>`;
+  try {
+    const todaySnap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
+    const td = todaySnap.val() || {};
+    let tsText = 'غائب', tsColor = 'var(--red)';
+    if (td.checkIn && td.checkOut) { tsText = 'حاضر — سجّل حضوراً وانصرافاً'; tsColor = 'var(--green)'; }
+    else if (td.checkIn && !td.checkOut) { tsText = 'حضر بدون تسجيل انصراف'; tsColor = 'var(--gold)'; }
+    document.getElementById('excuse-ts-val').textContent = tsText;
+    document.getElementById('excuse-ts-val').style.color = tsColor;
+    const excSnap = await DB.ref(`companies/${COMPANY_ID}/excuses`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const excList = document.getElementById('prev-excuses-list');
+    const excuses = [];
+    excSnap.forEach(c => excuses.push({ key: c.key, ...c.val() }));
+    excuses.sort((a, b) => (b.createdAt||0) - (a.createdAt||0));
+    if (!excuses.length) { excList.innerHTML = '<div class="empty-state" style="padding:20px"><p>لا توجد أعذار سابقة</p></div>'; return; }
+    excList.innerHTML = '';
+    excuses.forEach(ex => {
+      const el = document.createElement('div');
+      el.className = 'excuse-item';
+      const typeMap = { no_checkin: '❌ لم أسجل حضوراً', no_checkout: '🚪 لم أسجل انصرافاً', no_both: '⚠️ لم أسجل الحضور ولا الانصراف' };
+      const stMap = { pending: 'status-pending', approved: 'status-approved', rejected: 'status-rejected' };
+      const stText = { pending: '⏳ بانتظار المراجعة', approved: '✅ مقبول', rejected: '❌ مرفوض' };
+      el.innerHTML = `<div class="excuse-item-head"><span class="excuse-item-type">${typeMap[ex.type]||ex.type}</span><span class="${stMap[ex.status]||''}">${stText[ex.status]||ex.status}</span></div><div class="excuse-item-msg">${ex.reason||''}</div>`;
+      excList.appendChild(el);
+    });
+  } catch(e) {}
+}
+
+async function submitExcuse() {
+  const type = document.querySelector('input[name="excuse-type"]:checked');
+  const reason = document.getElementById('excuse-reason').value.trim();
+  if (!type) { showToast('اختر نوع العذر', 'error'); return; }
+  if (!reason) { showToast('اكتب سبب العذر', 'error'); return; }
+  showLoading('جاري إرسال العذر...');
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/excuses`).push({
+      empId: EMP.id, empName: EMP.name,
+      warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
+      type: type.value, reason, date: serverNow().toISOString().split('T')[0],
+      status: 'pending', createdAt: Date.now()
+    });
+    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
+      type: 'excuse_new', empId: EMP.id, empName: EMP.name,
+      message: `📝 ${EMP.name} أرسل عذراً`,
+      timestamp: serverNow().toISOString(), read: false
+    });
+    hideLoading();
+    showToast('تم إرسال العذر بنجاح', 'success');
+    loadExcusePage();
+  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+}
+
+// ==================== FEATURE 3: LEAVE WITH TYPES ====================
+async function loadLeavePage() {
+  const container = document.getElementById('main-tab-leave');
+  container.innerHTML = `
+  <div style="padding:12px 16px 0">
+    <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:8px">📋 المهام المُسندة إليك</div>
+    <div id="missions-in-leave"><div style="text-align:center;padding:20px;color:var(--text2)"><div class="spinner" style="margin:0 auto"></div></div></div>
+  </div>
+  <!-- بطاقة بصمة الإجازة الزمنية — فوق كل شيء -->
+  <div id="partial-fp-card" style="display:none;padding:0 16px 4px"></div>
+  <div class="leave-hero">
+    <div style="font-size:48px;text-align:center">🌴</div>
+    <h2 style="font-size:20px;font-weight:900;color:var(--purple);text-align:center;margin-top:8px">طلب إجازة</h2>
+  </div>
+  <div class="leave-content">
+    <div>
+      <div class="stats-title" style="font-size:14px;padding:4px 0">الإجازات المقدّمة</div>
+      <div id="my-leaves-list" class="prev-excuses-list"></div>
+    </div>
+    <div class="leave-form">
+      <h3>تقديم طلب إجازة</h3>
+      <div class="form-group">
+        <label class="form-label">تاريخ الإجازة</label>
+        <input class="form-input" type="date" id="leave-date" min="${new Date(Date.now() + SERVER_TIME_OFFSET + 86400000).toISOString().split('T')[0]}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">نوع الإجازة</label>
+        <select class="form-input form-select" id="leave-type" onchange="togglePartialFields()">
+          <option value="paid">💚 إجازة مدفوعة الأجر</option>
+          <option value="unpaid">🔴 إجازة غير مدفوعة الأجر</option>
+          <option value="sick">🏥 إجازة مرضية</option>
+          <option value="emergency">🚨 إجازة طارئة</option>
+          <option value="partial">⏱ زمنية (ساعات)</option>
+        </select>
+      </div>
+      <div id="partial-fields" style="display:none;background:var(--surface);border-radius:12px;padding:12px;border:1px solid var(--blue)">
+        <div style="font-size:12px;color:var(--blue);font-weight:700;margin-bottom:10px">⏱ تفاصيل الإجازة الزمنية</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="form-group">
+            <label class="form-label">من الساعة</label>
+            <input class="form-input" type="time" id="leave-from-time">
+          </div>
+          <div class="form-group">
+            <label class="form-label">إلى الساعة</label>
+            <input class="form-input" type="time" id="leave-to-time">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">💡 بصمك قبل وبعد الإجازة يُسجَّل بشكل طبيعي</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">سبب الإجازة</label>
+        <textarea class="form-textarea" id="leave-reason" placeholder="اكتب سبب الإجازة..."></textarea>
+      </div>
+      <button class="action-btn" onclick="submitLeave()">📤 تقديم طلب الإجازة</button>
+    </div>
+  </div>`;
+  // ── local date (not UTC) to match what the user typed in the date picker ──
+  const _now = serverNow();
+  const todayStr = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
+
+  // ── Two real-time listeners: approval + fingerprint records ──
+  if (window._partialLeaveListener) {
+    DB.ref(`companies/${COMPANY_ID}/todayPartialLeave/${EMP.id}`).off('value', window._partialLeaveListener);
+    window._partialLeaveListener = null;
+  }
+  if (window._partialRecordsListener && window._partialRecordsRef) {
+    window._partialRecordsRef.off('value', window._partialRecordsListener);
+    window._partialRecordsListener = null;
+    window._partialRecordsRef = null;
+  }
+
+  let _approvalData = null, _recordsData = null;
+
+  function renderPartialCard() {
+    const pl  = _approvalData;
+    const plR = _recordsData || {};
+    const card = document.getElementById('partial-fp-card');
+    if (!card) return;
+    if (!pl || pl.date !== todayStr || pl.status !== 'approved' || !pl.fromTime || !pl.toTime) {
+      card.style.display = 'none'; return;
+    }
+    const n = serverNow();
+    const nm = n.getHours() * 60 + n.getMinutes();
+    const plFrom = pl.fromTime.split(':').reduce((a,v,i)=>a+(i===0?+v*60:+v),0);
+    const plTo   = pl.toTime.split(':').reduce((a,v,i)=>a+(i===0?+v*60:+v),0);
+    const beforeWin = nm < plFrom, duringWin = nm >= plFrom && nm <= plTo, afterWin = nm > plTo;
+    const hasDep = !!plR.departureAt, hasRet = !!plR.returnAt;
+
+    // Geo zone check (same rules as main attendance)
+    const hasGz = (WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false)
+               || (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled);
+    const geoBlocked = hasGz && GEO_ZONE_OK === false;
+    const geoPending = hasGz && GEO_ZONE_OK === null;
+
+    let phaseMsg, phaseClass;
+    if (beforeWin) {
+      phaseMsg  = hasDep ? `✅ تم تسجيل مغادرتك — بانتظار انتهاء الإجازة ${pl.toTime}` : `⏳ بصّم مغادرتك قبل الإجازة — تبدأ ${pl.fromTime}`;
+      phaseClass = 'win-msg success';
+    } else if (duringWin) {
+      phaseMsg = `⏱ أنت في إجازتك الزمنية الآن (${pl.fromTime} — ${pl.toTime})`;
+      phaseClass = 'win-msg warning';
+    } else {
+      phaseMsg  = hasRet ? `✅ اكتملت الإجازة الزمنية — تم تسجيل المغادرة والعودة` : `⏳ بصّم عودتك — انتهت الإجازة ${pl.toTime}`;
+      phaseClass = hasRet ? 'win-msg success' : 'win-msg warning';
+    }
+
+    // fp-btn active state
+    const depActive = beforeWin && !hasDep && !geoBlocked && !geoPending;
+    const retActive = afterWin  && !hasRet && !geoBlocked && !geoPending;
+
+    // Geo zone message
+    let geoHtml = '';
+    if (geoBlocked) {
+      geoHtml = `<div style="text-align:center;padding:10px 14px;background:rgba(239,68,68,.12);border-radius:10px;color:var(--red);font-size:13px;font-weight:600;margin-bottom:12px">📍 أنت خارج نطاق موقع العمل — لا يمكن تسجيل البصمة</div>`;
+    } else if (geoPending) {
+      geoHtml = `<div style="text-align:center;padding:10px 14px;background:rgba(245,166,35,.12);border-radius:10px;color:var(--gold);font-size:13px;font-weight:600;margin-bottom:12px">📡 جاري تحديد موقعك...</div>`;
+    }
+
+    // fp icons (circular, styled like home-page fp-btn but smaller)
+    const mkIcon = (id, icon, active, done, label, type) => `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+        <div id="${id}"
+          style="width:72px;height:72px;border-radius:50%;background:var(--surface);border:2px solid ${done?'var(--green)':active?(type==='departure'?'#22c55e':'var(--red)'):'var(--border)'};font-size:34px;display:flex;align-items:center;justify-content:center;position:relative;cursor:${active?'pointer':'default'};opacity:${active||done?'1':'0.35'};transition:all .3s"
+          ${active ? `onclick="recPartialLeave('${type}')"` : ''}>
+          ${icon}
+        </div>
+        <div style="font-size:12px;color:${done?'var(--green)':'var(--text2)'};font-weight:${done?'700':'400'}">${label}</div>
+      </div>`;
+
+    const depHtml = mkIcon('partial-fp-depart', hasDep?'✅':'🫆', depActive, hasDep, hasDep?'✅ تم المغادرة':'🚶 المغادرة', 'departure');
+    const retHtml = mkIcon('partial-fp-return', hasRet?'✅':'🫆', retActive, hasRet, hasRet?'✅ تم العودة':'🔄 العودة', 'return');
+
+    card.style.display = 'block';
+    card.innerHTML = `
+      <div style="background:var(--card);border:2px solid var(--blue);border-radius:var(--radius-card);padding:16px">
+        <div style="font-size:14px;font-weight:700;color:var(--blue);margin-bottom:10px">⏱ إجازة زمنية مُعتمدة اليوم — ${pl.fromTime} إلى ${pl.toTime}</div>
+        <div class="${phaseClass}" style="margin-bottom:14px;font-size:13px">${phaseMsg}</div>
+        ${geoHtml}
+        <div style="display:flex;gap:28px;justify-content:center;margin-bottom:14px">${depHtml}${retHtml}</div>
+        <div style="font-size:11px;color:var(--text2);text-align:center">💡 بصمة المغادرة قبل الإجازة وبصمة العودة بعدها ضرورية لاعتبار الإجازة مقبولة</div>
+      </div>`;
+  }
+
+  window._partialLeaveListener = DB.ref(`companies/${COMPANY_ID}/todayPartialLeave/${EMP.id}`).on('value', snap => {
+    _approvalData = snap.val();
+    renderPartialCard();
+  });
+
+  const _plRecRef = DB.ref(`companies/${COMPANY_ID}/partialLeaveRecords/${EMP.id}/${todayStr}`);
+  window._partialRecordsRef = _plRecRef;
+  window._partialRecordsListener = _plRecRef.on('value', snap => {
+    _recordsData = snap.val();
+    renderPartialCard();
+  });
+
+  try {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const list = document.getElementById('my-leaves-list');
+    const leaves = [];
+    snap.forEach(c => leaves.push({ key: c.key, ...c.val() }));
+    leaves.sort((a, b) => (b.createdAt||0) - (a.createdAt||0));
+
+    const recent = leaves.slice(0, 8);
+    if (!recent.length) { list.innerHTML = '<div class="empty-state" style="padding:20px"><p>لا توجد إجازات مقدّمة</p></div>'; return; }
+    list.innerHTML = '';
+    const leaveTypeLabel = { paid: '💚 مدفوعة', unpaid: '🔴 غير مدفوعة', sick: '🏥 مرضية', emergency: '🚨 طارئة', partial: '⏱ زمنية' };
+    const leaveTypeCls = { paid: 'leave-paid', unpaid: 'leave-unpaid', sick: 'leave-sick', emergency: 'leave-emergency', partial: 'leave-partial' };
+    recent.forEach(l => {
+      const el = document.createElement('div');
+      el.className = 'leave-item';
+      const stMap = { pending: 'status-pending', approved: 'status-approved', rejected: 'status-rejected' };
+      const stText = { pending: '⏳ بانتظار', approved: '✅ مقبولة', rejected: '❌ مرفوضة' };
+      const lt = l.leaveType || 'paid';
+      const timeRow = lt === 'partial' && l.fromTime && l.toTime ? `<div style="font-size:12px;color:var(--blue);margin-top:4px">⏰ من ${l.fromTime} إلى ${l.toTime}</div>` : '';
+      el.innerHTML = `<div class="leave-item-head"><span class="leave-item-date">${l.date||'--'}</span><span class="${stMap[l.status]||''}" style="font-size:12px;font-weight:700">${stText[l.status]||l.status}</span></div><span class="leave-type-badge ${leaveTypeCls[lt]||'leave-paid'}">${leaveTypeLabel[lt]||lt}</span>${timeRow}<div class="leave-item-reason">${l.reason||''}</div>`;
+      list.appendChild(el);
+    });
+  } catch(e) {}
+}
+
+function toHijri(dateStr) {
+  try {
+    return new Date(dateStr).toLocaleDateString('ar-SA-u-ca-islamic', { year: 'numeric', month: 'long', day: 'numeric' });
+  } catch(e) { return ''; }
+}
+
+function togglePartialFields() {
+  const lt = document.getElementById('leave-type').value;
+  document.getElementById('partial-fields').style.display = lt === 'partial' ? 'block' : 'none';
+  const today = new Date(Date.now() + SERVER_TIME_OFFSET).toISOString().split('T')[0];
+  const tomorrow = new Date(Date.now() + SERVER_TIME_OFFSET + 86400000).toISOString().split('T')[0];
+  document.getElementById('leave-date').min = lt === 'partial' ? today : tomorrow;
+  if (lt !== 'partial' && document.getElementById('leave-date').value < tomorrow) {
+    document.getElementById('leave-date').value = '';
+  }
+}
+
+async function submitLeave() {
+  const date = document.getElementById('leave-date').value;
+  const reason = document.getElementById('leave-reason').value.trim();
+  const leaveType = document.getElementById('leave-type').value;
+  if (!date) { showToast('اختر تاريخ الإجازة', 'error'); return; }
+  if (!reason) { showToast('اكتب سبب الإجازة', 'error'); return; }
+
+  const isPartial = leaveType === 'partial';
+  let fromTime = '', toTime = '';
+  if (isPartial) {
+    fromTime = document.getElementById('leave-from-time').value;
+    toTime = document.getElementById('leave-to-time').value;
+    if (!fromTime || !toTime) { showToast('حدد وقت البداية والنهاية للإجازة الزمنية', 'error'); return; }
+    if (fromTime >= toTime) { showToast('وقت البداية يجب أن يكون قبل وقت النهاية', 'error'); return; }
+  } else {
+    const snap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).once('value');
+    let dup = false;
+    snap.forEach(c => { if (c.val().date === date && c.val().leaveType !== 'partial') dup = true; });
+    if (dup) { showToast('لديك طلب إجازة بهذا التاريخ مسبقاً', 'error'); return; }
+  }
+
+  try {
+    showLoading('جاري إرسال الطلب...');
+    const leaveTypeLabel = { paid: 'مدفوعة', unpaid: 'غير مدفوعة', sick: 'مرضية', emergency: 'طارئة', partial: 'زمنية' };
+    const record = {
+      empId: EMP.id, empName: EMP.name,
+      warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
+      date, reason, leaveType, status: 'pending',
+      isPartial, createdAt: Date.now() + SERVER_TIME_OFFSET
+    };
+    if (isPartial) {
+      record.fromTime = fromTime;
+      record.toTime = toTime;
+    }
+    await DB.ref(`companies/${COMPANY_ID}/leaves`).push(record);
+    const timeInfo = isPartial ? ` (${fromTime} — ${toTime})` : '';
+    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
+      type: 'leave_new', empId: EMP.id, empName: EMP.name,
+      message: `🌴 ${EMP.name} طلب إجازة ${leaveTypeLabel[leaveType]||''} بتاريخ ${date}${timeInfo}`,
+      timestamp: serverNow().toISOString(), read: false
+    });
+    hideLoading();
+    showToast('تم تقديم طلب الإجازة', 'success');
+    loadLeavePage();
+  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+}
+
+// ==================== PARTIAL LEAVE FINGERPRINT ====================
+async function recPartialLeave(type) {
+  // Geo zone check — same rules as main attendance
+  const hasGz = (WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false)
+             || (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled);
+  if (hasGz && GEO_ZONE_OK === false) { showToast('أنت خارج نطاق موقع العمل', 'error'); return; }
+  if (hasGz && GEO_ZONE_OK === null)  { showToast('جاري تحديد موقعك — انتظر لحظة', 'info'); return; }
+
+  // Scanning animation on the pressed icon
+  const btnId = type === 'departure' ? 'partial-fp-depart' : 'partial-fp-return';
+  const fpBtn = document.getElementById(btnId);
+  if (fpBtn) {
+    fpBtn.style.borderColor = 'var(--gold)';
+    fpBtn.style.boxShadow = '0 0 0 4px rgba(245,166,35,.25)';
+    fpBtn.innerHTML = '🫆';
+  }
+
+  try {
+    await verifyBio();
+    if (fpBtn) {
+      fpBtn.style.borderColor = 'var(--green)';
+      fpBtn.style.boxShadow = '';
+      fpBtn.innerHTML = '✅';
+    }
+  } catch(e) {
+    if (fpBtn) { fpBtn.style.borderColor = 'var(--border)'; fpBtn.style.boxShadow = ''; }
+    if (e.name === 'DeviceReplaced') { showToast('تم استبدال جهازك — يُعاد تحميل التطبيق', 'error'); setTimeout(() => location.reload(), 2500); }
+    else if (e.name === 'NotAllowedError') showReBioBanner();
+    else showToast('فشل التحقق من البصمة', 'error');
+    return;
+  }
+
+  showLoading(type === 'departure' ? 'جاري تسجيل بصمة المغادرة...' : 'جاري تسجيل بصمة العودة...');
+  try {
+    const now = serverNow();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const field = type === 'departure' ? 'departureAt' : 'returnAt';
+    await DB.ref(`companies/${COMPANY_ID}/partialLeaveRecords/${EMP.id}/${dateStr}`).update({
+      [field]: now.toISOString(),
+      empId: EMP.id, empName: EMP.name, date: dateStr
+    });
+    hideLoading();
+    showToast(type === 'departure' ? '✅ تم تسجيل بصمة المغادرة' : '✅ تم تسجيل بصمة العودة', 'success');
+  } catch(e) {
+    hideLoading();
+    showToast('خطأ: ' + e.message, 'error');
+  }
+}
+
+// ==================== NOTIFICATIONS ====================
+function loadNotifBadge() {
+  if (notifListener) DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).off('value', notifListener);
+  notifListener = DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).on('value', snap => {
+    let count = 0;
+    snap.forEach(c => { const v = c.val(); if (v && typeof v === 'object' && !v.read) count++; });
+    const badge = document.getElementById('notif-badge');
+    const navBadge = document.getElementById('nav-notif-badge');
+    if (count > 0) { badge.style.display = 'flex'; badge.textContent = count; navBadge.style.display = 'flex'; navBadge.textContent = count; }
+    else { badge.style.display = 'none'; navBadge.style.display = 'none'; }
+  });
+}
+
+function loadNotifPage() {
+  const container = document.getElementById('main-tab-notifs');
+  container.innerHTML = '<div class="page-header"><h2>🔔 الإشعارات</h2></div><div class="notif-list" id="notif-list" style="padding-bottom:90px"><div style="text-align:center;padding:40px;color:var(--text2)"><div class="spinner" style="margin:0 auto"></div></div></div>';
+  if (notifPageListener) { DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).off('value', notifPageListener); notifPageListener = null; }
+  const markedRead = new Set();
+  notifPageListener = DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).on('value', async snap => {
+    const list = document.getElementById('notif-list');
+    if (!list) return;
+    const notifs = [];
+    const toDelete = {};
+    snap.forEach(c => { const v = c.val(); if (!v || typeof v !== 'object') { toDelete[c.key] = null; return; } notifs.push({ key: c.key, ...v }); });
+    if (Object.keys(toDelete).length) DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).update(toDelete).catch(() => {});
+    notifs.sort((a, b) => new Date(b.timestamp||0) - new Date(a.timestamp||0));
+    if (!notifs.length) { list.innerHTML = '<div class="empty-state"><div class="es-icon">🔕</div><p>لا توجد إشعارات</p></div>'; return; }
+    list.innerHTML = '';
+    const typeIcon = { approved:'✅', rejected:'❌', excuse_res:'📝', leave_res:'🌴', private_msg:'💬', broadcast:'🔔', loc_rejected:'📍', checkin:'⏰', checkout:'🚪', mission_assigned:'📋' };
+    notifs.forEach(n => {
+      try {
+        const el = document.createElement('div');
+        el.className = 'notif-item' + (!n.read ? ' unread' : '') + (n.type === 'private_msg' ? ' private' : '');
+        const ts = n.timestamp ? new Date(n.timestamp).toLocaleString('ar-SA') : '';
+        const msg = String(n.message||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        el.innerHTML = `<div class="notif-head"><div style="display:flex;gap:8px;align-items:center"><span class="notif-icon-type">${typeIcon[n.type]||'🔔'}</span>${n.type==='private_msg'?'<span style="font-size:11px;color:var(--purple);font-weight:700">رسالة خاصة من المدير</span>':''}</div><span class="notif-date">${ts}</span></div><div class="notif-msg">${msg}</div>`;
+        list.appendChild(el);
+      } catch(e2) {}
+    });
+    const updates = {};
+    notifs.forEach(n => { if (!n.read && !markedRead.has(n.key)) { updates[n.key+'/read'] = true; markedRead.add(n.key); } });
+    if (Object.keys(updates).length) await DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).update(updates).catch(() => {});
+  });
+}
+
+// ==================== LOGOUT ====================
+function doLogout() {
+  if (pendingListener && EMP) DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}/status`).off('value', pendingListener);
+  if (notifListener && EMP) DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).off('value', notifListener);
+  if (notifPageListener && EMP) DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).off('value', notifPageListener);
+  if (todayChangeListener && EMP) DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).off('value', todayChangeListener);
+  if (clockInterval) clearInterval(clockInterval);
+  localStorage.removeItem('ap_wh');
+  EMP = null; SETTINGS = null;
+  showToast('تم تسجيل الخروج', 'info');
+  loadWarehouses();
+}
+
+// ==================== ACTIVATION ====================
+async function handleActivation(actToken) {
+  document.getElementById('splash-status').textContent = 'جاري التحقق من رابط التفعيل...';
+  try {
+    const tokenSnap = await DB.ref(`companies/${COMPANY_ID}/activation_tokens/${actToken}`).once('value');
+    const tokenData = tokenSnap.val();
+    if (!tokenData) { document.getElementById('splash-status').textContent = 'رابط التفعيل غير صالح — تواصل مع المدير'; document.getElementById('splash-spinner').style.display = 'none'; return; }
+    if (tokenData.used) {
+      try {
+        const savedEmp = localStorage.getItem('ap_emp');
+        if (savedEmp) {
+          const parsed = JSON.parse(savedEmp);
+          if (parsed.id === tokenData.uid) { window.history.replaceState({}, '', window.location.pathname + `?cid=${COMPANY_ID}`); loadCompanyInfo().then(restoreSession); return; }
+        }
+      } catch(_) {}
+      document.getElementById('splash-status').textContent = 'تم استخدام هذا الرابط مسبقاً — تواصل مع المدير لرابط جديد';
+      document.getElementById('splash-spinner').style.display = 'none'; return;
+    }
+    const empSnap = await DB.ref(`companies/${COMPANY_ID}/employees/${tokenData.uid}`).once('value');
+    const empData = empSnap.val();
+    if (!empData) { document.getElementById('splash-status').textContent = 'لم يُعثر على بيانات الموظف'; document.getElementById('splash-spinner').style.display = 'none'; return; }
+    ACTIVATION_TOKEN = actToken; ACTIVATION_UID = tokenData.uid;
+    localStorage.removeItem('ap_emp'); localStorage.removeItem('ap_wh');
+    Object.keys(localStorage).filter(k => k.startsWith('ap_cred_')).forEach(k => localStorage.removeItem(k));
+    document.getElementById('act-logo').textContent = COMPANY_INFO.logo || '🏭';
+    document.getElementById('act-emp-name').textContent = empData.name || '';
+    document.getElementById('act-emp-id').textContent = empData.empId || '';
+    document.getElementById('act-emp-role').textContent = empData.role || '--';
+    document.getElementById('act-emp-wh').textContent = empData.warehouseName || '--';
+    showScreen('s-activate');
+    // فحص إذا كانت هناك موافقة سابقة من المدير لهذا الجهاز
+    const bypassSnap = await DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${tokenData.uid}`).once('value');
+    const bypassData = bypassSnap.val();
+    if (bypassData && bypassData.status === 'approved') {
+      bypassApproved = true;
+      const statusEl = document.getElementById('bypass-status');
+      statusEl.style.display = 'block';
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = '✅ موافقة المدير مُفعّلة — ضع بصمتك الآن';
+    }
+  } catch(e) { document.getElementById('splash-status').textContent = 'خطأ: ' + e.message; document.getElementById('splash-spinner').style.display = 'none'; }
+}
+
+async function activateBio() {
+  const bioBtn = document.getElementById('act-bio-btn');
+  const bioStatus = document.getElementById('act-bio-status');
+  bioBtn.classList.add('scanning'); bioStatus.textContent = 'جاري التحقق...';
+  try {
+    const devFP = getDeviceFingerprint();
+    if (!bypassApproved) {
+      const fpSnap = await DB.ref(`companies/${COMPANY_ID}/employees`).orderByChild('deviceFingerprint').equalTo(devFP).once('value');
+      if (fpSnap.exists()) {
+        const others = Object.keys(fpSnap.val()).filter(k => k !== ACTIVATION_UID);
+        if (others.length > 0) { bioBtn.classList.remove('scanning'); bioStatus.style.color = 'var(--red)'; bioStatus.textContent = 'هذا الجهاز مسجّل بالفعل لموظف آخر'; document.getElementById('bypass-req-btn').style.display = 'inline-block'; return; }
+      }
+    }
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    const excludeCredentials = Object.keys(localStorage).filter(k => k.startsWith('ap_cred_')).map(k => localStorage.getItem(k)).filter(Boolean).map(b64 => ({ id: Uint8Array.from(atob(b64), c => c.charCodeAt(0)), type: 'public-key' }));
+    bioStatus.textContent = 'جاري تسجيل البصمة...';
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge, rp: { name: 'نظام الحضور', id: location.hostname },
+        user: { id: Uint8Array.from(ACTIVATION_UID, c => c.charCodeAt(0)), name: ACTIVATION_UID, displayName: document.getElementById('act-emp-name').textContent },
+        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+        excludeCredentials,
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        timeout: 60000
+      }
+    });
+    const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+    await DB.ref(`companies/${COMPANY_ID}/employees/${ACTIVATION_UID}`).update({ credId: credIdB64, deviceFingerprint: devFP, status: 'approved' });
+    if (ACTIVATION_TOKEN) await DB.ref(`companies/${COMPANY_ID}/activation_tokens/${ACTIVATION_TOKEN}`).update({ used: true });
+    if (bypassApproved) await DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}`).remove();
+    localStorage.setItem('ap_emp', JSON.stringify({ id: ACTIVATION_UID }));
+    localStorage.setItem('ap_cred_' + ACTIVATION_UID, credIdB64);
+    const snap = await DB.ref(`companies/${COMPANY_ID}/employees/${ACTIVATION_UID}`).once('value');
+    EMP = { id: ACTIVATION_UID, ...snap.val() };
+    CRED_ID = credIdB64;
+    window.history.replaceState({}, '', window.location.pathname + `?cid=${COMPANY_ID}`);
+    bioBtn.classList.remove('scanning'); bioBtn.innerHTML = '✅';
+    bioStatus.textContent = '✅ تم التفعيل — جاري التحميل...'; bioStatus.style.color = 'var(--green)';
+    setTimeout(() => setupMainScreen(), 800);
+  } catch(e) {
+    bioBtn.classList.remove('scanning'); bioStatus.style.color = 'var(--red)';
+    bioStatus.textContent = e.name === 'NotAllowedError' ? 'لم تسمح بالبصمة — اضغط مرة أخرى' : 'فشل تسجيل البصمة';
+  }
+}
+
+async function requestDeviceBypass() {
+  const btn = document.getElementById('bypass-req-btn');
+  const statusEl = document.getElementById('bypass-status');
+  btn.style.display = 'none';
+  statusEl.style.display = 'block';
+  statusEl.textContent = '⏳ جاري إرسال الطلب للمدير...';
+  const empName = document.getElementById('act-emp-name').textContent;
+  await DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}`).set({ status: 'pending', name: empName, uid: ACTIVATION_UID, timestamp: Date.now() });
+  statusEl.textContent = '📨 تم إرسال الطلب — انتظر موافقة المدير...';
+  DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}/status`).on('value', async snap => {
+    const status = snap.val();
+    if (status === 'approved') {
+      DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}/status`).off();
+      statusEl.textContent = '✅ وافق المدير — ضع بصمتك الآن';
+      statusEl.style.color = 'var(--green)';
+      document.getElementById('bypass-req-btn').style.display = 'none';
+      bypassApproved = true;
+      document.getElementById('act-bio-btn').click();
+    } else if (status === 'rejected') {
+      DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}/status`).off();
+      statusEl.textContent = '❌ رفض المدير الطلب — تواصل مع مديرك';
+      statusEl.style.color = 'var(--red)';
+    }
+  });
+}
+
+// ==================== HELPERS ====================
+function showScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+function showToast(msg, type = 'info') {
+  const tc = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type; el.textContent = msg;
+  tc.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+function showLoading(text = 'جاري التحميل...') { document.getElementById('lo-text').textContent = text; document.getElementById('loading-overlay').classList.add('active'); }
+function hideLoading() { document.getElementById('loading-overlay').classList.remove('active'); }
+
+// Boot
+window.addEventListener('DOMContentLoaded', initFirebase);
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
