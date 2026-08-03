@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>لوحة تحكم المورّد</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0c14;--card:#161b2e;--surface:#1e2438;
+  --gold:#f5a623;--gold2:#ffd27f;
+  --green:#22c55e;--red:#ef4444;--blue:#3b82f6;--purple:#a855f7;
+  --text:#e8eaf0;--text2:#8892a4;--border:#2a3050;
+  --radius-card:16px;--radius-btn:50px;--radius-input:12px;
+}
+body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;display:flex}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+
+/* Toast */
+#toast-container{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;width:90%;max-width:400px}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;color:var(--text);font-size:14px;font-weight:600;text-align:center;animation:fadeUp .3s ease}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--red);color:var(--red)}
+.toast.info{border-color:var(--blue);color:var(--blue)}
+
+/* Loading */
+.loading-overlay{display:none;position:fixed;inset:0;background:#000a;z-index:9000;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.loading-overlay.active{display:flex}
+.spinner-lg{width:50px;height:50px;border:4px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite}
+.spinner-sm{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle}
+
+/* PIN Screen */
+#pin-screen{position:fixed;inset:0;background:var(--bg);z-index:8000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:24px}
+#pin-screen.hidden{display:none}
+.pin-screen-logo{font-size:64px;animation:float 3s ease-in-out infinite}
+.pin-screen-title{font-size:26px;font-weight:900;background:linear-gradient(90deg,var(--gold),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.pin-screen-sub{font-size:14px;color:var(--text2);text-align:center}
+.pin-display{display:flex;justify-content:center;gap:14px;margin:6px 0}
+.pin-dot{width:18px;height:18px;border-radius:50%;background:var(--border);transition:background .2s}
+.pin-dot.filled{background:linear-gradient(135deg,var(--gold),var(--purple))}
+.pin-keyboard{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:320px}
+.pin-key{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;font-size:22px;font-weight:700;font-family:'Cairo',sans-serif;color:var(--text);cursor:pointer;transition:all .15s;text-align:center}
+.pin-key:active{background:var(--gold);color:#0a0c14}
+.pin-key.del{font-size:18px;color:var(--red)}
+.pin-key.empty{visibility:hidden}
+.pin-error{text-align:center;color:var(--red);font-size:13px;min-height:20px}
+.pin-new-hint{font-size:12px;color:var(--purple);text-align:center}
+
+/* Sidebar */
+#sidebar{width:240px;min-height:100vh;background:var(--card);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:100}
+.sidebar-header{padding:20px 16px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,#1e2438,#2d1b4e)}
+.sidebar-logo{font-size:32px;display:block;margin-bottom:4px}
+.sidebar-title{font-size:15px;font-weight:900;background:linear-gradient(90deg,var(--gold),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sidebar-sub{font-size:11px;color:var(--text2)}
+.nav-items{flex:1;padding:12px 0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer;transition:all .2s;border-right:3px solid transparent}
+.nav-item:hover{background:var(--surface)}
+.nav-item.active{background:linear-gradient(90deg,#1a1040,var(--card));border-right-color:var(--purple);color:var(--purple)}
+.nav-icon{font-size:20px;width:28px;text-align:center}
+.nav-label{font-size:14px;font-weight:600}
+.sidebar-footer{padding:16px;border-top:1px solid var(--border)}
+.lock-btn{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;color:var(--red);font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;width:100%}
+#main-area{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.top-header{background:var(--card);padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:50}
+.menu-btn{background:none;border:none;color:var(--text);font-size:22px;cursor:pointer;display:none}
+@media(max-width:768px){body{flex-direction:column}#sidebar{width:100%;min-height:unset;position:fixed;right:0;top:0;height:100vh;transform:translateX(100%)}#sidebar.open{transform:translateX(0)}#main-area{flex:1;width:100%}.menu-btn{display:block}}
+.content-area{flex:1;overflow-y:auto;padding:20px}
+.page{display:none;animation:fadeUp .3s ease}
+.page.active{display:block}
+
+/* Cards */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px}
+.stat-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);text-align:center}
+.stat-card.premium{border-color:var(--purple);background:linear-gradient(135deg,#1e1040,#2d1b4e)}
+.sc-icon{font-size:32px;margin-bottom:8px}
+.sc-num{font-size:28px;font-weight:900;color:var(--gold)}
+.sc-num.purple{color:var(--purple)}
+.sc-label{font-size:12px;color:var(--text2);margin-top:4px}
+.section-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);margin-bottom:16px}
+.section-title{font-size:16px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+
+/* Forms */
+.form-group{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.form-label{font-size:12px;font-weight:700;color:var(--text2)}
+.form-input{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-input);padding:12px 14px;color:var(--text);font-size:14px;font-family:'Cairo',sans-serif;outline:none;width:100%}
+.form-input:focus{border-color:var(--purple)}
+.form-select{appearance:none}
+.form-textarea{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-input);padding:12px;color:var(--text);font-size:14px;font-family:'Cairo',sans-serif;resize:none;width:100%;min-height:80px;outline:none}
+.form-textarea:focus{border-color:var(--purple)}
+.action-btn-full{background:linear-gradient(135deg,var(--purple),#7c3aed);color:#fff;border:none;border-radius:var(--radius-btn);padding:14px;font-size:15px;font-weight:900;font-family:'Cairo',sans-serif;cursor:pointer;width:100%;margin-top:8px;transition:opacity .2s}
+.action-btn-full:disabled{opacity:.4;cursor:not-allowed}
+.action-btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#0a0c14}
+
+/* Badges */
+.badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.badge-green{background:#1a3329;color:var(--green)}
+.badge-red{background:#3a1a1a;color:var(--red)}
+.badge-blue{background:#1e2a4a;color:var(--blue)}
+.badge-purple{background:#2d1b4e;color:var(--purple)}
+.badge-gold{background:#3d2800;color:var(--gold)}
+.badge-gray{background:#2a2a3a;color:var(--text2)}
+.badge-orange{background:#3a2000;color:#fb923c}
+
+/* Company Cards */
+.company-card{background:var(--card);border-radius:var(--radius-card);padding:16px;border:1px solid var(--border);margin-bottom:12px;cursor:pointer;transition:all .2s}
+.company-card:hover{border-color:var(--purple);transform:translateY(-1px)}
+.cc-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:10px}
+.cc-logo{font-size:32px;flex-shrink:0}
+.cc-info{flex:1}
+.cc-name{font-size:15px;font-weight:700}
+.cc-name-en{font-size:12px;color:var(--text2)}
+.cc-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.cc-stats{display:flex;gap:16px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.cc-stat{text-align:center}
+.cc-stat .n{font-size:16px;font-weight:900;color:var(--gold)}
+.cc-stat .l{font-size:10px;color:var(--text2)}
+.cc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.action-btn-sm{border:none;border-radius:var(--radius-btn);padding:8px 14px;font-size:12px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;transition:all .2s}
+.btn-purple{background:var(--purple);color:#fff}
+.btn-gold{background:var(--gold);color:#0a0c14}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-gray{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.btn-blue{background:var(--blue);color:#fff}
+
+/* Alert Cards */
+.alert-card{border-radius:12px;padding:14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px}
+.alert-card.expiry{background:#3a2000;border:1px solid var(--gold)}
+.alert-card.suspended{background:#3a1a1a;border:1px solid var(--red)}
+.alert-card.new{background:#1a3329;border:1px solid var(--green)}
+.alert-icon{font-size:24px;flex-shrink:0}
+.alert-body{flex:1}
+.alert-title{font-size:14px;font-weight:700}
+.alert-sub{font-size:12px;color:var(--text2);margin-top:3px}
+
+/* Slide Panel */
+.slide-panel{position:fixed;left:0;top:0;height:100vh;width:100%;max-width:500px;background:var(--card);border-right:1px solid var(--border);z-index:600;transform:translateX(-100%);transition:transform .3s;overflow-y:auto;padding:24px}
+.slide-panel.open{transform:translateX(0)}
+.slide-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.slide-panel-title{font-size:18px;font-weight:700}
+.close-btn{background:none;border:none;color:var(--text2);font-size:28px;cursor:pointer;line-height:1}
+.panel-section{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.panel-section:last-child{border-bottom:none}
+.panel-section-title{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase}
+.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-label{color:var(--text2)}
+.info-value{font-weight:600}
+.panel-actions{display:flex;gap:8px;flex-wrap:wrap}
+.copy-input{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:12px;color:var(--text);font-family:monospace;word-break:break-all;margin-bottom:8px}
+
+/* Revenue Chart */
+canvas#revenue-chart{width:100%;height:200px;display:block}
+.chart-wrap{background:var(--surface);border-radius:12px;padding:16px;margin-bottom:16px}
+
+/* Table */
+.table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:var(--surface)}
+th{padding:12px 14px;text-align:right;color:var(--text2);font-weight:700;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1a1f30}
+
+/* Notif */
+.notif-item{background:var(--card);border-radius:12px;padding:14px;border:1px solid var(--border);margin-bottom:10px}
+.notif-item.unread{border-color:var(--purple)}
+.notif-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.notif-msg{font-size:13px;line-height:1.6}
+
+/* Plan feature list */
+.plan-card{background:var(--surface);border:2px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:all .2s}
+.plan-card.selected{border-color:var(--purple);background:#2d1b4e}
+.plan-name{font-size:15px;font-weight:700;color:var(--gold)}
+.plan-price{font-size:13px;color:var(--text2)}
+.emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:8px}
+.emoji-opt{font-size:24px;padding:8px;border-radius:10px;cursor:pointer;text-align:center;transition:background .2s;border:2px solid transparent}
+.emoji-opt.selected,.emoji-opt:hover{background:var(--surface);border-color:var(--purple)}
+
+.empty-state{text-align:center;padding:40px 20px;color:var(--text2)}
+.empty-state .es-icon{font-size:48px;margin-bottom:12px}
+
+.confirm-modal-wrap{position:fixed;inset:0;background:#000b;z-index:700;display:none;align-items:center;justify-content:center;padding:20px}
+.confirm-modal-wrap.active{display:flex}
+.confirm-modal{background:var(--card);border-radius:20px;padding:24px;width:100%;max-width:360px;border:1px solid var(--border);text-align:center}
+.confirm-modal h3{font-size:18px;font-weight:700;margin-bottom:10px}
+.confirm-modal p{font-size:13px;color:var(--text2);margin-bottom:20px}
+.confirm-actions{display:flex;gap:10px;justify-content:center}
+.modal-btn{border:none;border-radius:var(--radius-btn);padding:10px 20px;font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="toast-container"></div>
+<div class="loading-overlay" id="loading-overlay"><div class="spinner-lg"></div><div style="color:var(--text2);font-size:14px" id="lo-text">جاري التحميل...</div></div>
+
+<!-- PIN Screen -->
+<div id="pin-screen">
+  <div class="pin-screen-logo">🚀</div>
+  <div class="pin-screen-title">لوحة المورّد</div>
+  <div class="pin-screen-sub" id="ps-sub">أدخل رمز الدخول</div>
+  <div class="pin-new-hint" id="ps-new-hint" style="display:none">🔒 إنشاء رمز دخول جديد (4-6 أرقام)</div>
+  <div class="pin-display" id="ps-pin-display"></div>
+  <div class="pin-keyboard">
+    <button class="pin-key" onclick="sellerPinKey('1')">1</button>
+    <button class="pin-key" onclick="sellerPinKey('2')">2</button>
+    <button class="pin-key" onclick="sellerPinKey('3')">3</button>
+    <button class="pin-key" onclick="sellerPinKey('4')">4</button>
+    <button class="pin-key" onclick="sellerPinKey('5')">5</button>
+    <button class="pin-key" onclick="sellerPinKey('6')">6</button>
+    <button class="pin-key" onclick="sellerPinKey('7')">7</button>
+    <button class="pin-key" onclick="sellerPinKey('8')">8</button>
+    <button class="pin-key" onclick="sellerPinKey('9')">9</button>
+    <button class="pin-key empty"></button>
+    <button class="pin-key" onclick="sellerPinKey('0')">0</button>
+    <button class="pin-key del" onclick="sellerPinDel()">⌫</button>
+  </div>
+  <div class="pin-error" id="ps-error"></div>
+</div>
+
+<!-- Slide Panel: Company Detail -->
+<div class="slide-panel" id="company-panel">
+  <div class="slide-panel-header">
+    <div class="slide-panel-title" id="panel-company-name">تفاصيل الشركة</div>
+    <button class="close-btn" onclick="closePanel()">×</button>
+  </div>
+  <div id="panel-content"></div>
+</div>
+<div id="panel-overlay" style="display:none;position:fixed;inset:0;background:#000a;z-index:590" onclick="closePanel()"></div>
+
+<!-- Confirm Modal -->
+<div class="confirm-modal-wrap" id="confirm-modal">
+  <div class="confirm-modal">
+    <h3 id="confirm-title">تأكيد</h3>
+    <p id="confirm-msg">هل أنت متأكد؟</p>
+    <div class="confirm-actions">
+      <button class="modal-btn btn-red" id="confirm-ok">تأكيد</button>
+      <button class="modal-btn btn-gray" onclick="closeConfirm()">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sidebar -->
+<div id="sidebar">
+  <div class="sidebar-header">
+    <span class="sidebar-logo">🚀</span>
+    <div class="sidebar-title">بوابة المورّد</div>
+    <div class="sidebar-sub">إدارة الشركات والاشتراكات</div>
+  </div>
+  <div class="nav-items">
+    <div class="nav-item active" onclick="showPage('dash')"><span class="nav-icon">📊</span><span class="nav-label">لوحة التحكم</span></div>
+    <div class="nav-item" onclick="showPage('companies')"><span class="nav-icon">🏢</span><span class="nav-label">الشركات</span></div>
+    <div class="nav-item" onclick="showPage('new-company')"><span class="nav-icon">➕</span><span class="nav-label">شركة جديدة</span></div>
+    <div class="nav-item" onclick="showPage('revenue')"><span class="nav-icon">💰</span><span class="nav-label">الإيرادات</span></div>
+    <div class="nav-item" onclick="showPage('notifs')"><span class="nav-icon">🔔</span><span class="nav-label">الإشعارات</span></div>
+    <div class="nav-item" onclick="showPage('my-settings')"><span class="nav-icon">⚙️</span><span class="nav-label">إعداداتي</span></div>
+  </div>
+  <div class="sidebar-footer"><button class="lock-btn" onclick="lockSeller()">🔒 قفل الشاشة</button></div>
+</div>
+
+<!-- Main Area -->
+<div id="main-area">
+  <div class="top-header">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+      <span style="font-size:18px;font-weight:900" id="page-title">لوحة التحكم</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--purple);font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:var(--purple);display:inline-block;animation:pulse 1.5s ease-in-out infinite"></span>مورّد</div>
+      <button style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-btn);padding:8px 16px;color:var(--gold);font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer" onclick="refreshCurrentPage()">↻ تحديث</button>
+    </div>
+  </div>
+  <div class="content-area">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dash">
+      <div class="stats-grid">
+        <div class="stat-card premium"><div class="sc-icon">💰</div><div class="sc-num purple" id="ds-mrr">-</div><div class="sc-label">إجمالي الدخل هذا الشهر</div></div>
+        <div class="stat-card"><div class="sc-icon">🏢</div><div class="sc-num" id="ds-active">-</div><div class="sc-label">شركات نشطة</div></div>
+        <div class="stat-card"><div class="sc-icon">⏰</div><div class="sc-num" id="ds-expired">-</div><div class="sc-label">شركات منتهية</div></div>
+        <div class="stat-card"><div class="sc-icon">👥</div><div class="sc-num" id="ds-emps">-</div><div class="sc-label">إجمالي الموظفين</div></div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">⚠️ تنبيهات</div>
+        <div id="dash-alerts"></div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">🏢 نظرة سريعة على الشركات</div>
+        <div id="dash-companies-mini"></div>
+      </div>
+    </div>
+
+    <!-- COMPANIES -->
+    <div class="page" id="page-companies">
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <input class="form-input" type="text" id="comp-search" placeholder="🔍 بحث..." oninput="filterCompanies()" style="flex:1;min-width:200px">
+        <select class="form-input form-select" id="comp-status-filter" onchange="filterCompanies()" style="flex:0 0 auto;width:auto">
+          <option value="all">كل الحالات</option>
+          <option value="active">نشطة</option>
+          <option value="suspended">معلّقة</option>
+          <option value="expired">منتهية</option>
+        </select>
+      </div>
+      <div id="companies-list"></div>
+    </div>
+
+    <!-- CREATE COMPANY -->
+    <div class="page" id="page-new-company">
+      <div class="section-card">
+        <div class="section-title">🏢 إنشاء شركة جديدة</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group"><label class="form-label">اسم الشركة (بالعربية) *</label><input class="form-input" id="nc-name-ar" placeholder="اسم الشركة بالعربية"></div>
+          <div class="form-group"><label class="form-label">اسم الشركة (بالإنجليزية) *</label><input class="form-input" id="nc-name-en" placeholder="Company Name"></div>
+        </div>
+        <div class="form-group"><label class="form-label">القطاع</label>
+          <select class="form-input form-select" id="nc-industry">
+            <option value="فروع وتوزيع">🏭 فروع وتوزيع</option>
+            <option value="مطاعم">🍽️ مطاعم</option>
+            <option value="عيادات ومستشفيات">🏥 عيادات ومستشفيات</option>
+            <option value="مدارس">🏫 مدارس</option>
+            <option value="مقاولات">🏗️ مقاولات</option>
+            <option value="أخرى">📁 أخرى</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">شعار (إيموجي)</label>
+          <div class="emoji-grid" id="emoji-grid">
+            🏭 📦 🏗️ 🏬 🏢 🏪 🗄️ 📋 🍽️ 🏥 🏫 🏦 🏨 🏛️ 🏟️ 🏠
+          </div>
+          <input class="form-input" id="nc-logo" placeholder="أو اكتب أي إيموجي" style="margin-top:8px;text-align:center;font-size:24px">
+        </div>
+        <div class="form-group">
+          <div style="background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:16px;text-align:center">
+            <div style="font-size:20px;font-weight:900;color:var(--gold)">🌟 مدى الحياة</div>
+            <div style="font-size:15px;color:var(--text2);margin-top:6px">موظفون غير محدودين — دفعة واحدة $50</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group"><label class="form-label">رمز PIN للمدير *</label><input class="form-input" id="nc-admin-pin" type="number" placeholder="4-6 أرقام"></div>
+          <div class="form-group"><label class="form-label">بريد المدير</label><input class="form-input" id="nc-admin-email" type="email" placeholder="admin@company.com"></div>
+          <div class="form-group"><label class="form-label">هاتف المدير</label><input class="form-input" id="nc-admin-phone" placeholder="+966XXXXXXXXX"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+          <div class="form-group"><label class="form-label">حضور — من</label><input class="form-input" type="time" id="nc-ci-from" value="08:00"></div>
+          <div class="form-group"><label class="form-label">حضور — إلى</label><input class="form-input" type="time" id="nc-ci-to" value="09:00"></div>
+          <div class="form-group"><label class="form-label">انصراف — من</label><input class="form-input" type="time" id="nc-co-from" value="16:00"></div>
+          <div class="form-group"><label class="form-label">انصراف — إلى</label><input class="form-input" type="time" id="nc-co-to" value="17:00"></div>
+        </div>
+        <div class="form-group"><label class="form-label">الفروع الافتراضية (اضغط إضافة)</label>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input class="form-input" id="nc-wh-input" placeholder="اسم الفرع" style="flex:1">
+            <button onclick="addDefaultWH()" class="action-btn-sm btn-purple" style="padding:10px 16px">+ إضافة</button>
+          </div>
+          <div id="nc-wh-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
+
+        <div style="border:1px solid var(--gold);border-radius:14px;padding:16px;margin-top:8px;background:linear-gradient(135deg,#1a1200,#1e2438)">
+          <div style="font-size:15px;font-weight:700;color:var(--gold);margin-bottom:4px">🔥 بيانات Firebase للزبون</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:14px">أنشئ مشروع Firebase جديد للزبون وأدخل بياناته هنا — سيُربط بحساب المدير تلقائيًا عبر الدليل المركزي، وسيحصل المدير على اسم مستخدم ورقم سري بدل الرابط</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0"><label class="form-label">apiKey *</label><input class="form-input" id="nc-fb-apiKey" placeholder="AIzaSy..."></div>
+            <div class="form-group" style="margin:0"><label class="form-label">projectId *</label><input class="form-input" id="nc-fb-projectId" placeholder="my-project-123"></div>
+            <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">databaseURL *</label><input class="form-input" id="nc-fb-databaseURL" placeholder="https://my-project-123-default-rtdb.firebaseio.com"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">authDomain</label><input class="form-input" id="nc-fb-authDomain" placeholder="my-project-123.firebaseapp.com"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">storageBucket</label><input class="form-input" id="nc-fb-storageBucket" placeholder="my-project-123.appspot.com"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">messagingSenderId</label><input class="form-input" id="nc-fb-messagingSenderId" placeholder="123456789"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">appId</label><input class="form-input" id="nc-fb-appId" placeholder="1:123:web:abc..."></div>
+          </div>
+        </div>
+
+        <button class="action-btn-full action-btn-gold" onclick="createCompany()">🚀 إنشاء الشركة</button>
+      </div>
+      <div id="nc-success" style="display:none" class="section-card">
+        <div class="section-title" style="color:var(--green)">✅ تم إنشاء الشركة بنجاح!</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:14px">أعطِ المدير هذه البيانات ليدخلها بتطبيق المدير (المُنزَّل من المتجر):</div>
+        <div class="form-group">
+          <label class="form-label" style="color:var(--gold)">👤 اسم المستخدم</label>
+          <div class="copy-input" id="nc-admin-username" style="font-size:15px;font-weight:700;word-break:break-all"></div>
+          <button class="action-btn-sm btn-blue" onclick="copyLink('nc-admin-username')" style="margin-bottom:14px">📋 نسخ</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="color:var(--gold)">🔑 الرقم السري</label>
+          <div class="copy-input" id="nc-admin-password" style="font-size:15px;font-weight:700;word-break:break-all"></div>
+          <button class="action-btn-sm btn-gold" onclick="copyLink('nc-admin-password')" style="margin-bottom:14px">📋 نسخ</button>
+        </div>
+        <button class="action-btn-sm btn-green" onclick="shareWhatsapp()" style="margin-top:4px;width:100%;padding:12px">📲 مشاركة بيانات الدخول عبر واتساب</button>
+      </div>
+    </div>
+
+    <!-- REVENUE -->
+    <div class="page" id="page-revenue">
+      <div class="stats-grid">
+        <div class="stat-card premium"><div class="sc-icon">💰</div><div class="sc-num purple" id="rev-total">$0</div><div class="sc-label">إجمالي الإيرادات</div></div>
+        <div class="stat-card premium"><div class="sc-icon">📅</div><div class="sc-num purple" id="rev-month">$0</div><div class="sc-label">إيرادات هذا الشهر</div></div>
+        <div class="stat-card"><div class="sc-icon">📊</div><div class="sc-num" id="rev-avg">$0</div><div class="sc-label">متوسط لكل شركة</div></div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">📊 الإيرادات — آخر 12 شهراً</div>
+        <div class="chart-wrap"><canvas id="revenue-chart"></canvas></div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">📋 سجل المعاملات</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الشركة</th><th>الخطة</th><th>المبلغ</th><th>التاريخ</th><th>ملاحظات</th></tr></thead>
+            <tbody id="trans-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">➕ إضافة معاملة يدوية</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group"><label class="form-label">الشركة</label><select class="form-input form-select" id="trans-company"></select></div>
+          <div class="form-group"><label class="form-label">المبلغ ($)</label><input class="form-input" type="number" id="trans-amount" placeholder="0"></div>
+          <div class="form-group"><label class="form-label">التاريخ</label><input class="form-input" type="date" id="trans-date"></div>
+          <div class="form-group"><label class="form-label">ملاحظة</label><input class="form-input" id="trans-note" placeholder="ملاحظة اختيارية"></div>
+        </div>
+        <button class="action-btn-full" onclick="addTransaction()">💰 تسجيل المعاملة</button>
+      </div>
+    </div>
+
+    <!-- NOTIFICATIONS -->
+    <div class="page" id="page-notifs">
+      <div id="seller-notifs-list"></div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="page" id="page-my-settings">
+      <div class="section-card">
+        <div class="section-title">🔐 تغيير رمز الدخول</div>
+        <div class="form-group"><label class="form-label">الرمز الجديد (4-6 أرقام)</label><input class="form-input" type="number" id="new-seller-pin" placeholder="الرمز الجديد"></div>
+        <div class="form-group"><label class="form-label">تأكيد الرمز</label><input class="form-input" type="number" id="confirm-seller-pin" placeholder="أعد إدخال الرمز"></div>
+        <button class="action-btn-full" onclick="changeSellerPin()">💾 حفظ الرمز الجديد</button>
+      </div>
+      <div class="section-card" style="border:1px solid var(--red)">
+        <div class="section-title">⚠️ إعادة ضبط Firebase</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">حذف إعدادات Firebase الحالية وإدخال إعدادات جديدة.</div>
+        <button onclick="resetSellerFirebase()" style="background:transparent;border:1px solid var(--red);color:var(--red);border-radius:50px;padding:10px 20px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%">🗑️ إعادة ضبط إعدادات Firebase</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Firebase Setup Screen -->
+<div id="setup-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;overflow-y:auto;padding:24px;align-items:center;justify-content:center;flex-direction:column">
+  <div style="width:100%;max-width:460px">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:52px">🔥</div>
+      <div style="font-size:22px;font-weight:900;color:var(--gold);margin-top:8px">إعداد Firebase الخاص بك</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:8px;line-height:1.8">أدخل إعدادات مشروع Firebase الخاص بك<br>ستُحفظ في هذا الجهاز ولن تُطلب مجدداً</div>
+    </div>
+    <div style="background:var(--card);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)">
+      <input id="fb-apiKey" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;font-family:monospace;outline:none;width:100%" placeholder="apiKey">
+      <input id="fb-authDomain" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="authDomain (xxx.firebaseapp.com)">
+      <input id="fb-databaseURL" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="databaseURL (https://xxx-default-rtdb.firebaseio.com)">
+      <input id="fb-projectId" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="projectId">
+      <input id="fb-storageBucket" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="storageBucket (xxx.appspot.com)">
+      <input id="fb-messagingSenderId" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="messagingSenderId">
+      <input id="fb-appId" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="appId (1:xxx:web:xxx)">
+      <div id="setup-error" style="color:var(--red);font-size:13px;text-align:center;display:none"></div>
+      <button onclick="saveSellerFirebaseSetup()" style="background:linear-gradient(135deg,var(--gold),var(--purple));color:#0a0c14;border:none;border-radius:50px;padding:14px;font-size:16px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;margin-top:4px">✅ حفظ وتشغيل</button>
+      <div style="font-size:12px;color:var(--text2);text-align:center;line-height:1.7">احصل على هذه المعلومات من<br><strong>Firebase Console → Project Settings → Your apps → Config</strong></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== CONFIG ====================
+let DB = null;
+let sellerPinVal = '';
+let isNewPin = false;
+let allCompanies = {};
+let currentPage = 'dash';
+const LIFETIME_PRICE = 50;
+let defaultWHs = [];
+let selectedEmoji = '🏭';
+let lastCreatedCID = '';
+let lastCreatedData = {};
+let confirmCallback = null;
+
+const PLAN_PRICES = { lifetime: LIFETIME_PRICE };
+const PLAN_NAMES = { lifetime: 'مدى الحياة' };
+const PLAN_MAX = { lifetime: 999999 };
+
+function getFirebaseConfig() {
+  const stored = localStorage.getItem('seller_fb_cfg');
+  if (stored) { try { return JSON.parse(stored); } catch(e) {} }
+  return null;
+}
+
+// ==================== الدليل المركزي (Directory) ====================
+// مشروع Firebase ثابت مشترك بين كل التطبيقات: يربط اسم المستخدم/الرقم السري
+// بإعدادات Firebase الخاصة بكل زبون. هذا المشروع منفصل عن مشروع تتبّع المورد
+// (seller_fb_cfg) ومنفصل عن مشروع كل زبون (tenantConfig).
+const DIRECTORY_CONFIG = {
+  apiKey: "AIzaSyA569Cn0DbbJ-gZIAEtAI4-Y1qOU9Wzfps",
+  authDomain: "signature-7706e.firebaseapp.com",
+  databaseURL: "https://signature-7706e-default-rtdb.firebaseio.com",
+  projectId: "signature-7706e",
+  storageBucket: "signature-7706e.firebasestorage.app",
+  messagingSenderId: "25739438341",
+  appId: "1:25739438341:web:a394b046ed29d96bd36f6c"
+};
+const DIRECTORY_EMAIL_DOMAIN = 'basma.app'; // Auth يحتاج صيغة إيميل، نستخدم يوزرنيم@basma.app
+
+function genUsername(nameEn, nameAr) {
+  const base = (nameEn || nameAr || 'co').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'co';
+  const suffix = Math.floor(1000 + Math.random() * 9000);
+  return base + suffix;
+}
+function genPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let p = '';
+  for (let i = 0; i < 8; i++) p += chars[Math.floor(Math.random() * chars.length)];
+  return p;
+}
+
+// ينشئ حساب دخول (يوزر/باسورد) بمشروع الدليل المركزي لمدير أو موظف جديد،
+// عبر تطبيق Firebase ثانوي مؤقت حتى لا تتأثر جلسة دخولك الحالية كمورد.
+function withTimeout(promise, ms, msg) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(msg || 'انتهت المهلة — تحقق من الإنترنت وحاول مجددًا')), ms))
+  ]);
+}
+
+async function createDirectoryAccount({ role, username, password, companyId, companyName, tenantConfig, managerUid }) {
+  const tempAppName = 'dirTemp_' + Date.now();
+  const dirApp = firebase.initializeApp(DIRECTORY_CONFIG, tempAppName);
+  try {
+    const email = `${username}@${DIRECTORY_EMAIL_DOMAIN}`;
+    const cred = await dirApp.auth().createUserWithEmailAndPassword(email, password);
+    const uid = cred.user.uid;
+    const record = {
+      username, companyId, companyName,
+      tenantConfig, createdAt: Date.now(), active: true
+    };
+    if (role === 'manager') {
+      await dirApp.database().ref(`directory/managers/${uid}`).set(record);
+    } else {
+      record.managerUid = managerUid;
+      await dirApp.database().ref(`directory/employees/${uid}`).set(record);
+    }
+    return uid;
+  } finally {
+    await dirApp.delete();
+  }
+}
+
+function saveSellerFirebaseSetup() {
+  const cfg = {
+    apiKey: document.getElementById('fb-apiKey').value.trim(),
+    authDomain: document.getElementById('fb-authDomain').value.trim(),
+    databaseURL: document.getElementById('fb-databaseURL').value.trim(),
+    projectId: document.getElementById('fb-projectId').value.trim(),
+    storageBucket: document.getElementById('fb-storageBucket').value.trim(),
+    messagingSenderId: document.getElementById('fb-messagingSenderId').value.trim(),
+    appId: document.getElementById('fb-appId').value.trim()
+  };
+  if (!cfg.apiKey || !cfg.databaseURL || !cfg.projectId) {
+    const err = document.getElementById('setup-error');
+    err.textContent = 'يرجى ملء: apiKey و databaseURL و projectId على الأقل';
+    err.style.display = 'block';
+    return;
+  }
+  localStorage.setItem('seller_fb_cfg', JSON.stringify(cfg));
+  document.getElementById('setup-screen').style.display = 'none';
+  startSellerApp(cfg);
+}
+
+function startSellerApp(cfg) {
+  if (!firebase.apps.length) firebase.initializeApp(cfg);
+  DB = firebase.database();
+  checkSellerPin();
+  initEmojiGrid();
+  document.getElementById('trans-date').value = new Date().toISOString().split('T')[0];
+}
+
+function resetSellerFirebase() {
+  if (!confirm('سيتم حذف إعدادات Firebase. هل أنت متأكد؟')) return;
+  localStorage.removeItem('seller_fb_cfg');
+  location.reload();
+}
+
+window.onload = () => {
+  const cfg = getFirebaseConfig();
+  if (!cfg) { document.getElementById('setup-screen').style.display = 'flex'; return; }
+  startSellerApp(cfg);
+};
+
+// ==================== PIN ====================
+async function checkSellerPin() {
+  try {
+    const snap = await DB.ref('seller/auth/pin').once('value');
+    if (!snap.exists()) {
+      isNewPin = true;
+      document.getElementById('ps-sub').textContent = 'مرحباً! أنشئ رمز دخولك الأول';
+      document.getElementById('ps-new-hint').style.display = 'block';
+    } else {
+      const session = sessionStorage.getItem('seller_session');
+      if (session && (Date.now() - parseInt(session)) < 3600000) {
+        unlockSeller();
+        return;
+      }
+    }
+    document.getElementById('pin-screen').classList.remove('hidden');
+  } catch(e) {}
+}
+
+function sellerPinKey(d) {
+  if (sellerPinVal.length >= 6) return;
+  sellerPinVal += d;
+  updateSellerPinDisplay();
+  if (sellerPinVal.length >= 4 && !isNewPin) setTimeout(checkSellerPinVal, 100);
+  if (sellerPinVal.length >= 4 && isNewPin) setTimeout(createSellerPin, 100);
+}
+function sellerPinDel() { sellerPinVal = sellerPinVal.slice(0,-1); updateSellerPinDisplay(); }
+function updateSellerPinDisplay() {
+  const disp = document.getElementById('ps-pin-display');
+  disp.innerHTML = '';
+  const len = Math.max(sellerPinVal.length, 4);
+  for (let i=0; i<len; i++) {
+    const d = document.createElement('div');
+    d.className = 'pin-dot' + (i < sellerPinVal.length ? ' filled' : '');
+    disp.appendChild(d);
+  }
+}
+
+async function checkSellerPinVal() {
+  try {
+    const snap = await DB.ref('seller/auth/pin').once('value');
+    const stored = snap.val() || '';
+    if (sellerPinVal === stored) {
+      unlockSeller();
+    } else if (sellerPinVal.length >= 6) {
+      document.getElementById('ps-error').textContent = 'رمز غير صحيح';
+      sellerPinVal = ''; updateSellerPinDisplay();
+    } else if (sellerPinVal.length >= (stored.length || 4)) {
+      document.getElementById('ps-error').textContent = 'رمز غير صحيح';
+      sellerPinVal = ''; updateSellerPinDisplay();
+    }
+  } catch(e) {}
+}
+
+async function createSellerPin() {
+  if (sellerPinVal.length < 4) return;
+  try {
+    await DB.ref('seller/auth/pin').set(sellerPinVal);
+    isNewPin = false;
+    unlockSeller();
+  } catch(e) { showToast('خطأ في إنشاء الرمز', 'error'); }
+}
+
+function unlockSeller() {
+  sessionStorage.setItem('seller_session', Date.now().toString());
+  document.getElementById('pin-screen').classList.add('hidden');
+  loadDashboard();
+}
+
+function lockSeller() {
+  sessionStorage.removeItem('seller_session');
+  sellerPinVal = '';
+  updateSellerPinDisplay();
+  document.getElementById('ps-error').textContent = '';
+  isNewPin = false;
+  document.getElementById('ps-sub').textContent = 'أدخل رمز الدخول';
+  document.getElementById('ps-new-hint').style.display = 'none';
+  document.getElementById('pin-screen').classList.remove('hidden');
+}
+
+// ==================== LOAD COMPANIES ====================
+async function loadAllCompanies() {
+  const snap = await DB.ref('companies').once('value');
+  allCompanies = {};
+  const now = Date.now();
+  snap.forEach(c => {
+    const id = c.key;
+    const data = c.val() || {};
+    const info = data.info || {};
+    const emps = Object.values(data.employees || {}).filter(e=>e.status==='approved').length;
+    const expiresAt = info.expiresAt || 0;
+    let status;
+    if (info.status === 'suspended') status = 'suspended';
+    else if (expiresAt && expiresAt < now) status = 'expired';
+    else status = 'active';
+    allCompanies[id] = { id, info, status, empCount: emps, expiresAt };
+  });
+}
+
+// يجيب العدد الحقيقي للموظفين مباشرة من مشروع Firebase الخاص بكل زبون
+// (المكان الفعلي اللي يضيف منه المدير موظفيه)، بدل الرقم القديم المخزّن
+// بقاعدة بيانات المورد (اللي ما تتحدّث تلقائيًا أبدًا).
+async function refreshLiveEmployeeCounts() {
+  const entries = Object.values(allCompanies).filter(c => c.info && c.info.tenantConfig);
+  await Promise.all(entries.map(async (c) => {
+    const tempAppName = 'countTemp_' + c.id + '_' + Date.now();
+    try {
+      const tApp = firebase.initializeApp(c.info.tenantConfig, tempAppName);
+      const snap = await tApp.database().ref(`companies/${c.id}/employees`).once('value');
+      const emps = Object.values(snap.val() || {}).filter(e => e && e.status === 'approved').length;
+      if (allCompanies[c.id]) allCompanies[c.id].empCount = emps;
+      await tApp.delete();
+    } catch (e) { /* شركة وحدة ممكن تفشل (بيانات ناقصة)، لا نوقف الباقي */ }
+  }));
+}
+
+// ==================== DASHBOARD ====================
+async function loadDashboard() {
+  showLoading('جاري التحميل...');
+  try {
+    await loadAllCompanies();
+    const companies = Object.values(allCompanies);
+    const active = companies.filter(c=>c.status==='active').length;
+    const expired = companies.filter(c=>c.status==='expired').length;
+    const totalEmps = companies.reduce((s,c)=>s+c.empCount,0);
+    // MRR estimate
+    const transSnap = await DB.ref('seller/transactions').once('value');
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    let mrr = 0;
+    transSnap.forEach(c => { const t=c.val(); if((t.date||0) >= startOfMonth || (new Date(t.dateStr||'').getTime() >= startOfMonth)) mrr += t.amount||0; });
+    document.getElementById('ds-mrr').textContent = '$' + mrr;
+    document.getElementById('ds-active').textContent = active;
+    document.getElementById('ds-expired').textContent = expired;
+    document.getElementById('ds-emps').textContent = totalEmps;
+    refreshLiveEmployeeCounts().then(() => {
+      const liveTotal = Object.values(allCompanies).reduce((s,c)=>s+c.empCount,0);
+      document.getElementById('ds-emps').textContent = liveTotal;
+    });
+    // Alerts
+    const alertsEl = document.getElementById('dash-alerts');
+    alertsEl.innerHTML = '';
+    const sevenDays = Date.now() + 7*86400000;
+    let hasAlerts = false;
+    companies.forEach(c => {
+      if (c.status === 'active' && c.expiresAt && c.expiresAt < sevenDays) {
+        const days = Math.ceil((c.expiresAt - Date.now()) / 86400000);
+        const el = document.createElement('div');
+        el.className = 'alert-card expiry';
+        el.innerHTML = `<div class="alert-icon">⏰</div><div class="alert-body"><div class="alert-title">${c.info.nameAr||'شركة'} — اشتراك ينتهي خلال ${days} يوم</div><div class="alert-sub">${new Date(c.expiresAt).toLocaleDateString('ar-SA')}</div></div>`;
+        alertsEl.appendChild(el); hasAlerts = true;
+      }
+      if (c.status === 'suspended') {
+        const el = document.createElement('div');
+        el.className = 'alert-card suspended';
+        el.innerHTML = `<div class="alert-icon">⛔</div><div class="alert-body"><div class="alert-title">${c.info.nameAr||'شركة'} — معلّقة</div><div class="alert-sub">بحاجة لمراجعة</div></div>`;
+        alertsEl.appendChild(el); hasAlerts = true;
+      }
+    });
+    if (!hasAlerts) alertsEl.innerHTML = '<div style="color:var(--green);font-size:14px;padding:10px">✅ لا توجد تنبيهات</div>';
+    // Mini companies
+    const mini = document.getElementById('dash-companies-mini');
+    mini.innerHTML = '';
+    Object.values(allCompanies).slice(0,8).forEach(c => {
+      const el = document.createElement('div');
+      el.style.cssText = 'background:var(--surface);border-radius:12px;padding:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border)';
+      const exp = c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('ar-SA') : '--';
+      const stBadge = c.status==='active'?'badge-green':c.status==='suspended'?'badge-red':'badge-gray';
+      const stText = c.status==='active'?'نشطة':c.status==='suspended'?'معلّقة':'منتهية';
+      el.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:24px">${c.info.logo||'🏢'}</span><div><div style="font-size:14px;font-weight:700">${c.info.nameAr||'شركة'}</div><div style="font-size:11px;color:var(--text2)">🌟 مدى الحياة | غير محدود</div></div></div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--gold)">${c.empCount} موظف</span><span class="badge ${stBadge}">${stText}</span></div>`;
+      mini.appendChild(el);
+    });
+    hideLoading();
+  } catch(e) { hideLoading(); showToast('خطأ في التحميل', 'error'); }
+}
+
+// ==================== COMPANIES ====================
+async function loadCompanies() {
+  showLoading();
+  try {
+    await loadAllCompanies();
+    hideLoading();
+    filterCompanies();
+    refreshLiveEmployeeCounts().then(() => filterCompanies());
+  } catch(e) { hideLoading(); showToast('خطأ', 'error'); }
+}
+
+function filterCompanies() {
+  const search = (document.getElementById('comp-search').value||'').toLowerCase();
+  const statusF = document.getElementById('comp-status-filter').value;
+  const list = document.getElementById('companies-list');
+  list.innerHTML = '';
+  const filtered = Object.values(allCompanies).filter(c => {
+    const matchS = !search || (c.info.nameAr||'').toLowerCase().includes(search) || (c.info.nameEn||'').toLowerCase().includes(search);
+    const matchSt = statusF === 'all' || c.status === statusF;
+    return matchS && matchSt;
+  });
+  if (!filtered.length) { list.innerHTML = '<div class="empty-state"><div class="es-icon">🏢</div><p>لا توجد شركات</p></div>'; return; }
+  filtered.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'company-card';
+    const stBadge = c.status==='active'?'badge-green':c.status==='suspended'?'badge-red':'badge-gray';
+    const stText = c.status==='active'?'✅ نشطة':c.status==='suspended'?'⛔ معلّقة':'❌ منتهية';
+    const exp = c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('ar-SA') : '--';
+    const expClass = c.expiresAt && c.expiresAt < Date.now() ? 'color:var(--red)' : c.expiresAt && c.expiresAt < Date.now()+7*86400000 ? 'color:#fb923c' : '';
+    card.innerHTML = `
+    <div class="cc-head">
+      <span class="cc-logo">${c.info.logo||'🏢'}</span>
+      <div class="cc-info">
+        <div class="cc-name">${c.info.nameAr||'شركة'}</div>
+        <div class="cc-name-en">${c.info.nameEn||''}</div>
+        <div class="cc-tags">
+          <span class="badge badge-purple">🌟 مدى الحياة</span>
+          <span class="badge ${stBadge}">${stText}</span>
+          <span class="badge badge-blue">${c.info.industry||''}</span>
+        </div>
+      </div>
+    </div>
+    <div class="cc-stats">
+      <div class="cc-stat"><div class="n">${c.empCount}</div><div class="l">موظف</div></div>
+      <div class="cc-stat"><div class="n" style="color:var(--gold)">∞</div><div class="l">غير محدود</div></div>
+      <div class="cc-stat"><div class="n" style="color:var(--green)">$${LIFETIME_PRICE}</div><div class="l">مدى الحياة</div></div>
+    </div>
+    <div class="cc-actions">
+      <button class="action-btn-sm btn-purple" onclick="openPanel('${c.id}')">👁 عرض</button>
+      ${c.status==='active'?`<button class="action-btn-sm btn-red" onclick="suspendCompany('${c.id}')">⛔ تعليق</button>`:`<button class="action-btn-sm btn-green" onclick="activateCompany('${c.id}')">✅ تفعيل</button>`}
+      <button class="action-btn-sm btn-gray" onclick="confirmDeleteCompany('${c.id}')">🗑</button>
+    </div>`;
+    list.appendChild(card);
+  });
+}
+
+async function openPanel(cid) {
+  const c = allCompanies[cid];
+  if (!c) return;
+  document.getElementById('panel-company-name').textContent = c.info.nameAr || 'الشركة';
+  document.getElementById('panel-content').innerHTML = '<div style="text-align:center;padding:40px"><div class="spinner-sm"></div></div>';
+  document.getElementById('company-panel').classList.add('open');
+  document.getElementById('panel-overlay').style.display = 'block';
+  const exp = c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('ar-SA') : '--';
+  document.getElementById('panel-content').innerHTML = `
+  <div class="panel-section">
+    <div class="panel-section-title">معلومات الشركة</div>
+    <div style="font-size:48px;text-align:center;margin-bottom:10px">${c.info.logo||'🏢'}</div>
+    <div class="info-row"><span class="info-label">الاسم (عربي)</span><span class="info-value">${c.info.nameAr||'--'}</span></div>
+    <div class="info-row"><span class="info-label">الاسم (إنجليزي)</span><span class="info-value">${c.info.nameEn||'--'}</span></div>
+    <div class="info-row"><span class="info-label">القطاع</span><span class="info-value">${c.info.industry||'--'}</span></div>
+    <div class="info-row"><span class="info-label">الخطة</span><span class="info-value">🌟 مدى الحياة — $50</span></div>
+    <div class="info-row"><span class="info-label">الموظفون</span><span class="info-value">${c.empCount} (غير محدود)</span></div>
+    <div class="info-row"><span class="info-label">الحالة</span><span class="info-value">${c.status==='active'?'✅ نشطة':c.status==='suspended'?'⛔ معلّقة':'❌ منتهية'}</span></div>
+    <div class="info-row"><span class="info-label">الانتهاء</span><span class="info-value">${exp}</span></div>
+    <div class="info-row"><span class="info-label">البريد</span><span class="info-value">${c.info.adminEmail||'--'}</span></div>
+    <div class="info-row"><span class="info-label">الهاتف</span><span class="info-value">${c.info.adminPhone||'--'}</span></div>
+  </div>
+  <div class="panel-section">
+    <div class="panel-section-title">🔐 بيانات دخول المدير</div>
+    <div class="info-row"><span class="info-label">اسم المستخدم</span><span class="info-value">${c.info.managerUsername||'--'}</span></div>
+    <div class="info-row"><span class="info-label">الرقم السري</span><span class="info-value" id="pnl-pw-${cid}" style="font-family:monospace">${c.info.managerPassword?'••••••••':'--'}</span></div>
+    ${c.info.managerPassword?`<button class="action-btn-sm btn-blue" onclick="togglePwVisible('${cid}','${c.info.managerPassword}')" style="margin-top:8px">👁️ إظهار/إخفاء</button>`:''}
+  </div>
+  <div class="panel-section">
+    <div class="panel-section-title">إجراءات سريعة</div>
+    <div class="panel-actions">
+      ${c.status==='active'?`<button class="action-btn-sm btn-red" onclick="suspendCompany('${cid}');closePanel()">⛔ تعليق</button>`:`<button class="action-btn-sm btn-green" onclick="activateCompany('${cid}');closePanel()">✅ تفعيل</button>`}
+      <button class="action-btn-sm btn-gray" onclick="resetManagerCredentials('${cid}')">🔑 إعادة تعيين بيانات الدخول</button>
+      <button class="action-btn-sm btn-blue" onclick="syncTenantData('${cid}')">🔄 مزامنة البيانات مع مشروع الزبون</button>
+    </div>
+  </div>`;
+}
+
+function togglePwVisible(cid, pw) {
+  const el = document.getElementById('pnl-pw-' + cid);
+  el.textContent = el.textContent === pw ? '••••••••' : pw;
+}
+
+async function syncTenantData(cid) {
+  const c = allCompanies[cid];
+  if (!c) return;
+  const tenantConfig = c.info.tenantConfig;
+  if (!tenantConfig) { showToast('لا توجد إعدادات Firebase محفوظة لهذه الشركة — أدخلها أول عبر "إعادة تعيين بيانات الدخول"', 'error'); return; }
+  showLoading('جاري مزامنة البيانات مع مشروع الزبون...');
+  try {
+    const whNames = c.warehouses ? Object.values(c.warehouses).map(w => w.name) : [];
+    const tempAppName = 'tenantTemp_' + Date.now();
+    const tenantApp = firebase.initializeApp(tenantConfig, tempAppName);
+    try {
+      const tdb = tenantApp.database();
+      const existing = await tdb.ref(`companies/${cid}/info`).once('value');
+      if (existing.exists()) {
+        hideLoading();
+        showToast('بيانات الشركة موجودة أصلاً بمشروعها — لا حاجة للمزامنة', 'info');
+        return;
+      }
+      await tdb.ref(`companies/${cid}`).set({ info: c.info, settings: c.settings || {} });
+      const names = whNames.length ? whNames : ['الفرع الرئيسي'];
+      for (const whName of names) {
+        await tdb.ref(`companies/${cid}/warehouses`).push({ name: whName, pin: '1234', active: true });
+      }
+    } finally {
+      await tenantApp.delete();
+    }
+    hideLoading();
+    showToast('✅ تمت المزامنة! جرّب تسجيل دخول المدير الآن', 'success');
+  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+}
+
+async function resetManagerCredentials(cid) {
+  const c = allCompanies[cid];
+  if (!c) return;
+  showConfirm ? showConfirm('إعادة تعيين بيانات الدخول', 'سيتم توليد اسم مستخدم ورقم سري جديدين للمدير. البيانات القديمة تتوقف عن الظهور هنا لكنها تبقى صالحة فنيًا. هل تريد المتابعة؟', () => doResetManagerCredentials(cid)) : doResetManagerCredentials(cid);
+}
+
+async function doResetManagerCredentials(cid) {
+  const c = allCompanies[cid];
+  if (!c) return;
+  const tenantConfig = c.info.tenantConfig;
+  if (!tenantConfig) { showToast('لا توجد إعدادات Firebase محفوظة لهذه الشركة', 'error'); return; }
+  showLoading('جاري توليد بيانات دخول جديدة...');
+  try {
+    const username = genUsername(c.info.nameEn, c.info.nameAr);
+    const password = genPassword();
+    const managerUid = await withTimeout(createDirectoryAccount({ role: 'manager', username, password, companyId: cid, companyName: c.info.nameAr, tenantConfig }), 15000);
+    await DB.ref(`companies/${cid}/info`).update({ managerUsername: username, managerPassword: password, managerUid });
+    hideLoading();
+    await loadAllCompanies();
+    const msg = `🔑 بيانات دخول جديدة لشركة *${c.info.nameAr}*\n\n👤 اسم المستخدم: ${username}\n🔑 الرقم السري: ${password}`;
+    if (confirm('تم إنشاء بيانات جديدة:\n\nاسم المستخدم: ' + username + '\nالرقم السري: ' + password + '\n\nهل تريد مشاركتها عبر واتساب؟')) {
+      window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+    }
+    closePanel();
+  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+}
+
+function closePanel() {
+  document.getElementById('company-panel').classList.remove('open');
+  document.getElementById('panel-overlay').style.display = 'none';
+}
+
+
+async function suspendCompany(cid) {
+  try {
+    await DB.ref(`companies/${cid}/info`).update({ status: 'suspended' });
+    showToast('تم تعليق الشركة', 'info');
+    await loadAllCompanies(); filterCompanies();
+  } catch(e) { showToast('خطأ', 'error'); }
+}
+
+async function activateCompany(cid) {
+  try {
+    await DB.ref(`companies/${cid}/info`).update({ status: 'active' });
+    showToast('تم تفعيل الشركة', 'success');
+    await loadAllCompanies(); filterCompanies();
+  } catch(e) { showToast('خطأ', 'error'); }
+}
+
+
+async function resetAdminPin(cid) {
+  const newPin = prompt('أدخل الرمز السري الجديد للمدير (4-6 أرقام):');
+  if (!newPin || newPin.length < 4) { showToast('رمز غير صالح', 'error'); return; }
+  try {
+    await DB.ref(`companies/${cid}/info`).update({ adminPin: newPin });
+    showToast('تم إعادة تعيين الرمز السري', 'success');
+  } catch(e) { showToast('خطأ', 'error'); }
+}
+
+function confirmDeleteCompany(cid) {
+  const name = allCompanies[cid]?.info?.nameAr || 'الشركة';
+  showConfirm('حذف الشركة', `هل أنت متأكد من حذف "${name}"؟ سيتم حذف جميع بيانات الشركة نهائياً.`, async () => {
+    closeConfirm();
+    showLoading('جاري حذف الشركة...');
+    try {
+      await DB.ref(`companies/${cid}`).remove();
+      hideLoading();
+      showToast('تم حذف الشركة', 'success');
+      delete allCompanies[cid];
+      filterCompanies();
+    } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+  });
+}
+
+// ==================== CREATE COMPANY ====================
+function initEmojiGrid() {
+  const emojis = ['🏭','📦','🏗️','🏬','🏢','🏪','🗄️','📋','🍽️','🏥','🏫','🏦','🏨','🏛️','🏟️','🏠'];
+  const grid = document.getElementById('emoji-grid');
+  grid.innerHTML = '';
+  emojis.forEach(e => {
+    const el = document.createElement('div');
+    el.className = 'emoji-opt' + (e === '🏭' ? ' selected' : '');
+    el.textContent = e;
+    el.onclick = () => {
+      document.querySelectorAll('.emoji-opt').forEach(x=>x.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedEmoji = e;
+      document.getElementById('nc-logo').value = e;
+    };
+    grid.appendChild(el);
+  });
+  document.getElementById('nc-logo').value = '🏭';
+  document.getElementById('nc-logo').addEventListener('input', e => { selectedEmoji = e.target.value; });
+}
+
+
+function addDefaultWH() {
+  const input = document.getElementById('nc-wh-input');
+  const name = input.value.trim();
+  if (!name) return;
+  defaultWHs.push(name);
+  input.value = '';
+  renderDefaultWHs();
+}
+
+function renderDefaultWHs() {
+  const list = document.getElementById('nc-wh-list');
+  list.innerHTML = '';
+  defaultWHs.forEach((wh, i) => {
+    const el = document.createElement('div');
+    el.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--surface);border-radius:20px;padding:4px 10px;border:1px solid var(--border)';
+    el.innerHTML = `<span style="font-size:13px">🏭 ${wh}</span><button onclick="removeWH(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;line-height:1">×</button>`;
+    list.appendChild(el);
+  });
+}
+
+function removeWH(i) { defaultWHs.splice(i,1); renderDefaultWHs(); }
+
+// يكتب نسخة الإعدادات الأساسية (معلومات الشركة + الإعدادات + فرع افتراضي)
+// داخل مشروع Firebase الخاص بالزبون نفسه (tenantConfig) — هذا هو المشروع
+// اللي يتصل فيه تطبيقا المدير والموظف فعليًا بعد تسجيل الدخول، فلازم
+// تكون بياناته موجودة هناك، مو بس بقاعدة بيانات المورد.
+async function seedTenantCompanyDoc(cid, companyData, warehouseNames) {
+  const tempAppName = 'tenantTemp_' + Date.now();
+  const tenantApp = firebase.initializeApp(companyData.info.tenantConfig, tempAppName);
+  try {
+    const tdb = tenantApp.database();
+    const existing = await tdb.ref(`companies/${cid}/info`).once('value');
+    if (!existing.exists()) {
+      await tdb.ref(`companies/${cid}`).set({ info: companyData.info, settings: companyData.settings });
+      const names = (warehouseNames && warehouseNames.length) ? warehouseNames : ['الفرع الرئيسي'];
+      for (const whName of names) {
+        await tdb.ref(`companies/${cid}/warehouses`).push({ name: whName, pin: '1234', active: true });
+      }
+    } else {
+      // الشركة موجودة أصلاً بمشروعها — لا نلمس بيانات موظفيها وحضورهم،
+      // نكتفي بتحديث معلومات الدخول فقط لاحقًا عبر updateTenantManagerInfo
+    }
+  } finally {
+    await tenantApp.delete();
+  }
+}
+
+// يحدّث بيانات دخول المدير (يوزر/uid) داخل مشروع الزبون نفسه أيضًا،
+// بدون التأثير على أي بيانات تشغيلية أخرى بذلك المشروع.
+async function updateTenantManagerInfo(tenantConfig, cid, patch) {
+  const tempAppName = 'tenantTemp_' + Date.now();
+  const tenantApp = firebase.initializeApp(tenantConfig, tempAppName);
+  try {
+    await tenantApp.database().ref(`companies/${cid}/info`).update(patch);
+  } finally {
+    await tenantApp.delete();
+  }
+}
+
+async function createCompany() {
+  const nameAr = document.getElementById('nc-name-ar').value.trim();
+  const nameEn = document.getElementById('nc-name-en').value.trim();
+  const adminPin = document.getElementById('nc-admin-pin').value.trim();
+  if (!nameAr || !nameEn) { showToast('أدخل اسم الشركة بالعربية والإنجليزية', 'error'); return; }
+  if (!adminPin || adminPin.length < 4) { showToast('أدخل رمز PIN للمدير (4 أرقام على الأقل)', 'error'); return; }
+  const expiresAt = 9999999999999;
+  const cid = 'c' + Date.now() + Math.random().toString(36).slice(2,7);
+  showLoading('جاري إنشاء الشركة...');
+  try {
+    const fbCfg = {
+      apiKey: document.getElementById('nc-fb-apiKey').value.trim(),
+      authDomain: document.getElementById('nc-fb-authDomain').value.trim(),
+      databaseURL: document.getElementById('nc-fb-databaseURL').value.trim(),
+      projectId: document.getElementById('nc-fb-projectId').value.trim(),
+      storageBucket: document.getElementById('nc-fb-storageBucket').value.trim(),
+      messagingSenderId: document.getElementById('nc-fb-messagingSenderId').value.trim(),
+      appId: document.getElementById('nc-fb-appId').value.trim()
+    };
+    if (!fbCfg.apiKey || !fbCfg.databaseURL || !fbCfg.projectId) {
+      hideLoading();
+      showToast('يرجى تعبئة بيانات Firebase الخاصة بالزبون (apiKey, databaseURL, projectId)', 'error');
+      return;
+    }
+    const logo = document.getElementById('nc-logo').value || selectedEmoji || '🏭';
+    const companyData = {
+      info: {
+        nameAr, nameEn, logo,
+        industry: document.getElementById('nc-industry').value,
+        plan: 'lifetime',
+        maxEmployees: 999999,
+        adminPin, expiresAt, status: 'active',
+        adminEmail: document.getElementById('nc-admin-email').value,
+        adminPhone: document.getElementById('nc-admin-phone').value,
+        createdAt: Date.now(),
+        tenantConfig: fbCfg
+      },
+      settings: {
+        checkIn: { from: document.getElementById('nc-ci-from').value, to: document.getElementById('nc-ci-to').value },
+        checkOut: { from: document.getElementById('nc-co-from').value, to: document.getElementById('nc-co-to').value }
+      }
+    };
+    await DB.ref(`companies/${cid}`).set(companyData);
+    // Add warehouses (نسخة المورد للتتبع فقط)
+    for (const whName of defaultWHs) {
+      const whPin = '1234';
+      await DB.ref(`companies/${cid}/warehouses`).push({ name: whName, pin: whPin, active: true });
+    }
+    if (!defaultWHs.length) {
+      await DB.ref(`companies/${cid}/warehouses`).push({ name: 'الفرع الرئيسي', pin: '1234', active: true });
+    }
+    // الأهم: زرع نفس البيانات فعليًا بمشروع Firebase الخاص بالزبون
+    // (هذا هو المشروع اللي يتصل فيه تطبيقا المدير والموظف بعد تسجيل الدخول)
+    await seedTenantCompanyDoc(cid, companyData, defaultWHs);
+    // Add transaction
+    await DB.ref('seller/transactions').push({ companyId: cid, companyName: nameAr, plan: 'lifetime', amount: LIFETIME_PRICE, dateStr: new Date().toISOString().split('T')[0], date: Date.now(), note: 'اشتراك مدى الحياة' });
+    // Seller notification
+    await DB.ref('seller/notifications').push({ type: 'new_company', message: `تم إنشاء شركة جديدة: ${nameAr}`, timestamp: new Date().toISOString(), read: false });
+    lastCreatedCID = cid;
+    lastCreatedData = { nameAr, nameEn };
+    showLoading('جاري إنشاء حساب دخول المدير...');
+    const username = genUsername(nameEn, nameAr);
+    const password = genPassword();
+    const managerUid = await withTimeout(createDirectoryAccount({ role: 'manager', username, password, companyId: cid, companyName: nameAr, tenantConfig: fbCfg }), 15000);
+    await DB.ref(`companies/${cid}/info`).update({ managerUsername: username, managerPassword: password, managerUid });
+    await updateTenantManagerInfo(fbCfg, cid, { managerUsername: username, managerUid });
+    hideLoading();
+    showToast('تم إنشاء الشركة وحساب المدير بنجاح!', 'success');
+    document.getElementById('nc-admin-username').textContent = username;
+    document.getElementById('nc-admin-password').textContent = password;
+    document.getElementById('nc-success').style.display = 'block';
+    document.getElementById('nc-success').scrollIntoView({ behavior: 'smooth' });
+  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+}
+
+function copyLink(elId) {
+  const text = document.getElementById(elId).textContent;
+  navigator.clipboard.writeText(text).then(()=>showToast('تم النسخ', 'success')).catch(()=>{
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); showToast('تم النسخ', 'success');
+  });
+}
+
+function shareWhatsapp() {
+  const username = document.getElementById('nc-admin-username').textContent;
+  const password = document.getElementById('nc-admin-password').textContent;
+  const name = lastCreatedData.nameAr || 'الشركة';
+  const msg = `🎉 مرحباً!\n\nتم تفعيل نظام الحضور الذكي لشركة *${name}*\n\n📲 حمّل تطبيق "المدير" من متجر التطبيقات، وسجّل دخولك بهذه البيانات:\n\n👤 اسم المستخدم: ${username}\n🔑 الرقم السري: ${password}\n\nبالتوفيق!`;
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+}
+
+// ==================== REVENUE ====================
+async function loadRevenue() {
+  showLoading();
+  try {
+    await loadAllCompanies();
+    const transSnap = await DB.ref('seller/transactions').once('value');
+    const transactions = [];
+    transSnap.forEach(c => transactions.push({ key: c.key, ...c.val() }));
+    transactions.sort((a,b)=>(b.date||0)-(a.date||0));
+    // Revenue by month
+    const monthlyRev = {};
+    const now = new Date();
+    for (let i=11; i>=0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      monthlyRev[key] = 0;
+    }
+    transactions.forEach(t => {
+      const d = new Date(t.date || t.createdAt || 0);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if (monthlyRev[key] !== undefined) monthlyRev[key] += t.amount || 0;
+    });
+    const totalThisMonth = monthlyRev[Object.keys(monthlyRev).pop()] || 0;
+    const totalAll = Object.values(monthlyRev).reduce((s,v)=>s+v,0);
+    const activeCount = Object.values(allCompanies).filter(c=>c.status==='active').length;
+    document.getElementById('rev-total').textContent = '$' + totalAll;
+    document.getElementById('rev-month').textContent = '$' + totalThisMonth;
+    document.getElementById('rev-avg').textContent = activeCount ? '$' + Math.round(totalAll/activeCount) : '$0';
+    // Draw chart
+    drawRevenueChart(monthlyRev);
+    // Transactions table
+    const tbody = document.getElementById('trans-tbody');
+    tbody.innerHTML = '';
+    if (!transactions.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text2)">لا توجد معاملات</td></tr>'; }
+    transactions.slice(0,20).forEach(t => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${t.companyName||t.companyId||'--'}</td><td>🌟 مدى الحياة</td><td style="color:var(--green);font-weight:700">$${t.amount||0}</td><td>${t.dateStr||new Date(t.date||0).toLocaleDateString('ar-SA')}</td><td>${t.note||'--'}</td>`;
+      tbody.appendChild(tr);
+    });
+    // Populate company select
+    const sel = document.getElementById('trans-company');
+    sel.innerHTML = '';
+    Object.values(allCompanies).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id; opt.textContent = c.info.nameAr || c.id;
+      sel.appendChild(opt);
+    });
+    hideLoading();
+  } catch(e) { hideLoading(); showToast('خطأ', 'error'); }
+}
+
+function drawRevenueChart(data) {
+  const canvas = document.getElementById('revenue-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 200 * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = '200px';
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = 200;
+  ctx.clearRect(0,0,W,H);
+  const labels = Object.keys(data);
+  const values = Object.values(data);
+  const maxVal = Math.max(...values, 1);
+  const barW = (W - 60) / labels.length - 6;
+  const padL = 40, padB = 30, padT = 20;
+  const chartH = H - padB - padT;
+  labels.forEach((label, i) => {
+    const x = padL + i * ((W - padL - 10) / labels.length);
+    const barH = (values[i] / maxVal) * chartH;
+    const y = padT + chartH - barH;
+    const grad = ctx.createLinearGradient(x, y, x, y+barH);
+    grad.addColorStop(0, '#a855f7');
+    grad.addColorStop(1, '#7c3aed');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, barH, [4,4,0,0]);
+    ctx.fill();
+    if (values[i] > 0) {
+      ctx.fillStyle = '#f5a623';
+      ctx.font = '10px Cairo';
+      ctx.textAlign = 'center';
+      ctx.fillText('$'+values[i], x+barW/2, y-4);
+    }
+    ctx.fillStyle = '#8892a4';
+    ctx.font = '9px Cairo';
+    ctx.textAlign = 'center';
+    ctx.fillText(label.slice(5), x+barW/2, H-8);
+  });
+  // Y axis
+  ctx.strokeStyle = '#2a3050';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL-5, padT);
+  ctx.lineTo(padL-5, H-padB);
+  ctx.stroke();
+}
+
+async function addTransaction() {
+  const cid = document.getElementById('trans-company').value;
+  const amount = parseFloat(document.getElementById('trans-amount').value);
+  const date = document.getElementById('trans-date').value;
+  const note = document.getElementById('trans-note').value.trim();
+  if (!cid || !amount || !date) { showToast('يرجى ملء الحقول المطلوبة', 'error'); return; }
+  try {
+    await DB.ref('seller/transactions').push({ companyId: cid, companyName: allCompanies[cid]?.info?.nameAr||'', plan: allCompanies[cid]?.info?.plan||'starter', amount, dateStr: date, date: new Date(date).getTime(), note, createdAt: Date.now() });
+    showToast('تم تسجيل المعاملة', 'success');
+    document.getElementById('trans-amount').value = '';
+    document.getElementById('trans-note').value = '';
+    loadRevenue();
+  } catch(e) { showToast('خطأ', 'error'); }
+}
+
+// ==================== NOTIFICATIONS ====================
+async function loadNotifs() {
+  const list = document.getElementById('seller-notifs-list');
+  list.innerHTML = '<div style="text-align:center;padding:20px"><div class="spinner-sm"></div></div>';
+  try {
+    const snap = await DB.ref('seller/notifications').once('value');
+    const items = [];
+    snap.forEach(c => items.push({ key: c.key, ...c.val() }));
+    items.sort((a,b)=>new Date(b.timestamp||0)-new Date(a.timestamp||0));
+    if (!items.length) { list.innerHTML = '<div class="empty-state"><div class="es-icon">🔕</div><p>لا توجد إشعارات</p></div>'; return; }
+    list.innerHTML = '';
+    items.forEach(n => {
+      const el = document.createElement('div');
+      el.className = 'notif-item' + (!n.read ? ' unread' : '');
+      const ts = n.timestamp ? new Date(n.timestamp).toLocaleString('ar-SA') : '';
+      el.innerHTML = `<div class="notif-head"><span style="font-size:20px">${n.type==='new_company'?'🏢':n.type==='expiry'?'⏰':'🔔'}</span><span style="font-size:11px;color:var(--text2)">${ts}</span></div><div class="notif-msg">${n.message||''}</div>`;
+      list.appendChild(el);
+    });
+    // Mark read
+    const updates = {};
+    items.forEach(n => { if(!n.read) updates[n.key+'/read'] = true; });
+    if (Object.keys(updates).length) await DB.ref('seller/notifications').update(updates);
+  } catch(e) {}
+}
+
+// ==================== SETTINGS ====================
+async function changeSellerPin() {
+  const newPin = document.getElementById('new-seller-pin').value.trim();
+  const confirm = document.getElementById('confirm-seller-pin').value.trim();
+  if (!newPin || newPin.length < 4) { showToast('الرمز يجب أن يكون 4 أرقام على الأقل', 'error'); return; }
+  if (newPin !== confirm) { showToast('الرمزان غير متطابقان', 'error'); return; }
+  try {
+    await DB.ref('seller/auth/pin').set(newPin);
+    showToast('تم تغيير الرمز بنجاح', 'success');
+    document.getElementById('new-seller-pin').value = '';
+    document.getElementById('confirm-seller-pin').value = '';
+  } catch(e) { showToast('خطأ', 'error'); }
+}
+
+// ==================== NAVIGATION ====================
+const pageLoaders = {
+  dash: loadDashboard,
+  companies: loadCompanies,
+  'new-company': () => { document.getElementById('nc-success').style.display='none'; defaultWHs=[]; renderDefaultWHs(); },
+  revenue: loadRevenue,
+  notifs: loadNotifs,
+  'my-settings': () => {}
+};
+
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const pageEl = document.getElementById('page-'+page);
+  if (pageEl) pageEl.classList.add('active');
+  document.querySelector(`.nav-item[onclick*="${page}"]`)?.classList.add('active');
+  const titles = { dash:'لوحة التحكم', companies:'الشركات', 'new-company':'شركة جديدة', revenue:'الإيرادات', notifs:'الإشعارات', 'my-settings':'الإعدادات' };
+  document.getElementById('page-title').textContent = titles[page] || page;
+  currentPage = page;
+  pageLoaders[page]?.();
+  document.getElementById('sidebar').classList.remove('open');
+}
+
+function refreshCurrentPage() { pageLoaders[currentPage]?.(); }
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+// ==================== CONFIRM ====================
+function showConfirm(title, msg, cb) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-msg').textContent = msg;
+  confirmCallback = cb;
+  document.getElementById('confirm-ok').onclick = () => { if(confirmCallback) confirmCallback(); };
+  document.getElementById('confirm-modal').classList.add('active');
+}
+function closeConfirm() { document.getElementById('confirm-modal').classList.remove('active'); confirmCallback = null; }
+
+// ==================== HELPERS ====================
+function showToast(msg, type='info') {
+  const tc = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  tc.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, 3000);
+}
+function showLoading(text='جاري التحميل...') { document.getElementById('lo-text').textContent=text; document.getElementById('loading-overlay').classList.add('active'); }
+function hideLoading() { document.getElementById('loading-overlay').classList.remove('active'); }
+</script>
+</body>
+</html>
