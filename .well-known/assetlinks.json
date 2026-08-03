@@ -1,1 +1,8 @@
-x
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.basma.manager",
+        "sha256_cert_fingerprints": ["F4:33:8B:EC:61:53:1E:02:52:7B:34:29:92:C9:37:94:B8:AB:DD:75:EE:53:66:DA:69:80:44:83:A7:BB:7F:13"]
+      }
+    }]
