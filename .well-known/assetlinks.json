@@ -1,8 +1,12 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "com.basma.manager",
-        "sha256_cert_fingerprints": ["F4:33:8B:EC:61:53:1E:02:52:7B:34:29:92:C9:37:94:B8:AB:DD:75:EE:53:66:DA:69:80:44:83:A7:BB:7F:13"]
-      }
-    }]
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.basma.employee",
+      "sha256_cert_fingerprints": [
+        "81:E7:05:E2:16:40:BE:09:17:97:F2:33:21:14:24:B4:AC:D5:57:4D:F8:3D:1F:22:E8:E8:6C:55:DC:FE:17:A1"
+      ]
+    }
+  }
+]
