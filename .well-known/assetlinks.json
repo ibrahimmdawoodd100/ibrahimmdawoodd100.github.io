@@ -8,15 +8,5 @@
         "81:E7:05:E2:16:40:BE:09:17:97:F2:33:21:14:24:B4:AC:D5:57:4D:F8:3D:1F:22:E8:E8:6C:55:DC:FE:17:A1"
       ]
     }
-  },
-  {
-    "relation": ["delegate_permission/common.handle_all_urls"],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "io.github.ibrahimmdawoodd100.twa",
-      "sha256_cert_fingerprints": [
-        "04:D6:99:1E:96:04:14:D9:F4:27:93:45:48:2E:9C:5F:C4:75:E9:BD:63:D9:32:1C:BE:3F:07:61:8E:BB:E6:C2"
-      ]
-    }
   }
 ]
