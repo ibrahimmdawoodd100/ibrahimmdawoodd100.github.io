@@ -28,5 +28,15 @@
         "04:D6:99:1E:96:04:14:D9:F4:27:93:45:48:2E:9C:5F:C4:75:E9:BD:63:D9:32:1C:BE:3F:07:61:8E:BB:E6:C2"
       ]
     }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.arabataldahab.customer",
+      "sha256_cert_fingerprints": [
+        "D6:34:A6:4F:E2:FA:65:77:A5:C6:76:27:58:48:68:3C:0A:D4:54:F7:A1:6F:A3:54:BD:BB:B2:54:14:79:E8:89"
+      ]
+    }
   }
 ]
