@@ -335,9 +335,32 @@ tr:hover td{background:#1a1f30}
           <input class="form-input" id="nc-logo" placeholder="أو اكتب أي إيموجي" style="margin-top:8px;text-align:center;font-size:24px">
         </div>
         <div class="form-group">
-          <div style="background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:16px;text-align:center">
+          <label class="form-label">نوع الباقة</label>
+          <select class="form-input form-select" id="nc-plan" onchange="updatePlanPreview()">
+            <option value="monthly">📅 شهر — $8</option>
+            <option value="quarterly">📅 3 أشهر — $20</option>
+            <option value="biannual">📅 6 أشهر — $35</option>
+            <option value="yearly">📅 سنة — $60</option>
+            <option value="lifetime" selected>🌟 مدى الحياة — $50</option>
+          </select>
+          <div id="nc-plan-preview" style="background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:16px;text-align:center;margin-top:8px">
             <div style="font-size:20px;font-weight:900;color:var(--gold)">🌟 مدى الحياة</div>
             <div style="font-size:15px;color:var(--text2);margin-top:6px">موظفون غير محدودين — دفعة واحدة $50</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">نوع الاستضافة</label>
+          <div style="display:flex;gap:10px">
+            <label style="flex:1;background:var(--surface);border:2px solid var(--purple);border-radius:14px;padding:14px;text-align:center;cursor:pointer" id="nc-host-shared-label">
+              <input type="radio" name="nc-hosting" id="nc-host-shared" value="shared" checked onchange="toggleHostingType()" style="margin-bottom:6px">
+              <div style="font-weight:700;color:var(--purple)">⚡ مشترك (تلقائي)</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:4px">بدون أي إعداد Firebase — جاهز فورًا</div>
+            </label>
+            <label style="flex:1;background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:14px;text-align:center;cursor:pointer;opacity:0.5" id="nc-host-dedicated-label">
+              <input type="radio" name="nc-hosting" id="nc-host-dedicated" value="dedicated" onchange="toggleHostingType()" style="margin-bottom:6px">
+              <div style="font-weight:700;color:var(--gold)">👑 مستقل (VIP)</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:4px">مشروع Firebase خاص بالشركة</div>
+            </label>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -359,7 +382,7 @@ tr:hover td{background:#1a1f30}
           <div id="nc-wh-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
         </div>
 
-        <div style="border:1px solid var(--gold);border-radius:14px;padding:16px;margin-top:8px;background:linear-gradient(135deg,#1a1200,#1e2438)">
+        <div id="nc-fb-section" style="display:none;border:1px solid var(--gold);border-radius:14px;padding:16px;margin-top:8px;background:linear-gradient(135deg,#1a1200,#1e2438)">
           <div style="font-size:15px;font-weight:700;color:var(--gold);margin-bottom:4px">🔥 بيانات Firebase للزبون</div>
           <div style="font-size:12px;color:var(--text2);margin-bottom:14px">أنشئ مشروع Firebase جديد للزبون وأدخل بياناته هنا — سيُربط بحساب المدير تلقائيًا عبر الدليل المركزي، وسيحصل المدير على اسم مستخدم ورقم سري بدل الرابط</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -472,6 +495,16 @@ tr:hover td{background:#1a1f30}
 
 <script>
 // ==================== CONFIG ====================
+// يحوّل أي Date إلى "YYYY-MM-DD" حسب التوقيت المحلي لجهاز المستخدم
+// (بدل UTC) — هذا مهم لأن toISOString() ترجع دائمًا بتوقيت غرينتش،
+// فبدون هذا التحويل، أي عملية قريبة من منتصف الليل بتوقيت العراق
+// (UTC+3) كانت تُسجَّل تحت تاريخ اليوم السابق بالخطأ.
+function localDateStr(d) {
+  d = d || new Date();
+  const off = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - off).toISOString().split('T')[0];
+}
+
 let DB = null;
 let sellerPinVal = '';
 let isNewPin = false;
@@ -487,6 +520,29 @@ let confirmCallback = null;
 const PLAN_PRICES = { lifetime: LIFETIME_PRICE };
 const PLAN_NAMES = { lifetime: 'مدى الحياة' };
 const PLAN_MAX = { lifetime: 999999 };
+
+const PLANS = {
+  monthly:   { label: '📅 شهر',      price: 8,  days: 30 },
+  quarterly: { label: '📅 3 أشهر',   price: 20, days: 90 },
+  biannual:  { label: '📅 6 أشهر',   price: 35, days: 180 },
+  yearly:    { label: '📅 سنة',      price: 60, days: 365 },
+  lifetime:  { label: '🌟 مدى الحياة', price: 50, days: 0 }
+};
+
+function updatePlanPreview() {
+  const plan = PLANS[document.getElementById('nc-plan').value];
+  const preview = document.getElementById('nc-plan-preview');
+  const desc = plan.days ? `موظفون غير محدودين — كل ${plan.days} يوم بـ $${plan.price}` : `موظفون غير محدودين — دفعة واحدة $${plan.price}`;
+  preview.innerHTML = `<div style="font-size:20px;font-weight:900;color:var(--gold)">${plan.label}</div><div style="font-size:15px;color:var(--text2);margin-top:6px">${desc}</div>`;
+}
+
+function toggleHostingType() {
+  const shared = document.getElementById('nc-host-shared').checked;
+  document.getElementById('nc-fb-section').style.display = shared ? 'none' : 'block';
+  document.getElementById('nc-host-shared-label').style.opacity = shared ? '1' : '0.5';
+  document.getElementById('nc-host-dedicated-label').style.opacity = shared ? '0.5' : '1';
+}
+
 
 function getFirebaseConfig() {
   const stored = localStorage.getItem('seller_fb_cfg');
@@ -579,7 +635,7 @@ function startSellerApp(cfg) {
   DB = firebase.database();
   checkSellerPin();
   initEmojiGrid();
-  document.getElementById('trans-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('trans-date').value = localDateStr(new Date());
 }
 
 function resetSellerFirebase() {
@@ -826,6 +882,25 @@ function filterCompanies() {
   });
 }
 
+async function renewSubscription(cid, planKey) {
+  const c = allCompanies[cid];
+  if (!c) return;
+  const plan = PLANS[planKey];
+  showLoading('جاري تجديد الاشتراك...');
+  try {
+    const base = (c.expiresAt && c.expiresAt > Date.now()) ? c.expiresAt : Date.now();
+    const newExpiresAt = base + plan.days * 86400000;
+    await DB.ref(`companies/${cid}/info`).update({ expiresAt: newExpiresAt, status: 'active', plan: planKey });
+    const tenantConfig = c.info.tenantConfig;
+    if (tenantConfig) await updateTenantManagerInfo(tenantConfig, cid, { expiresAt: newExpiresAt, status: 'active', plan: planKey });
+    await DB.ref('seller/transactions').push({ companyId: cid, companyName: c.info.nameAr, plan: planKey, amount: plan.price, dateStr: localDateStr(new Date()), date: Date.now(), note: `تجديد اشتراك — ${plan.label}` });
+    hideLoading();
+    showToast(`تم التجديد حتى ${new Date(newExpiresAt).toLocaleDateString('ar-SA')}`, 'success');
+    await loadAllCompanies();
+    openPanel(cid);
+  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+}
+
 async function openPanel(cid) {
   const c = allCompanies[cid];
   if (!c) return;
@@ -841,13 +916,24 @@ async function openPanel(cid) {
     <div class="info-row"><span class="info-label">الاسم (عربي)</span><span class="info-value">${c.info.nameAr||'--'}</span></div>
     <div class="info-row"><span class="info-label">الاسم (إنجليزي)</span><span class="info-value">${c.info.nameEn||'--'}</span></div>
     <div class="info-row"><span class="info-label">القطاع</span><span class="info-value">${c.info.industry||'--'}</span></div>
-    <div class="info-row"><span class="info-label">الخطة</span><span class="info-value">🌟 مدى الحياة — $50</span></div>
+    <div class="info-row"><span class="info-label">الاستضافة</span><span class="info-value">${c.info.hosting==='dedicated'?'👑 مستقل (VIP)':'⚡ مشترك'}</span></div>
+    <div class="info-row"><span class="info-label">الخطة</span><span class="info-value">${(PLANS[c.info.plan]||PLANS.lifetime).label} — $${(PLANS[c.info.plan]||PLANS.lifetime).price}</span></div>
     <div class="info-row"><span class="info-label">الموظفون</span><span class="info-value">${c.empCount} (غير محدود)</span></div>
     <div class="info-row"><span class="info-label">الحالة</span><span class="info-value">${c.status==='active'?'✅ نشطة':c.status==='suspended'?'⛔ معلّقة':'❌ منتهية'}</span></div>
-    <div class="info-row"><span class="info-label">الانتهاء</span><span class="info-value">${exp}</span></div>
+    <div class="info-row"><span class="info-label">الانتهاء</span><span class="info-value">${c.info.plan==='lifetime'||!c.expiresAt?'♾️ بلا انتهاء':exp}</span></div>
     <div class="info-row"><span class="info-label">البريد</span><span class="info-value">${c.info.adminEmail||'--'}</span></div>
     <div class="info-row"><span class="info-label">الهاتف</span><span class="info-value">${c.info.adminPhone||'--'}</span></div>
   </div>
+  ${c.info.plan!=='lifetime'?`
+  <div class="panel-section">
+    <div class="panel-section-title">💳 تجديد الاشتراك</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','monthly')">شهر +$8</button>
+      <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','quarterly')">3 أشهر +$20</button>
+      <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','biannual')">6 أشهر +$35</button>
+      <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','yearly')">سنة +$60</button>
+    </div>
+  </div>`:''}
   <div class="panel-section">
     <div class="panel-section-title">🔐 بيانات دخول المدير</div>
     <div class="info-row"><span class="info-label">اسم المستخدم</span><span class="info-value">${c.info.managerUsername||'--'}</span></div>
@@ -936,6 +1022,8 @@ function closePanel() {
 async function suspendCompany(cid) {
   try {
     await DB.ref(`companies/${cid}/info`).update({ status: 'suspended' });
+    const tc = allCompanies[cid]?.info?.tenantConfig;
+    if (tc) await updateTenantManagerInfo(tc, cid, { status: 'suspended' });
     showToast('تم تعليق الشركة', 'info');
     await loadAllCompanies(); filterCompanies();
   } catch(e) { showToast('خطأ', 'error'); }
@@ -944,6 +1032,8 @@ async function suspendCompany(cid) {
 async function activateCompany(cid) {
   try {
     await DB.ref(`companies/${cid}/info`).update({ status: 'active' });
+    const tc = allCompanies[cid]?.info?.tenantConfig;
+    if (tc) await updateTenantManagerInfo(tc, cid, { status: 'active' });
     showToast('تم تفعيل الشركة', 'success');
     await loadAllCompanies(); filterCompanies();
   } catch(e) { showToast('خطأ', 'error'); }
@@ -1061,30 +1151,39 @@ async function createCompany() {
   const adminPin = document.getElementById('nc-admin-pin').value.trim();
   if (!nameAr || !nameEn) { showToast('أدخل اسم الشركة بالعربية والإنجليزية', 'error'); return; }
   if (!adminPin || adminPin.length < 4) { showToast('أدخل رمز PIN للمدير (4 أرقام على الأقل)', 'error'); return; }
-  const expiresAt = 9999999999999;
+  const planKey = document.getElementById('nc-plan').value;
+  const plan = PLANS[planKey];
+  const expiresAt = plan.days ? Date.now() + plan.days * 86400000 : 0;
+  const isShared = document.getElementById('nc-host-shared').checked;
   const cid = 'c' + Date.now() + Math.random().toString(36).slice(2,7);
   showLoading('جاري إنشاء الشركة...');
   try {
-    const fbCfg = {
-      apiKey: document.getElementById('nc-fb-apiKey').value.trim(),
-      authDomain: document.getElementById('nc-fb-authDomain').value.trim(),
-      databaseURL: document.getElementById('nc-fb-databaseURL').value.trim(),
-      projectId: document.getElementById('nc-fb-projectId').value.trim(),
-      storageBucket: document.getElementById('nc-fb-storageBucket').value.trim(),
-      messagingSenderId: document.getElementById('nc-fb-messagingSenderId').value.trim(),
-      appId: document.getElementById('nc-fb-appId').value.trim()
-    };
-    if (!fbCfg.apiKey || !fbCfg.databaseURL || !fbCfg.projectId) {
-      hideLoading();
-      showToast('يرجى تعبئة بيانات Firebase الخاصة بالزبون (apiKey, databaseURL, projectId)', 'error');
-      return;
+    let fbCfg;
+    if (isShared) {
+      // استضافة مشتركة: نستخدم مشروع الدليل المركزي نفسه، بدون أي إعداد يدوي
+      fbCfg = DIRECTORY_CONFIG;
+    } else {
+      fbCfg = {
+        apiKey: document.getElementById('nc-fb-apiKey').value.trim(),
+        authDomain: document.getElementById('nc-fb-authDomain').value.trim(),
+        databaseURL: document.getElementById('nc-fb-databaseURL').value.trim(),
+        projectId: document.getElementById('nc-fb-projectId').value.trim(),
+        storageBucket: document.getElementById('nc-fb-storageBucket').value.trim(),
+        messagingSenderId: document.getElementById('nc-fb-messagingSenderId').value.trim(),
+        appId: document.getElementById('nc-fb-appId').value.trim()
+      };
+      if (!fbCfg.apiKey || !fbCfg.databaseURL || !fbCfg.projectId) {
+        hideLoading();
+        showToast('يرجى تعبئة بيانات Firebase الخاصة بالزبون (apiKey, databaseURL, projectId)', 'error');
+        return;
+      }
     }
     const logo = document.getElementById('nc-logo').value || selectedEmoji || '🏭';
     const companyData = {
       info: {
         nameAr, nameEn, logo,
         industry: document.getElementById('nc-industry').value,
-        plan: 'lifetime',
+        plan: planKey, hosting: isShared ? 'shared' : 'dedicated',
         maxEmployees: 999999,
         adminPin, expiresAt, status: 'active',
         adminEmail: document.getElementById('nc-admin-email').value,
@@ -1106,11 +1205,11 @@ async function createCompany() {
     if (!defaultWHs.length) {
       await DB.ref(`companies/${cid}/warehouses`).push({ name: 'الفرع الرئيسي', pin: '1234', active: true });
     }
-    // الأهم: زرع نفس البيانات فعليًا بمشروع Firebase الخاص بالزبون
+    // الأهم: زرع نفس البيانات فعليًا بمشروع Firebase الخاص بالزبون (أو المشترك)
     // (هذا هو المشروع اللي يتصل فيه تطبيقا المدير والموظف بعد تسجيل الدخول)
     await seedTenantCompanyDoc(cid, companyData, defaultWHs);
     // Add transaction
-    await DB.ref('seller/transactions').push({ companyId: cid, companyName: nameAr, plan: 'lifetime', amount: LIFETIME_PRICE, dateStr: new Date().toISOString().split('T')[0], date: Date.now(), note: 'اشتراك مدى الحياة' });
+    await DB.ref('seller/transactions').push({ companyId: cid, companyName: nameAr, plan: planKey, amount: plan.price, dateStr: localDateStr(new Date()), date: Date.now(), note: `اشتراك ${plan.label}` });
     // Seller notification
     await DB.ref('seller/notifications').push({ type: 'new_company', message: `تم إنشاء شركة جديدة: ${nameAr}`, timestamp: new Date().toISOString(), read: false });
     lastCreatedCID = cid;
