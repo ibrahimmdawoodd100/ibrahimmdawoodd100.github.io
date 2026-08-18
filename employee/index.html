@@ -300,6 +300,13 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
   <button class="action-btn" id="retry-btn" style="display:none;width:160px" onclick="initFirebase()">إعادة المحاولة</button>
 </div>
 
+<!-- SUBSCRIPTION BLOCKED -->
+<div class="screen" id="s-sub-blocked" style="align-items:center;justify-content:center;padding:24px;text-align:center">
+  <div style="font-size:56px" id="sub-blocked-icon">⛔</div>
+  <div style="font-size:20px;font-weight:900;color:var(--red);margin-top:12px" id="sub-blocked-title">الاشتراك متوقف</div>
+  <div style="font-size:14px;color:var(--text2);margin-top:10px;line-height:1.8;max-width:320px" id="sub-blocked-msg">يرجى التواصل مع مديرك أو المورّد.</div>
+</div>
+
 <!-- DIRECTORY LOGIN (يظهر مرة واحدة فقط عند أول استخدام للجهاز) -->
 <div class="screen" id="s-dirlogin" style="overflow-y:auto;padding:40px 24px">
   <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0">
@@ -608,6 +615,15 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 </div>
 
 <script>
+// يحوّل أي Date إلى "YYYY-MM-DD" حسب التوقيت المحلي لجهاز المستخدم
+// (بدل UTC) — يمنع تسجيل حضور قريب من منتصف الليل بتوقيت العراق
+// (UTC+3) تحت تاريخ اليوم السابق بالخطأ.
+function localDateStr(d) {
+  d = d || new Date();
+  const off = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - off).toISOString().split('T')[0];
+}
+
 let DB, COMPANY_ID, COMPANY_INFO = {}, EMP = null, SETTINGS = null;
 let GPS_DATA = { lat: null, lng: null, name: null };
 let CRED_ID = null, SERVER_TIME_OFFSET = 0, SELECTED_WH = null, WAREHOUSE_GEO_ZONE = null, WAREHOUSE_SCHEDULE = null;
@@ -665,6 +681,7 @@ async function initFirebase() {
     const offSnap = await DB.ref('.info/serverTimeOffset').once('value');
     SERVER_TIME_OFFSET = offSnap.val() || 0;
     await loadCompanyInfo();
+    if (checkSubscriptionBlocked()) return;
     restoreSession();
   } catch(e) {
     document.getElementById('splash-status').textContent = 'فشل الاتصال — تحقق من الإنترنت';
@@ -706,6 +723,7 @@ async function directoryEmployeeLogin() {
     const offSnap = await DB.ref('.info/serverTimeOffset').once('value');
     SERVER_TIME_OFFSET = offSnap.val() || 0;
     await loadCompanyInfo();
+    if (checkSubscriptionBlocked()) { btn.disabled = false; btn.textContent = '✅ دخول'; return; }
     // مطابق تمامًا لمسار التفعيل القديم، بدون حاجة لرابط أو رمز تفعيل
     const empSnap = await DB.ref(`companies/${COMPANY_ID}/employees/${record.employeeId}`).once('value');
     const empData = empSnap.val();
@@ -730,6 +748,26 @@ async function directoryEmployeeLogin() {
     err.style.display = 'block';
     btn.disabled = false; btn.textContent = '✅ دخول';
   }
+}
+
+function checkSubscriptionBlocked() {
+  const now = Date.now();
+  const info = COMPANY_INFO || {};
+  if (info.status === 'suspended') {
+    document.getElementById('sub-blocked-icon').textContent = '⛔';
+    document.getElementById('sub-blocked-title').textContent = 'الاشتراك موقوف مؤقتًا';
+    document.getElementById('sub-blocked-msg').textContent = 'تم إيقاف اشتراك شركتك مؤقتًا. يرجى التواصل مع مديرك.';
+    showScreen('s-sub-blocked');
+    return true;
+  }
+  if (info.expiresAt && info.expiresAt > 0 && info.expiresAt < now) {
+    document.getElementById('sub-blocked-icon').textContent = '⏰';
+    document.getElementById('sub-blocked-title').textContent = 'انتهت صلاحية الاشتراك';
+    document.getElementById('sub-blocked-msg').textContent = 'انتهت مدة اشتراك شركتك. يرجى التواصل مع مديرك للتجديد.';
+    showScreen('s-sub-blocked');
+    return true;
+  }
+  return false;
 }
 
 async function loadCompanyInfo() {
@@ -1059,7 +1097,7 @@ function getEmpSchedule() {
 async function loadMonthlyDelay() {
   try {
     const now = serverNow();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = localDateStr(now);
     const snap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
     let d = snap.val() || {};
     if (d.dateKey && d.dateKey !== todayStr) d = {};
@@ -1095,14 +1133,21 @@ function checkGeoZone() {
   }
 
   let inside = false;
+  // نضيف "هامش تسامح" لهامش خطأ قياس GPS نفسه (Accuracy) — الجهاز نادرًا
+  // ما يعطي موقعًا دقيقًا ١٠٠٪، خصوصًا داخل المباني. نحدد الهامش بحد
+  // أقصى ١٥٠ متر حتى ما يُستغل لتزوير الموقع.
+  const accuracyBuffer = Math.min(GPS_DATA.accuracy || 0, 150);
 
   if (hasWarehouseGz) {
     // Use warehouse-specific zone (single zone per warehouse)
     const gz = WAREHOUSE_GEO_ZONE;
-    inside = getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, gz.lat, gz.lng) <= (gz.radius || 300);
+    const baseRadius = gz.radius || 300;
+    const dist = getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, gz.lat, gz.lng);
+    inside = dist <= (baseRadius + accuracyBuffer);
     if (!inside) {
       alertEl.style.display = 'flex';
-      alertEl.querySelector('.gz-text').textContent = `أنت خارج نطاق ${EMP.warehouseName || 'الفرع'} — لا يمكن تسجيل البصمة من هنا`;
+      const over = Math.round(dist - baseRadius - accuracyBuffer);
+      alertEl.querySelector('.gz-text').textContent = `أنت خارج نطاق ${EMP.warehouseName || 'الفرع'} بمقدار ${over} متر تقريبًا — لا يمكن تسجيل البصمة من هنا`;
     } else {
       alertEl.style.display = 'none';
     }
@@ -1110,13 +1155,18 @@ function checkGeoZone() {
     // Fall back to company-wide zones
     const geoZone = SETTINGS.geoZone;
     const zones = geoZone.zones && geoZone.zones.length ? geoZone.zones : [{ lat: geoZone.lat, lng: geoZone.lng, radius: geoZone.radius || 200 }];
+    let minOver = null;
     for (const z of zones) {
       if (!z.lat || !z.lng) continue;
-      if (getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, z.lat, z.lng) <= (z.radius || 200)) { inside = true; break; }
+      const baseRadius = z.radius || 200;
+      const dist = getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, z.lat, z.lng);
+      if (dist <= (baseRadius + accuracyBuffer)) { inside = true; break; }
+      const over = Math.round(dist - baseRadius - accuracyBuffer);
+      if (minOver === null || over < minOver) minOver = over;
     }
     if (!inside) {
       alertEl.style.display = 'flex';
-      alertEl.querySelector('.gz-text').textContent = 'أنت خارج نطاق الموقع المسموح به — لا يمكن تسجيل البصمة من هنا';
+      alertEl.querySelector('.gz-text').textContent = `أنت خارج نطاق الموقع المسموح به بمقدار ${minOver} متر تقريبًا — لا يمكن تسجيل البصمة من هنا`;
     } else {
       alertEl.style.display = 'none';
     }
@@ -1150,7 +1200,7 @@ async function loadWinStatus() {
     document.getElementById('profile-wh').textContent = empData.warehouseName || EMP.warehouseName || '';
 
     const now = serverNow();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = localDateStr(now);
 
     // Load warehouse-specific geo-zone
     if (EMP.warehouseId) {
@@ -1274,7 +1324,7 @@ async function loadWinStatus() {
 
 function checkHoliday(date, settings) {
   if (date.getDay() === 5) return true;
-  const ds = date.toISOString().split('T')[0];
+  const ds = localDateStr(date);
   if (settings && settings.holidays) {
     for (const h of Object.values(settings.holidays)) { if (h.date === ds && h.active !== false) return true; }
   }
@@ -1282,7 +1332,7 @@ function checkHoliday(date, settings) {
 }
 function getHolidayName(date, settings) {
   if (date.getDay() === 5) return 'الجمعة';
-  const ds = date.toISOString().split('T')[0];
+  const ds = localDateStr(date);
   if (settings && settings.holidays) {
     for (const h of Object.values(settings.holidays)) { if (h.date === ds) return h.name || 'عطلة'; }
   }
@@ -1312,7 +1362,7 @@ async function loadTodayStats() {
   try {
     const snap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
     let d = snap.val() || {};
-    const todayStr = serverNow().toISOString().split('T')[0];
+    const todayStr = localDateStr(serverNow());
     if (d.dateKey && d.dateKey !== todayStr) d = {};
     document.getElementById('stat-in').textContent = d.checkIn ? format12(d.checkIn) : '--';
     document.getElementById('stat-out').textContent = d.checkOut ? format12(d.checkOut) : '--';
@@ -1342,12 +1392,13 @@ function getGPS() {
   const text = document.getElementById('gps-text');
   dot.className = 'gps-dot gps-loading';
   text.textContent = 'جاري تحديد الموقع...';
-  GPS_DATA = { lat: null, lng: null, name: null };
+  GPS_DATA = { lat: null, lng: null, name: null, accuracy: null };
   GEO_ZONE_OK = null;
   if (!navigator.geolocation) { dot.className = 'gps-dot gps-err'; text.textContent = 'الموقع غير متاح على هذا الجهاز'; GEO_ZONE_OK = true; return; }
   navigator.geolocation.getCurrentPosition(
     async pos => {
       GPS_DATA.lat = pos.coords.latitude; GPS_DATA.lng = pos.coords.longitude;
+      GPS_DATA.accuracy = pos.coords.accuracy || 0;
       dot.className = 'gps-dot gps-ok';
       text.textContent = 'جاري تحديد اسم الموقع...';
       try {
@@ -1387,7 +1438,7 @@ async function recBio(type) {
   if (empData.schedule) EMP.schedule = empData.schedule;
   SERVER_TIME_OFFSET = offSnap.val() || 0;
   const freshNow = serverNow();
-  const todayKey = freshNow.toISOString().split('T')[0];
+  const todayKey = localDateStr(freshNow);
   let todayData = todaySnapEarly.val() || {};
   if (todayData.dateKey && todayData.dateKey !== todayKey) { await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).remove(); todayData = {}; }
   const schedule = getEmpSchedule();
@@ -1486,7 +1537,7 @@ async function doReBioReg() {
 async function checkActiveMissions() {
   try {
     const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(EMP.id).once('value');
-    const today = serverNow().toISOString().split('T')[0];
+    const today = localDateStr(serverNow());
     let activeMission = null;
     snap.forEach(c => {
       const m = c.val();
@@ -1517,7 +1568,7 @@ async function loadMissionsPage() {
     missions.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     if (!missions.length) { container.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div><p>لا توجد زمنيات مسندة إليك</p></div>'; return; }
     container.innerHTML = '';
-    const today = serverNow().toISOString().split('T')[0];
+    const today = localDateStr(serverNow());
     for (const m of missions) {
       const card = document.createElement('div');
       const isActive = (m.status === 'assigned' || m.status === 'started') && m.date === today;
@@ -1728,7 +1779,7 @@ async function submitExcuse() {
     await DB.ref(`companies/${COMPANY_ID}/excuses`).push({
       empId: EMP.id, empName: EMP.name,
       warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
-      type: type.value, reason, date: serverNow().toISOString().split('T')[0],
+      type: type.value, reason, date: localDateStr(serverNow()),
       status: 'pending', createdAt: Date.now()
     });
     await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
@@ -1765,7 +1816,7 @@ async function loadLeavePage() {
       <h3>تقديم طلب إجازة</h3>
       <div class="form-group">
         <label class="form-label">تاريخ الإجازة</label>
-        <input class="form-input" type="date" id="leave-date" min="${new Date(Date.now() + SERVER_TIME_OFFSET + 86400000).toISOString().split('T')[0]}">
+        <input class="form-input" type="date" id="leave-date" min="${localDateStr(new Date(Date.now() + SERVER_TIME_OFFSET + 86400000))}">
       </div>
       <div class="form-group">
         <label class="form-label">نوع الإجازة</label>
@@ -1931,8 +1982,8 @@ function toHijri(dateStr) {
 function togglePartialFields() {
   const lt = document.getElementById('leave-type').value;
   document.getElementById('partial-fields').style.display = lt === 'partial' ? 'block' : 'none';
-  const today = new Date(Date.now() + SERVER_TIME_OFFSET).toISOString().split('T')[0];
-  const tomorrow = new Date(Date.now() + SERVER_TIME_OFFSET + 86400000).toISOString().split('T')[0];
+  const today = localDateStr(new Date(Date.now() + SERVER_TIME_OFFSET));
+  const tomorrow = localDateStr(new Date(Date.now() + SERVER_TIME_OFFSET + 86400000));
   document.getElementById('leave-date').min = lt === 'partial' ? today : tomorrow;
   if (lt !== 'partial' && document.getElementById('leave-date').value < tomorrow) {
     document.getElementById('leave-date').value = '';
