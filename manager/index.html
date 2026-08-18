@@ -640,6 +640,14 @@ tr:hover td{background:#1a1f30}
   </div>
 </div>
 
+<!-- Subscription Blocked Screen -->
+<div id="sub-blocked-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:10000;align-items:center;justify-content:center;flex-direction:column;padding:24px;text-align:center">
+  <div style="font-size:56px" id="sub-blocked-icon">⛔</div>
+  <div style="font-size:20px;font-weight:900;color:var(--red);margin-top:12px" id="sub-blocked-title">الاشتراك متوقف</div>
+  <div style="font-size:14px;color:var(--text2);margin-top:10px;line-height:1.8;max-width:320px" id="sub-blocked-msg">يرجى التواصل مع المورّد لتجديد الاشتراك أو الاستفسار.</div>
+  <button onclick="resetFirebaseConfig()" style="margin-top:24px;background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:50px;padding:10px 24px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer">🚪 تسجيل الخروج من هذا الجهاز</button>
+</div>
+
 <!-- Directory Login Screen -->
 <div id="setup-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;overflow-y:auto;padding:24px;align-items:center;justify-content:center;flex-direction:column">
   <div style="width:100%;max-width:420px">
@@ -659,6 +667,15 @@ tr:hover td{background:#1a1f30}
 
 <script>
 // ==================== CONFIG ====================
+// يحوّل أي Date إلى "YYYY-MM-DD" حسب التوقيت المحلي لجهاز المستخدم
+// (بدل UTC) — يمنع تسجيل عمليات قريبة من منتصف الليل بتوقيت العراق
+// (UTC+3) تحت تاريخ اليوم السابق بالخطأ.
+function localDateStr(d) {
+  d = d || new Date();
+  const off = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - off).toISOString().split('T')[0];
+}
+
 let COMPANY_ID = 'main';
 let DB = null, COMPANY_INFO = {}, ALL_EMPLOYEES = {}, ALL_WAREHOUSES = {};
 let currentPage = 'dash', dashWHFilter = 'all', attStatusFilter = 'all';
@@ -828,6 +845,15 @@ function unlockAdmin() {
   resetInactivity();
   document.addEventListener('click', resetInactivity);
   document.addEventListener('keydown', resetInactivity);
+  if (!window._subCheckInterval) {
+    window._subCheckInterval = setInterval(async () => {
+      try {
+        const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
+        COMPANY_INFO = snap.val() || COMPANY_INFO;
+        checkSubscriptionBlocked();
+      } catch(e) {}
+    }, 300000); // كل 5 دقائق
+  }
 }
 function lockAdmin() {
   sessionStorage.removeItem('admin_session_' + COMPANY_ID);
@@ -847,10 +873,35 @@ function resetFbCfg() {
   location.reload();
 }
 
+function checkSubscriptionBlocked() {
+  const now = Date.now();
+  const info = COMPANY_INFO || {};
+  const ol = document.getElementById('loading-overlay');
+  if (info.status === 'suspended') {
+    if (ol) ol.style.display = 'none';
+    document.getElementById('sub-blocked-icon').textContent = '⛔';
+    document.getElementById('sub-blocked-title').textContent = 'الاشتراك موقوف مؤقتًا';
+    document.getElementById('sub-blocked-msg').textContent = 'تم إيقاف اشتراك شركتك مؤقتًا. يرجى التواصل مع المورّد لمعرفة السبب أو استئناف الخدمة.';
+    document.getElementById('sub-blocked-screen').style.display = 'flex';
+    return true;
+  }
+  if (info.expiresAt && info.expiresAt > 0 && info.expiresAt < now) {
+    if (ol) ol.style.display = 'none';
+    document.getElementById('sub-blocked-icon').textContent = '⏰';
+    document.getElementById('sub-blocked-title').textContent = 'انتهت صلاحية الاشتراك';
+    document.getElementById('sub-blocked-msg').textContent = 'انتهت مدة اشتراك شركتك بتاريخ ' + new Date(info.expiresAt).toLocaleDateString('ar-SA') + '. يرجى التواصل مع المورّد للتجديد.';
+    document.getElementById('sub-blocked-screen').style.display = 'flex';
+    return true;
+  }
+  document.getElementById('sub-blocked-screen').style.display = 'none';
+  return false;
+}
+
 async function loadCompanyAndShowPin() {
   try {
     const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
     COMPANY_INFO = snap.val() || {};
+    if (checkSubscriptionBlocked()) return;
     if (COMPANY_INFO.adminPin != null) {
       cachedAdminPin = String(COMPANY_INFO.adminPin);
     } else {
@@ -1063,7 +1114,7 @@ async function clearAdminNotifs() {
 // ==================== DASHBOARD ====================
 async function loadDashboard() {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStr(new Date());
     const [todaySnap, leavesSnap] = await Promise.all([
       DB.ref(`companies/${COMPANY_ID}/today`).once('value'),
       DB.ref(`companies/${COMPANY_ID}/leaves`).once('value')
@@ -1126,7 +1177,7 @@ async function loadAttendance() {
   try {
     const settSnap = await DB.ref(`companies/${COMPANY_ID}/settings`).once('value');
     const settings = settSnap.val() || {};
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = localDateStr(new Date());
     const isToday = dateVal === todayStr;
     const dateObj = new Date(dateVal);
     const isHoliday = dateObj.getDay()===5 || Object.values(settings.holidays||{}).some(h=>h.date===dateVal&&h.active!==false);
@@ -1249,10 +1300,20 @@ async function showEmpModal(eid) {
     <div class="info-row"><span class="info-label">الاسم</span><span class="info-value">${emp.name}</span></div>
     <div class="info-row"><span class="info-label">الرقم الوظيفي</span><span class="info-value">${emp.empId||'--'}</span></div>
     <div class="info-row"><span class="info-label">المسمى</span><span class="info-value">${emp.role||'--'}</span></div>
-    <div class="info-row"><span class="info-label">الفرع</span><span class="info-value">${emp.warehouseName||'--'}</span></div>
     <div class="info-row"><span class="info-label">الحالة</span><span class="info-value">${emp.status==='approved'?'✅ معتمد':emp.status}</span></div>
   </div>
   ${schedHtml}
+  <div class="modal-section">
+    <div class="modal-section-title">🏢 نقل الفرع</div>
+    <div class="info-row"><span class="info-label">الفرع الحالي</span><span class="info-value">${emp.warehouseName||'--'}</span></div>
+    <div class="form-group">
+      <label class="form-label">نقل الموظف إلى فرع آخر</label>
+      <select class="form-input form-select" id="emp-wh-transfer">
+        ${Object.entries(ALL_WAREHOUSES).map(([wid,w])=>`<option value="${wid}" ${wid===emp.warehouseId?'selected':''}>${w.name}</option>`).join('')}
+      </select>
+    </div>
+    <button class="action-btn-sm btn-purple" onclick="transferEmployeeWarehouse('${eid}')" style="width:100%">🔄 نقل الفرع الآن</button>
+  </div>
   <div class="modal-section">
     <div class="modal-section-title">💰 الراتب</div>
     <div class="form-group"><label class="form-label">الراتب الأساسي (شهري)</label><input class="form-input" type="number" id="emp-salary-input" value="${emp.salary||0}"></div>
@@ -1277,6 +1338,27 @@ async function showEmpModal(eid) {
 }
 
 function closeEmpModal() { document.getElementById('emp-modal').classList.remove('active'); }
+
+async function transferEmployeeWarehouse(eid){
+  const newWhId = document.getElementById('emp-wh-transfer').value;
+  const emp = ALL_EMPLOYEES[eid];
+  if (!emp || !newWhId) return;
+  if (newWhId === emp.warehouseId) { showToast('الموظف أصلاً بهذا الفرع', 'info'); return; }
+  const newWhName = ALL_WAREHOUSES[newWhId]?.name || '';
+  const oldWhName = emp.warehouseName || '--';
+  showConfirm('🔄 نقل الفرع', `هل تريد نقل "${emp.name}" من "${oldWhName}" إلى "${newWhName}"؟`, async () => {
+    closeConfirm();
+    showLoading('جاري نقل الموظف...');
+    try {
+      await DB.ref(`companies/${COMPANY_ID}/employees/${eid}`).update({ warehouseId: newWhId, warehouseName: newWhName });
+      ALL_EMPLOYEES[eid] = { ...ALL_EMPLOYEES[eid], warehouseId: newWhId, warehouseName: newWhName };
+      hideLoading();
+      showToast(`تم نقل "${emp.name}" إلى ${newWhName}`, 'success');
+      closeEmpModal();
+      await loadEmployees();
+    } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
+  });
+}
 
 async function saveEmpSalary(eid){
   const salary=Number(document.getElementById('emp-salary-input').value)||0;
@@ -1438,10 +1520,10 @@ function loadExcuses() {
 }
 
 async function approveExcuse(key,empId){
-  try{await DB.ref(`companies/${COMPANY_ID}/excuses/${key}`).update({status:'approved'});await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({status:'excused',excuseCheckout:true,dateKey:new Date().toISOString().split('T')[0]});await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'excuse_res',message:'✅ تم قبول عذرك',timestamp:new Date().toISOString(),read:false});showToast('تم قبول العذر','success');loadExcuses();}catch(e){showToast('خطأ: '+e.message,'error');}
+  try{await DB.ref(`companies/${COMPANY_ID}/excuses/${key}`).update({status:'approved'});await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({status:'excused',excuseCheckout:true,dateKey:localDateStr(new Date())});await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'excuse_res',message:'✅ تم قبول عذرك',timestamp:new Date().toISOString(),read:false});showToast('تم قبول العذر','success');loadExcuses();}catch(e){showToast('خطأ: '+e.message,'error');}
 }
 async function rejectExcuse(key,empId){
-  try{await DB.ref(`companies/${COMPANY_ID}/excuses/${key}`).update({status:'rejected'});await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({excuseCheckout:false,dateKey:new Date().toISOString().split('T')[0]});await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'excuse_res',message:'❌ تم رفض عذرك',timestamp:new Date().toISOString(),read:false});showToast('تم رفض العذر','info');loadExcuses();}catch(e){showToast('خطأ: '+e.message,'error');}
+  try{await DB.ref(`companies/${COMPANY_ID}/excuses/${key}`).update({status:'rejected'});await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({excuseCheckout:false,dateKey:localDateStr(new Date())});await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'excuse_res',message:'❌ تم رفض عذرك',timestamp:new Date().toISOString(),read:false});showToast('تم رفض العذر','info');loadExcuses();}catch(e){showToast('خطأ: '+e.message,'error');}
 }
 
 // ==================== ③ LEAVES (مخصص — يظهر نوع الإجازة) ====================
@@ -1988,10 +2070,10 @@ async function saveGeoZone() {
 function updateRepDates(){
   const type=document.getElementById('rep-type').value;
   const now=new Date();let from,to;
-  const today=now.toISOString().split('T')[0];
+  const today=localDateStr(now);
   if(type==='daily'){from=to=today;}
-  else if(type==='weekly'){const day=now.getDay();const diff=now.getDate()-day;from=new Date(now.setDate(diff)).toISOString().split('T')[0];to=new Date(new Date(from).getTime()+6*86400000).toISOString().split('T')[0];}
-  else{from=new Date(now.getFullYear(),now.getMonth(),1).toISOString().split('T')[0];to=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().split('T')[0];}
+  else if(type==='weekly'){const day=now.getDay();const diff=now.getDate()-day;from=localDateStr(new Date(now.setDate(diff)));to=localDateStr(new Date(new Date(from).getTime()+6*86400000));}
+  else{from=localDateStr(new Date(now.getFullYear(),now.getMonth(),1));to=localDateStr(new Date(now.getFullYear(),now.getMonth()+1,0));}
   // Clamp to today if future
   if(to>today)to=today;
   if(from>today)from=today;
@@ -2016,7 +2098,7 @@ async function generateReport(){
   const to=document.getElementById('rep-to').value;
   const whFilter=document.getElementById('rep-wh').value;
   const empFilter=document.getElementById('rep-emp')?.value||'all';
-  const today=new Date().toISOString().split('T')[0];
+  const today=localDateStr(new Date());
   if(!from||!to){showToast('اختر نطاق التاريخ','error');return;}
   if(from>today||to>today){showToast('لا يمكن اختيار تاريخ مستقبلي','error');return;}
   showLoading('جاري إنشاء التقرير...');
@@ -2041,7 +2123,7 @@ async function generateReport(){
     recSnap.forEach(c=>{
       const r=c.val();if(!r||!r.empId||!r.timestamp)return;
       if(!records[r.empId])records[r.empId]={};
-      const d=new Date(r.timestamp).toISOString().split('T')[0];
+      const d=localDateStr(new Date(r.timestamp));
       if(!records[r.empId][d])records[r.empId][d]={};
       if(r.type==='in'&&!records[r.empId][d].in){records[r.empId][d].in=r.timestamp;records[r.empId][d].delayMins=r.delayMins||0;}
       else if(r.type==='out'&&!records[r.empId][d].out)records[r.empId][d].out=r.timestamp;
@@ -2206,7 +2288,7 @@ async function generateReport(){
 
 function getDates(from,to){
   const dates=[];const cur=new Date(from);const end=new Date(to);
-  while(cur<=end){dates.push(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}
+  while(cur<=end){dates.push(localDateStr(cur));cur.setDate(cur.getDate()+1);}
   return dates;
 }
 
@@ -2217,8 +2299,8 @@ async function calculatePayroll(){
   const[y,m]=monthVal.split('-').map(Number);
   const firstDay=`${monthVal}-01`;
   const lastDateObj=new Date(y,m,0);
-  const todayStr=new Date().toISOString().split('T')[0];
-  let lastDay=lastDateObj.toISOString().split('T')[0];
+  const todayStr=localDateStr(new Date());
+  let lastDay=localDateStr(lastDateObj);
   if(lastDay>todayStr)lastDay=todayStr;
   showLoading('جاري احتساب الرواتب...');
   try{
@@ -2232,7 +2314,7 @@ async function calculatePayroll(){
     const records={};
     recSnap.forEach(c=>{
       const r=c.val();if(!r||!r.empId||!r.timestamp)return;
-      const d=new Date(r.timestamp).toISOString().split('T')[0];
+      const d=localDateStr(new Date(r.timestamp));
       if(!records[r.empId])records[r.empId]={};
       if(!records[r.empId][d])records[r.empId][d]={};
       if(r.type==='in'&&!records[r.empId][d].in)records[r.empId][d].in=r.timestamp;
@@ -2329,7 +2411,7 @@ function openMissionModal(key) {
   document.getElementById('mission-edit-key').value = key || '';
   document.getElementById('mission-location').value = '';
   document.getElementById('mission-desc').value = '';
-  document.getElementById('mission-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('mission-date').value = localDateStr(new Date());
   document.getElementById('mission-time').value = '';
   // Populate emp select
   const sel = document.getElementById('mission-emp-select');
@@ -2461,7 +2543,7 @@ async function deleteMission(key) {
 // ==================== NAVIGATION ====================
 const pageLoaders = {
   dash: loadDashboard,
-  attend: ()=>{ const d=document.getElementById('att-date');if(!d.value)d.value=new Date().toISOString().split('T')[0];loadAttendance(); },
+  attend: ()=>{ const d=document.getElementById('att-date');if(!d.value)d.value=localDateStr(new Date());loadAttendance(); },
   emps: loadEmployees,
   excuses: loadExcuses,
   leaves: ()=>{ loadLeaves(); loadMissions(); },
