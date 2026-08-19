@@ -335,17 +335,11 @@ tr:hover td{background:#1a1f30}
           <input class="form-input" id="nc-logo" placeholder="أو اكتب أي إيموجي" style="margin-top:8px;text-align:center;font-size:24px">
         </div>
         <div class="form-group">
-          <label class="form-label">نوع الباقة</label>
-          <select class="form-input form-select" id="nc-plan" onchange="updatePlanPreview()">
-            <option value="monthly">📅 شهر — $8</option>
-            <option value="quarterly">📅 3 أشهر — $20</option>
-            <option value="biannual">📅 6 أشهر — $35</option>
-            <option value="yearly">📅 سنة — $60</option>
-            <option value="lifetime" selected>🌟 مدى الحياة — $50</option>
-          </select>
-          <div id="nc-plan-preview" style="background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:16px;text-align:center;margin-top:8px">
-            <div style="font-size:20px;font-weight:900;color:var(--gold)">🌟 مدى الحياة</div>
-            <div style="font-size:15px;color:var(--text2);margin-top:6px">موظفون غير محدودين — دفعة واحدة $50</div>
+          <label class="form-label">الباقة</label>
+          <input type="hidden" id="nc-plan" value="yearly">
+          <div id="nc-plan-preview" style="background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:16px;text-align:center">
+            <div style="font-size:20px;font-weight:900;color:var(--gold)">📅 سنة كاملة</div>
+            <div style="font-size:15px;color:var(--text2);margin-top:6px">موظفون غير محدودين — 100$ كل سنة</div>
           </div>
         </div>
         <div class="form-group">
@@ -510,30 +504,24 @@ let sellerPinVal = '';
 let isNewPin = false;
 let allCompanies = {};
 let currentPage = 'dash';
-const LIFETIME_PRICE = 50;
+const LIFETIME_PRICE = 100;
 let defaultWHs = [];
 let selectedEmoji = '🏭';
 let lastCreatedCID = '';
 let lastCreatedData = {};
 let confirmCallback = null;
 
-const PLAN_PRICES = { lifetime: LIFETIME_PRICE };
-const PLAN_NAMES = { lifetime: 'مدى الحياة' };
-const PLAN_MAX = { lifetime: 999999 };
+const PLAN_PRICES = { yearly: LIFETIME_PRICE };
+const PLAN_NAMES = { yearly: 'سنوي' };
+const PLAN_MAX = { yearly: 999999 };
 
 const PLANS = {
-  monthly:   { label: '📅 شهر',      price: 8,  days: 30 },
-  quarterly: { label: '📅 3 أشهر',   price: 20, days: 90 },
-  biannual:  { label: '📅 6 أشهر',   price: 35, days: 180 },
-  yearly:    { label: '📅 سنة',      price: 60, days: 365 },
-  lifetime:  { label: '🌟 مدى الحياة', price: 50, days: 0 }
+  yearly: { label: '📅 سنة كاملة', price: 100, days: 365 }
 };
 
 function updatePlanPreview() {
-  const plan = PLANS[document.getElementById('nc-plan').value];
   const preview = document.getElementById('nc-plan-preview');
-  const desc = plan.days ? `موظفون غير محدودين — كل ${plan.days} يوم بـ $${plan.price}` : `موظفون غير محدودين — دفعة واحدة $${plan.price}`;
-  preview.innerHTML = `<div style="font-size:20px;font-weight:900;color:var(--gold)">${plan.label}</div><div style="font-size:15px;color:var(--text2);margin-top:6px">${desc}</div>`;
+  if (preview) preview.innerHTML = `<div style="font-size:20px;font-weight:900;color:var(--gold)">📅 سنة كاملة</div><div style="font-size:15px;color:var(--text2);margin-top:6px">موظفون غير محدودين — 100$ كل سنة</div>`;
 }
 
 function toggleHostingType() {
@@ -819,7 +807,7 @@ async function loadDashboard() {
       const exp = c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('ar-SA') : '--';
       const stBadge = c.status==='active'?'badge-green':c.status==='suspended'?'badge-red':'badge-gray';
       const stText = c.status==='active'?'نشطة':c.status==='suspended'?'معلّقة':'منتهية';
-      el.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:24px">${c.info.logo||'🏢'}</span><div><div style="font-size:14px;font-weight:700">${c.info.nameAr||'شركة'}</div><div style="font-size:11px;color:var(--text2)">🌟 مدى الحياة | غير محدود</div></div></div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--gold)">${c.empCount} موظف</span><span class="badge ${stBadge}">${stText}</span></div>`;
+      el.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:24px">${c.info.logo||'🏢'}</span><div><div style="font-size:14px;font-weight:700">${c.info.nameAr||'شركة'}</div><div style="font-size:11px;color:var(--text2)">📅 سنوي | غير محدود</div></div></div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--gold)">${c.empCount} موظف</span><span class="badge ${stBadge}">${stText}</span></div>`;
       mini.appendChild(el);
     });
     hideLoading();
@@ -862,7 +850,7 @@ function filterCompanies() {
         <div class="cc-name">${c.info.nameAr||'شركة'}</div>
         <div class="cc-name-en">${c.info.nameEn||''}</div>
         <div class="cc-tags">
-          <span class="badge badge-purple">🌟 مدى الحياة</span>
+          <span class="badge badge-purple">📅 سنوي</span>
           <span class="badge ${stBadge}">${stText}</span>
           <span class="badge badge-blue">${c.info.industry||''}</span>
         </div>
@@ -871,7 +859,7 @@ function filterCompanies() {
     <div class="cc-stats">
       <div class="cc-stat"><div class="n">${c.empCount}</div><div class="l">موظف</div></div>
       <div class="cc-stat"><div class="n" style="color:var(--gold)">∞</div><div class="l">غير محدود</div></div>
-      <div class="cc-stat"><div class="n" style="color:var(--green)">$${LIFETIME_PRICE}</div><div class="l">مدى الحياة</div></div>
+      <div class="cc-stat"><div class="n" style="color:var(--green)">$${LIFETIME_PRICE}</div><div class="l">سنويًا</div></div>
     </div>
     <div class="cc-actions">
       <button class="action-btn-sm btn-purple" onclick="openPanel('${c.id}')">👁 عرض</button>
@@ -917,23 +905,17 @@ async function openPanel(cid) {
     <div class="info-row"><span class="info-label">الاسم (إنجليزي)</span><span class="info-value">${c.info.nameEn||'--'}</span></div>
     <div class="info-row"><span class="info-label">القطاع</span><span class="info-value">${c.info.industry||'--'}</span></div>
     <div class="info-row"><span class="info-label">الاستضافة</span><span class="info-value">${c.info.hosting==='dedicated'?'👑 مستقل (VIP)':'⚡ مشترك'}</span></div>
-    <div class="info-row"><span class="info-label">الخطة</span><span class="info-value">${(PLANS[c.info.plan]||PLANS.lifetime).label} — $${(PLANS[c.info.plan]||PLANS.lifetime).price}</span></div>
+    <div class="info-row"><span class="info-label">الخطة</span><span class="info-value">${(PLANS[c.info.plan]||PLANS.yearly).label} — $${(PLANS[c.info.plan]||PLANS.yearly).price}</span></div>
     <div class="info-row"><span class="info-label">الموظفون</span><span class="info-value">${c.empCount} (غير محدود)</span></div>
     <div class="info-row"><span class="info-label">الحالة</span><span class="info-value">${c.status==='active'?'✅ نشطة':c.status==='suspended'?'⛔ معلّقة':'❌ منتهية'}</span></div>
-    <div class="info-row"><span class="info-label">الانتهاء</span><span class="info-value">${c.info.plan==='lifetime'||!c.expiresAt?'♾️ بلا انتهاء':exp}</span></div>
+    <div class="info-row"><span class="info-label">الانتهاء</span><span class="info-value">${!c.expiresAt?'♾️ بلا انتهاء':exp}</span></div>
     <div class="info-row"><span class="info-label">البريد</span><span class="info-value">${c.info.adminEmail||'--'}</span></div>
     <div class="info-row"><span class="info-label">الهاتف</span><span class="info-value">${c.info.adminPhone||'--'}</span></div>
   </div>
-  ${c.info.plan!=='lifetime'?`
   <div class="panel-section">
     <div class="panel-section-title">💳 تجديد الاشتراك</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','monthly')">شهر +$8</button>
-      <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','quarterly')">3 أشهر +$20</button>
-      <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','biannual')">6 أشهر +$35</button>
-      <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','yearly')">سنة +$60</button>
-    </div>
-  </div>`:''}
+    <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','yearly')" style="width:100%">📅 تجديد سنة كاملة — 100$</button>
+  </div>
   <div class="panel-section">
     <div class="panel-section-title">🔐 بيانات دخول المدير</div>
     <div class="info-row"><span class="info-label">اسم المستخدم</span><span class="info-value">${c.info.managerUsername||'--'}</span></div>
@@ -1280,7 +1262,7 @@ async function loadRevenue() {
     if (!transactions.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text2)">لا توجد معاملات</td></tr>'; }
     transactions.slice(0,20).forEach(t => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${t.companyName||t.companyId||'--'}</td><td>🌟 مدى الحياة</td><td style="color:var(--green);font-weight:700">$${t.amount||0}</td><td>${t.dateStr||new Date(t.date||0).toLocaleDateString('ar-SA')}</td><td>${t.note||'--'}</td>`;
+      tr.innerHTML = `<td>${t.companyName||t.companyId||'--'}</td><td>📅 ${t.note && t.note.includes('تجديد') ? 'تجديد سنوي' : 'اشتراك سنوي'}</td><td style="color:var(--green);font-weight:700">$${t.amount||0}</td><td>${t.dateStr||new Date(t.date||0).toLocaleDateString('ar-SA')}</td><td>${t.note||'--'}</td>`;
       tbody.appendChild(tr);
     });
     // Populate company select
