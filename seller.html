@@ -574,7 +574,7 @@ function withTimeout(promise, ms, msg) {
   ]);
 }
 
-async function createDirectoryAccount({ role, username, password, companyId, companyName, tenantConfig, managerUid }) {
+async function createDirectoryAccount({ role, username, password, companyId, companyName, tenantConfig, managerUid, keepAlive }) {
   const tempAppName = 'dirTemp_' + Date.now();
   const dirApp = firebase.initializeApp(DIRECTORY_CONFIG, tempAppName);
   try {
@@ -591,9 +591,30 @@ async function createDirectoryAccount({ role, username, password, companyId, com
       record.managerUid = managerUid;
       await dirApp.database().ref(`directory/employees/${uid}`).set(record);
     }
+    if (keepAlive) return { uid, app: dirApp };
     return uid;
   } finally {
-    await dirApp.delete();
+    if (!keepAlive) await dirApp.delete();
+  }
+}
+
+// يستخدم بيانات دخول المدير المحفوظة (بقاعدتك الخاصة) لتسجيل دخول مؤقت
+// بمشروع الدليل المشترك، وتنفيذ تحديث مصرَّح به على بيانات شركته —
+// ضروري فقط للشركات "المشتركة" (اللي تستضيف بياناتها بنفس مشروع الدليل)،
+// لأن قواعد الأمان هناك تتطلب مصادقة حقيقية، بعكس مشروع الزبون الخاص (VIP).
+async function writeSharedAsManager(cid, path, patch) {
+  const c = allCompanies[cid];
+  if (!c || !c.info.managerUsername || !c.info.managerPassword) {
+    throw new Error('لا توجد بيانات دخول محفوظة لهذه الشركة لإجراء هذا التحديث');
+  }
+  const tempAppName = 'sharedWrite_' + Date.now();
+  const app = firebase.initializeApp(DIRECTORY_CONFIG, tempAppName);
+  try {
+    const email = `${c.info.managerUsername}@${DIRECTORY_EMAIL_DOMAIN}`;
+    await app.auth().signInWithEmailAndPassword(email, c.info.managerPassword);
+    await app.database().ref(path).update(patch);
+  } finally {
+    await app.delete();
   }
 }
 
@@ -879,8 +900,12 @@ async function renewSubscription(cid, planKey) {
     const base = (c.expiresAt && c.expiresAt > Date.now()) ? c.expiresAt : Date.now();
     const newExpiresAt = base + plan.days * 86400000;
     await DB.ref(`companies/${cid}/info`).update({ expiresAt: newExpiresAt, status: 'active', plan: planKey });
-    const tenantConfig = c.info.tenantConfig;
-    if (tenantConfig) await updateTenantManagerInfo(tenantConfig, cid, { expiresAt: newExpiresAt, status: 'active', plan: planKey });
+    const patch = { expiresAt: newExpiresAt, status: 'active', plan: planKey };
+    if (c.info.hosting === 'shared') {
+      await writeSharedAsManager(cid, `companies/${cid}/info`, patch);
+    } else if (c.info.tenantConfig) {
+      await updateTenantManagerInfo(c.info.tenantConfig, cid, patch);
+    }
     await DB.ref('seller/transactions').push({ companyId: cid, companyName: c.info.nameAr, plan: planKey, amount: plan.price, dateStr: localDateStr(new Date()), date: Date.now(), note: `تجديد اشتراك — ${plan.label}` });
     hideLoading();
     showToast(`تم التجديد حتى ${new Date(newExpiresAt).toLocaleDateString('ar-SA')}`, 'success');
@@ -983,7 +1008,11 @@ async function doResetManagerCredentials(cid) {
   try {
     const username = genUsername(c.info.nameEn, c.info.nameAr);
     const password = genPassword();
-    const managerUid = await withTimeout(createDirectoryAccount({ role: 'manager', username, password, companyId: cid, companyName: c.info.nameAr, tenantConfig }), 15000);
+    const { uid: managerUid, app: mgrApp } = await withTimeout(createDirectoryAccount({ role: 'manager', username, password, companyId: cid, companyName: c.info.nameAr, tenantConfig, keepAlive: true }), 15000);
+    if (c.info.hosting === 'shared') {
+      await mgrApp.database().ref(`companies/${cid}/info`).update({ managerUsername: username, managerUid });
+    }
+    await mgrApp.delete();
     await DB.ref(`companies/${cid}/info`).update({ managerUsername: username, managerPassword: password, managerUid });
     hideLoading();
     await loadAllCompanies();
@@ -1004,8 +1033,12 @@ function closePanel() {
 async function suspendCompany(cid) {
   try {
     await DB.ref(`companies/${cid}/info`).update({ status: 'suspended' });
-    const tc = allCompanies[cid]?.info?.tenantConfig;
-    if (tc) await updateTenantManagerInfo(tc, cid, { status: 'suspended' });
+    const c = allCompanies[cid];
+    if (c?.info?.hosting === 'shared') {
+      await writeSharedAsManager(cid, `companies/${cid}/info`, { status: 'suspended' });
+    } else if (c?.info?.tenantConfig) {
+      await updateTenantManagerInfo(c.info.tenantConfig, cid, { status: 'suspended' });
+    }
     showToast('تم تعليق الشركة', 'info');
     await loadAllCompanies(); filterCompanies();
   } catch(e) { showToast('خطأ', 'error'); }
@@ -1014,8 +1047,12 @@ async function suspendCompany(cid) {
 async function activateCompany(cid) {
   try {
     await DB.ref(`companies/${cid}/info`).update({ status: 'active' });
-    const tc = allCompanies[cid]?.info?.tenantConfig;
-    if (tc) await updateTenantManagerInfo(tc, cid, { status: 'active' });
+    const c = allCompanies[cid];
+    if (c?.info?.hosting === 'shared') {
+      await writeSharedAsManager(cid, `companies/${cid}/info`, { status: 'active' });
+    } else if (c?.info?.tenantConfig) {
+      await updateTenantManagerInfo(c.info.tenantConfig, cid, { status: 'active' });
+    }
     showToast('تم تفعيل الشركة', 'success');
     await loadAllCompanies(); filterCompanies();
   } catch(e) { showToast('خطأ', 'error'); }
@@ -1094,9 +1131,9 @@ function removeWH(i) { defaultWHs.splice(i,1); renderDefaultWHs(); }
 // داخل مشروع Firebase الخاص بالزبون نفسه (tenantConfig) — هذا هو المشروع
 // اللي يتصل فيه تطبيقا المدير والموظف فعليًا بعد تسجيل الدخول، فلازم
 // تكون بياناته موجودة هناك، مو بس بقاعدة بيانات المورد.
-async function seedTenantCompanyDoc(cid, companyData, warehouseNames) {
-  const tempAppName = 'tenantTemp_' + Date.now();
-  const tenantApp = firebase.initializeApp(companyData.info.tenantConfig, tempAppName);
+async function seedTenantCompanyDoc(cid, companyData, warehouseNames, existingAuthedApp) {
+  const ownApp = !existingAuthedApp;
+  const tenantApp = existingAuthedApp || firebase.initializeApp(companyData.info.tenantConfig, 'tenantTemp_' + Date.now());
   try {
     const tdb = tenantApp.database();
     const existing = await tdb.ref(`companies/${cid}/info`).once('value');
@@ -1111,7 +1148,7 @@ async function seedTenantCompanyDoc(cid, companyData, warehouseNames) {
       // نكتفي بتحديث معلومات الدخول فقط لاحقًا عبر updateTenantManagerInfo
     }
   } finally {
-    await tenantApp.delete();
+    if (ownApp) await tenantApp.delete();
   }
 }
 
@@ -1187,9 +1224,6 @@ async function createCompany() {
     if (!defaultWHs.length) {
       await DB.ref(`companies/${cid}/warehouses`).push({ name: 'الفرع الرئيسي', pin: '1234', active: true });
     }
-    // الأهم: زرع نفس البيانات فعليًا بمشروع Firebase الخاص بالزبون (أو المشترك)
-    // (هذا هو المشروع اللي يتصل فيه تطبيقا المدير والموظف بعد تسجيل الدخول)
-    await seedTenantCompanyDoc(cid, companyData, defaultWHs);
     // Add transaction
     await DB.ref('seller/transactions').push({ companyId: cid, companyName: nameAr, plan: planKey, amount: plan.price, dateStr: localDateStr(new Date()), date: Date.now(), note: `اشتراك ${plan.label}` });
     // Seller notification
@@ -1199,9 +1233,22 @@ async function createCompany() {
     showLoading('جاري إنشاء حساب دخول المدير...');
     const username = genUsername(nameEn, nameAr);
     const password = genPassword();
-    const managerUid = await withTimeout(createDirectoryAccount({ role: 'manager', username, password, companyId: cid, companyName: nameAr, tenantConfig: fbCfg }), 15000);
+    // ننشئ حساب المدير أولاً — للاستضافة المشتركة نُبقي جلسته مفتوحة
+    // (keepAlive) ونستخدمها فورًا لزرع بيانات الشركة بنفس مشروع الدليل،
+    // لأن قواعد الأمان هناك تتطلب مصادقة حقيقية، بعكس مشروع VIP الخاص.
+    const { uid: managerUid, app: mgrApp } = await withTimeout(createDirectoryAccount({ role: 'manager', username, password, companyId: cid, companyName: nameAr, tenantConfig: fbCfg, keepAlive: true }), 15000);
+    if (isShared) {
+      await seedTenantCompanyDoc(cid, companyData, defaultWHs, mgrApp);
+      await mgrApp.database().ref(`companies/${cid}/info`).update({ managerUsername: username, managerUid });
+      await mgrApp.delete();
+    } else {
+      await mgrApp.delete();
+      // الأهم: زرع نفس البيانات فعليًا بمشروع Firebase الخاص بالزبون
+      // (هذا هو المشروع اللي يتصل فيه تطبيقا المدير والموظف بعد تسجيل الدخول)
+      await seedTenantCompanyDoc(cid, companyData, defaultWHs);
+      await updateTenantManagerInfo(fbCfg, cid, { managerUsername: username, managerUid });
+    }
     await DB.ref(`companies/${cid}/info`).update({ managerUsername: username, managerPassword: password, managerUid });
-    await updateTenantManagerInfo(fbCfg, cid, { managerUsername: username, managerUid });
     hideLoading();
     showToast('تم إنشاء الشركة وحساب المدير بنجاح!', 'success');
     document.getElementById('nc-admin-username').textContent = username;
