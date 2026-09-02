@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>تسجيل الحضور</title>
-<link rel="manifest" href="./manifest.json">
+<link rel="manifest" href="./manifest-employee.json">
 <meta name="theme-color" content="#22c55e">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1037,6 +1037,15 @@ async function setupMainScreen() {
   updateClock();
   if (clockInterval) clearInterval(clockInterval);
   clockInterval = setInterval(updateClock, 1000);
+  if (!window._empSubCheckInterval) {
+    window._empSubCheckInterval = setInterval(async () => {
+      try {
+        const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
+        COMPANY_INFO = snap.val() || COMPANY_INFO;
+        checkSubscriptionBlocked();
+      } catch(e) {}
+    }, 300000); // كل 5 دقائق — يقفل التطبيق فورًا لو الشركة انعلّقت أو انتهى اشتراكها أثناء الاستخدام
+  }
   document.getElementById('profile-avatar').textContent = (EMP.name || '?')[0];
   document.getElementById('profile-name').textContent = EMP.name;
   document.getElementById('profile-id').textContent = 'الرقم الوظيفي: ' + EMP.empId;
@@ -1419,11 +1428,13 @@ async function recBio(type) {
   const now = serverNow();
   if (checkHoliday(now, SETTINGS)) { showToast('اليوم عطلة — لا يمكن التسجيل', 'error'); return; }
 
-  // FEATURE 4: Geo zone enforcement
-  if (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled && GEO_ZONE_OK === false) {
+  // FEATURE 4: Geo zone enforcement (يشمل نطاق الفرع الخاص، مو بس النطاق العام للشركة)
+  const hasGzMain = (WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false)
+                  || (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled);
+  if (hasGzMain && GEO_ZONE_OK === false) {
     showToast('أنت خارج نطاق الموقع المسموح به', 'error'); return;
   }
-  if (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled && GEO_ZONE_OK === null) {
+  if (hasGzMain && GEO_ZONE_OK === null) {
     showToast('جاري تحديد موقعك — انتظر لحظة', 'info'); return;
   }
 
@@ -1449,6 +1460,7 @@ async function recBio(type) {
   const empSnap2 = await DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value');
   if (!empSnap2.exists() || empSnap2.val().status !== 'approved') { showToast('حسابك غير مفعّل', 'error'); localStorage.removeItem('ap_emp'); location.reload(); return; }
   if (type === 'in' && todayData.checkIn) { showToast('سجّلت حضورك مسبقاً اليوم', 'error'); return; }
+  if (type === 'out' && !todayData.checkIn && todayData.excuseCheckout !== true) { showToast('يجب تسجيل حضورك أولاً قبل تسجيل الانصراف', 'error'); return; }
   if (type === 'out' && todayData.checkOut) { showToast('سجّلت انصرافك مسبقاً اليوم', 'error'); return; }
 
   const fpIcon = document.getElementById('fp-icon');
@@ -1669,6 +1681,11 @@ function showTab(tab) {
       window._partialRecordsListener = null;
       window._partialRecordsRef = null;
     }
+    if (window._partialTodayListener && window._partialTodayRef) {
+      window._partialTodayRef.off('value', window._partialTodayListener);
+      window._partialTodayListener = null;
+      window._partialTodayRef = null;
+    }
   }
   ['home','hist','excuse','leave','notifs'].forEach(t => {
     const el = document.getElementById('main-tab-' + t);
@@ -1863,8 +1880,13 @@ async function loadLeavePage() {
     window._partialRecordsListener = null;
     window._partialRecordsRef = null;
   }
+  if (window._partialTodayListener && window._partialTodayRef) {
+    window._partialTodayRef.off('value', window._partialTodayListener);
+    window._partialTodayListener = null;
+    window._partialTodayRef = null;
+  }
 
-  let _approvalData = null, _recordsData = null;
+  let _approvalData = null, _recordsData = null, _todayCheckedIn = null;
 
   function renderPartialCard() {
     const pl  = _approvalData;
@@ -1873,6 +1895,15 @@ async function loadLeavePage() {
     if (!card) return;
     if (!pl || pl.date !== todayStr || pl.status !== 'approved' || !pl.fromTime || !pl.toTime) {
       card.style.display = 'none'; return;
+    }
+    if (!_todayCheckedIn) {
+      card.style.display = 'block';
+      card.innerHTML = `
+      <div style="background:var(--card);border:2px solid var(--red);border-radius:var(--radius-card);padding:16px;text-align:center">
+        <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:6px">⏱ إجازة زمنية مُعتمدة اليوم</div>
+        <div style="font-size:13px;color:var(--text2)">🔒 سجّل حضورك اليوم أولاً حتى تقدر تستخدم بصمتي المغادرة والعودة</div>
+      </div>`;
+      return;
     }
     const n = serverNow();
     const nm = n.getHours() * 60 + n.getMinutes();
@@ -1941,6 +1972,16 @@ async function loadLeavePage() {
     renderPartialCard();
   });
 
+  if (window._partialTodayListener && window._partialTodayRef) {
+    window._partialTodayRef.off('value', window._partialTodayListener);
+  }
+  window._partialTodayRef = DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`);
+  window._partialTodayListener = window._partialTodayRef.on('value', snap => {
+    const td = snap.val() || {};
+    _todayCheckedIn = (!td.dateKey || td.dateKey === todayStr) && !!td.checkIn;
+    renderPartialCard();
+  });
+
   const _plRecRef = DB.ref(`companies/${COMPANY_ID}/partialLeaveRecords/${EMP.id}/${todayStr}`);
   window._partialRecordsRef = _plRecRef;
   window._partialRecordsListener = _plRecRef.on('value', snap => {
@@ -2004,6 +2045,17 @@ async function submitLeave() {
     toTime = document.getElementById('leave-to-time').value;
     if (!fromTime || !toTime) { showToast('حدد وقت البداية والنهاية للإجازة الزمنية', 'error'); return; }
     if (fromTime >= toTime) { showToast('وقت البداية يجب أن يكون قبل وقت النهاية', 'error'); return; }
+    // الإجازة الزمنية تفترض إنك أصلاً بالدوام وتبي تطلع لساعات — ما تصلح
+    // إلا لو سجّلت حضورك اليوم فعلاً (وبس لطلب بتاريخ اليوم نفسه).
+    const todayKeyCheck = localDateStr(serverNow());
+    if (date === todayKeyCheck) {
+      const todaySnapCheck = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
+      const todayDataCheck = todaySnapCheck.val() || {};
+      if (!todayDataCheck.checkIn) {
+        showToast('يجب تسجيل حضورك اليوم أولاً قبل طلب إجازة زمنية', 'error');
+        return;
+      }
+    }
   } else {
     const snap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).once('value');
     let dup = false;
@@ -2039,6 +2091,19 @@ async function submitLeave() {
 
 // ==================== PARTIAL LEAVE FINGERPRINT ====================
 async function recPartialLeave(type) {
+  // لا تُستخدم الإجازة الزمنية إلا بعد تسجيل حضور اليوم فعلياً
+  const todayKeyPl = localDateStr(serverNow());
+  const todaySnapPl = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
+  const todayDataPl = todaySnapPl.val() || {};
+  if (todayDataPl.dateKey && todayDataPl.dateKey !== todayKeyPl) {
+    showToast('يجب تسجيل حضورك اليوم أولاً قبل استخدام الإجازة الزمنية', 'error');
+    return;
+  }
+  if (!todayDataPl.checkIn) {
+    showToast('يجب تسجيل حضورك اليوم أولاً قبل استخدام الإجازة الزمنية', 'error');
+    return;
+  }
+
   // Geo zone check — same rules as main attendance
   const hasGz = (WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false)
              || (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled);
@@ -2277,7 +2342,7 @@ window.addEventListener('DOMContentLoaded', initFirebase);
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+    navigator.serviceWorker.register('./sw-employee.js', { scope: './employee_custom.html' }).catch(() => {});
   });
 }
 </script>
