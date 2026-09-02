@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>تسجيل الحضور</title>
-<link rel="manifest" href="./manifest-employee.json">
+<link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#22c55e">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -2342,7 +2342,7 @@ window.addEventListener('DOMContentLoaded', initFirebase);
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw-employee.js', { scope: './employee_custom.html' }).catch(() => {});
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
   });
 }
 </script>
