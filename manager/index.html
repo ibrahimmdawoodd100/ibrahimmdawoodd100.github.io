@@ -615,6 +615,8 @@ tr:hover td{background:#1a1f30}
         <div class="section-title">💰 احتساب الرواتب</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
           <div class="form-group"><label class="form-label">الشهر</label><input class="form-input" type="month" id="pr-month"></div>
+          <div class="form-group"><label class="form-label">الفرع</label><select class="form-input form-select" id="pr-wh" onchange="populatePrEmpFilter()"><option value="all">كل الفروع</option></select></div>
+          <div class="form-group"><label class="form-label">الموظف</label><select class="form-input form-select" id="pr-emp"><option value="all">كل الموظفين</option></select></div>
         </div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px">يُحتسب الاستقطاع كالتالي: (الراتب ÷ أيام العمل بالشهر) × عدد أيام الغياب × نسبة الاستقطاع. أيام الجمعة والعطل الرسمية والإجازات المعتمدة لا تُحتسب غيابًا.</div>
         <button class="action-btn-full" onclick="calculatePayroll()">📊 احتساب الرواتب</button>
@@ -626,9 +628,10 @@ tr:hover td{background:#1a1f30}
         </div>
         <div class="section-card">
           <div class="section-title">📋 تفصيل الرواتب</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">💡 اضغط على أي موظف لعرض تفاصيل أيامه كاملة</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>نسبة الاستقطاع</th><th>مبلغ الاستقطاع</th><th>الصافي</th></tr></thead>
+              <thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الفرع</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>أيام الإجازة</th><th>مبلغ الاستقطاع</th><th>الصافي</th></tr></thead>
               <tbody id="pr-tbody"></tbody>
             </table>
           </div>
@@ -952,7 +955,7 @@ async function loadAllData() {
 function populateWHSelects() {
   const chips = document.getElementById('dash-wh-chips');
   chips.innerHTML = '<span class="filter-chip active" data-wh="all" onclick="dashSelectWH(this,\'all\')">الكل</span>';
-  ['att-wh', 'emp-wh-filter', 'rep-wh'].forEach(id => {
+  ['att-wh', 'emp-wh-filter', 'rep-wh', 'pr-wh'].forEach(id => {
     const el = document.getElementById(id);
     if (el) while (el.options.length > 1) el.remove(1);
   });
@@ -963,7 +966,7 @@ function populateWHSelects() {
     chip.onclick = () => dashSelectWH(chip, id);
     chip.textContent = wh.name;
     chips.appendChild(chip);
-    ['att-wh', 'emp-wh-filter', 'rep-wh'].forEach(sel => {
+    ['att-wh', 'emp-wh-filter', 'rep-wh', 'pr-wh'].forEach(sel => {
       const el = document.getElementById(sel);
       if (el) { const opt = document.createElement('option'); opt.value = id; opt.textContent = wh.name; el.appendChild(opt); }
     });
@@ -2293,9 +2296,32 @@ function getDates(from,to){
 }
 
 let payrollData=[];
+function populatePrEmpFilter(){
+  const whFilter=document.getElementById('pr-wh')?.value||'all';
+  const empSel=document.getElementById('pr-emp');
+  if(!empSel)return;
+  const cur=empSel.value;
+  empSel.innerHTML='<option value="all">كل الموظفين</option>';
+  Object.entries(ALL_EMPLOYEES)
+    .filter(([,e])=>e.status==='approved'&&(whFilter==='all'||e.warehouseId===whFilter))
+    .sort((a,b)=>(a[1].name||'').localeCompare(b[1].name||''))
+    .forEach(([id,e])=>{
+      const o=document.createElement('option');o.value=id;o.textContent=e.name||id;empSel.appendChild(o);
+    });
+  if(cur&&[...empSel.options].some(o=>o.value===cur))empSel.value=cur;
+}
+
+function togglePrDetails(idx){
+  const row=document.getElementById(`pr-detail-${idx}`);
+  if(!row)return;
+  row.style.display=row.style.display==='none'?'table-row':'none';
+}
+
 async function calculatePayroll(){
   const monthVal=document.getElementById('pr-month').value;
   if(!monthVal){showToast('اختر الشهر','error');return;}
+  const whFilter=document.getElementById('pr-wh')?.value||'all';
+  const empFilter=document.getElementById('pr-emp')?.value||'all';
   const[y,m]=monthVal.split('-').map(Number);
   const firstDay=`${monthVal}-01`;
   const lastDateObj=new Date(y,m,0);
@@ -2325,18 +2351,34 @@ async function calculatePayroll(){
     const dateRange=getDates(firstDay,lastDay);
     const isHolidayDate=dateStr=>{const d=new Date(dateStr);return d.getDay()===5||Object.values(settings.holidays||{}).some(h=>h.date===dateStr&&h.active!==false);};
     const workingDays=dateRange.filter(d=>!isHolidayDate(d)).length;
-    const approved=Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
+    const approved=Object.entries(ALL_EMPLOYEES).filter(([id,e])=>
+      e.status==='approved'
+      && (whFilter==='all'||e.warehouseId===whFilter)
+      && (empFilter==='all'||id===empFilter)
+    );
     const rows=[];
     let totalSalary=0,totalDeduction=0,totalNet=0;
     for(const[eid,emp]of approved){
-      let absentDays=0;
+      let absentDays=0,leaveDays=0;
+      const dayDetails=[];
       for(const dateStr of dateRange){
-        if(isHolidayDate(dateStr))continue;
+        const holiday=isHolidayDate(dateStr);
         const lv=leaves[eid]?.[dateStr];
-        if(lv&&lv.status==='approved'&&(lv.leaveType||'paid')!=='partial')continue;
         const dayRec=records[eid]?.[dateStr]||{};
         const exc=excuses[eid]?.[dateStr];
-        if(!dayRec.in&&exc?.status!=='approved')absentDays++;
+        let dayStatus,dayNote='';
+        if(holiday){
+          dayStatus='holiday'; dayNote='عطلة';
+        }else if(lv&&lv.status==='approved'&&(lv.leaveType||'paid')!=='partial'){
+          dayStatus='leave'; dayNote=LEAVE_TYPE_LABELS[lv.leaveType||'paid']||'إجازة'; leaveDays++;
+        }else if(dayRec.in){
+          dayStatus='present';
+        }else if(exc&&exc.status==='approved'){
+          dayStatus='excused'; dayNote='عذر مقبول';
+        }else{
+          dayStatus='absent'; dayNote='غياب'; absentDays++;
+        }
+        dayDetails.push({date:dateStr,status:dayStatus,note:dayNote,in:dayRec.in||null,out:dayRec.out||null});
       }
       const salary=Number(emp.salary)||0;
       const deductPct=emp.deductionPercent!=null?Number(emp.deductionPercent):100;
@@ -2344,7 +2386,7 @@ async function calculatePayroll(){
       const deduction=Math.round(absentDays*dailyRate*(deductPct/100));
       const net=Math.max(0,Math.round(salary-deduction));
       totalSalary+=salary;totalDeduction+=deduction;totalNet+=net;
-      rows.push({name:emp.name,empId:emp.empId||'--',salary,absentDays,deductPct,deduction,net});
+      rows.push({eid,name:emp.name,empId:emp.empId||'--',warehouseName:emp.warehouseName||'--',salary,absentDays,leaveDays,deductPct,deduction,net,dayDetails});
     }
     payrollData={rows,monthVal,workingDays};
     hideLoading();
@@ -2355,10 +2397,25 @@ async function calculatePayroll(){
       <div class="report-stat"><div class="rsn note-present">${totalNet.toLocaleString()}</div><div class="rsl">إجمالي الصافي</div></div>`;
     const tbody=document.getElementById('pr-tbody');
     tbody.innerHTML='';
-    rows.forEach(r=>{
+    if(!rows.length){
+      tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text2)">لا توجد نتائج مطابقة للفلترة المحددة</td></tr>';
+    }
+    rows.forEach((r,idx)=>{
       const tr=document.createElement('tr');
-      tr.innerHTML=`<td><b>${r.name}</b></td><td>${r.empId}</td><td>${r.salary.toLocaleString()}</td><td style="color:var(--orange)">${r.absentDays}</td><td>${r.deductPct}%</td><td style="color:var(--red)">${r.deduction.toLocaleString()}</td><td style="color:var(--green);font-weight:700">${r.net.toLocaleString()}</td>`;
+      tr.style.cursor='pointer';
+      tr.onclick=()=>togglePrDetails(idx);
+      tr.innerHTML=`<td>▾ <b>${r.name}</b></td><td>${r.empId}</td><td>${r.warehouseName}</td><td>${r.salary.toLocaleString()}</td><td style="color:var(--orange)">${r.absentDays}</td><td style="color:var(--purple)">${r.leaveDays}</td><td style="color:var(--red)">${r.deduction.toLocaleString()}</td><td style="color:var(--green);font-weight:700">${r.net.toLocaleString()}</td>`;
       tbody.appendChild(tr);
+      const detailTr=document.createElement('tr');
+      detailTr.id=`pr-detail-${idx}`;
+      detailTr.style.display='none';
+      const dayRowsHtml=r.dayDetails.map(d=>{
+        const statusMap={present:['حاضر','var(--green)'],absent:['غائب','var(--red)'],leave:['إجازة: '+d.note,'var(--purple)'],excused:['عذر مقبول','var(--blue)'],holiday:['عطلة','var(--text2)']};
+        const[label,color]=statusMap[d.status]||[d.status,'var(--text2)'];
+        return `<tr><td>${d.date}</td><td style="color:${color}">${label}</td><td>${d.in?format12(d.in):'--'}</td><td>${d.out?format12(d.out):'--'}</td></tr>`;
+      }).join('');
+      detailTr.innerHTML=`<td colspan="8" style="padding:0"><div style="padding:12px;background:var(--bg)"><div style="font-size:13px;font-weight:700;margin-bottom:8px">📋 تفاصيل أيام ${r.name}</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>${dayRowsHtml}</tbody></table></div></div></td>`;
+      tbody.appendChild(detailTr);
     });
     document.getElementById('payroll-output').style.display='block';
   }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
@@ -2367,8 +2424,16 @@ async function calculatePayroll(){
 function generatePayrollPDF(){
   const rows=payrollData.rows||[];
   const monthVal=payrollData.monthVal||'';
-  const tableRows=rows.map(r=>`<tr><td>${r.name}</td><td>${r.empId}</td><td>${r.salary.toLocaleString()}</td><td style="color:#ef4444">${r.absentDays}</td><td>${r.deductPct}%</td><td style="color:#ef4444">${r.deduction.toLocaleString()}</td><td style="color:#22c55e;font-weight:700">${r.net.toLocaleString()}</td></tr>`).join('');
+  const tableRows=rows.map(r=>`<tr><td>${r.name}</td><td>${r.empId}</td><td>${r.warehouseName}</td><td>${r.salary.toLocaleString()}</td><td style="color:#ef4444">${r.absentDays}</td><td style="color:#8b5cf6">${r.leaveDays}</td><td style="color:#ef4444">${r.deduction.toLocaleString()}</td><td style="color:#22c55e;font-weight:700">${r.net.toLocaleString()}</td></tr>`).join('');
   const totalNet=rows.reduce((s,r)=>s+r.net,0);
+  const statusLabels={present:'حاضر',absent:'غائب',leave:'إجازة',excused:'عذر مقبول',holiday:'عطلة'};
+  const detailSections=rows.map(r=>{
+    const dayRows=r.dayDetails.map(d=>`<tr><td>${d.date}</td><td>${statusLabels[d.status]||d.status}${d.note&&d.status==='leave'?' — '+d.note:''}</td><td>${d.in?format12(d.in):'--'}</td><td>${d.out?format12(d.out):'--'}</td></tr>`).join('');
+    return `<div style="page-break-inside:avoid;margin-top:24px">
+      <h2 style="font-size:15px;color:#161b2e;border-bottom:2px solid #f5a623;padding-bottom:6px">📋 تفاصيل أيام: ${r.name} (${r.empId}) — ${r.warehouseName}</h2>
+      <table><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>${dayRows}</tbody></table>
+    </div>`;
+  }).join('');
   const win=window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الرواتب</title>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
@@ -2377,10 +2442,11 @@ function generatePayrollPDF(){
   <h1>💰 كشف الرواتب — ${COMPANY_INFO.nameAr||''}</h1>
   <div class="sub">شهر: ${monthVal}</div>
   <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
-  <table><thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>نسبة الاستقطاع</th><th>مبلغ الاستقطاع</th><th>الصافي</th></tr></thead>
+  <table><thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الفرع</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>أيام الإجازة</th><th>مبلغ الاستقطاع</th><th>الصافي</th></tr></thead>
   <tbody>${tableRows}</tbody>
-  <tfoot><tr><td colspan="6" style="font-weight:900;text-align:left">إجمالي الصافي</td><td style="font-weight:900;color:#22c55e">${totalNet.toLocaleString()}</td></tr></tfoot>
+  <tfoot><tr><td colspan="7" style="font-weight:900;text-align:left">إجمالي الصافي</td><td style="font-weight:900;color:#22c55e">${totalNet.toLocaleString()}</td></tr></tfoot>
   </table>
+  ${detailSections}
   </body></html>`);
   win.document.close();
 }
@@ -2551,7 +2617,7 @@ const pageLoaders = {
   warehouses: loadWarehouses,
   settings: ()=>{ loadSettings(); updateRepDates(); },
   reports: updateRepDates,
-  payroll: ()=>{ const el=document.getElementById('pr-month'); if(el&&!el.value) el.value=new Date().toISOString().slice(0,7); },
+  payroll: ()=>{ const el=document.getElementById('pr-month'); if(el&&!el.value) el.value=new Date().toISOString().slice(0,7); populatePrEmpFilter(); },
   'admin-notifs': loadAdminNotifPage
 };
 
