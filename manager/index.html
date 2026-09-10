@@ -1184,6 +1184,14 @@ async function loadAttendance() {
     const isToday = dateVal === todayStr;
     const dateObj = new Date(dateVal);
     const isHoliday = dateObj.getDay()===5 || Object.values(settings.holidays||{}).some(h=>h.date===dateVal&&h.active!==false);
+    const excSnap = await DB.ref(`companies/${COMPANY_ID}/excuses`).once('value');
+    const excusesByEmpDate = {};
+    excSnap.forEach(c => {
+      const ex = c.val();
+      if (!ex || !ex.empId || !ex.date) return;
+      if (!excusesByEmpDate[ex.empId]) excusesByEmpDate[ex.empId] = {};
+      excusesByEmpDate[ex.empId][ex.date] = ex;
+    });
     const attMap = {};
     if (isToday) {
       const todaySnap = await DB.ref(`companies/${COMPANY_ID}/today`).once('value');
@@ -1221,10 +1229,16 @@ async function loadAttendance() {
         if (isLeave) { status='🌴 إجازة'; badge='badge-purple'; }
         else if (td.checkIn&&td.checkOut) { status='🚪 انصرف'; badge='badge-blue'; }
         else if (td.checkIn) { status='✅ حاضر'; badge='badge-green'; }
-        else { status='❌ غائب'; badge='badge-red'; }
+        else {
+          const exc = excusesByEmpDate[eid]?.[dateVal];
+          const hasApprovedExcuse = exc && exc.status === 'approved';
+          if (td.checkOut && hasApprovedExcuse) { status='🚪 انصرف (بعذر)'; badge='badge-blue'; }
+          else if (hasApprovedExcuse) { status='📝 معذور'; badge='badge-gold'; }
+          else { status='❌ غائب'; badge='badge-red'; }
+        }
       }
       if (attStatusFilter!=='all') {
-        const smap={present:['✅ حاضر','🚪 انصرف'],absent:['❌ غائب'],leave:['🌴 إجازة']};
+        const smap={present:['✅ حاضر','🚪 انصرف','🚪 انصرف (بعذر)','📝 معذور'],absent:['❌ غائب'],leave:['🌴 إجازة']};
         if (!smap[attStatusFilter]?.includes(status)) continue;
       }
       const delayMins = td.delayMins || 0;
