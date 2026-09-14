@@ -2221,7 +2221,8 @@ async function generateReport(){
         const delayStr=delayMins>0?`${delayMins} د`:'—';
         if(hasIn&&hasOut){const diff=(new Date(dayRec.out)-new Date(dayRec.in))/3600000;hrs=diff.toFixed(1)+' س';stats.totalWorkMins+=Math.round(diff*60);note='✅ مكتمل';noteType='present';stats.present++;}
         else if(hasIn&&!hasOut){if(exc?.status==='approved'){note='📝 حضر — معذور';noteType='excused';stats.excused++;}else{note='❌ حضر — لم يسجل انصراف';noteType='absent';stats.absent++;}}
-        else{if(exc?.status==='approved'){note='📝 غائب — معذور';noteType='excused';stats.excused++;}else{note='❌ غائب';noteType='absent';stats.absent++;}}
+        else if(hasOut&&exc?.status==='approved'){note='🚪 انصرف (بعذر)';noteType='excused';stats.excused++;}
+        else{if(exc?.status==='approved'){note='📝 معذور';noteType='excused';stats.excused++;}else{note='❌ غائب';noteType='absent';stats.absent++;}}
         if(delayMins>0){delayMap[eid].days++;delayMap[eid].totalMins+=delayMins;stats.totalDelayMins+=delayMins;}
         stats.total++;
         rows.push({emp:emp.name,date:dateStr,in:dayRec.in?format12(dayRec.in):'--',out:dayRec.out?format12(dayRec.out):'--',hrs,delay:delayStr,note,noteType});
