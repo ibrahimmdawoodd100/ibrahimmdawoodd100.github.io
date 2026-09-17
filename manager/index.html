@@ -1118,9 +1118,10 @@ async function clearAdminNotifs() {
 async function loadDashboard() {
   try {
     const today = localDateStr(new Date());
-    const [todaySnap, leavesSnap] = await Promise.all([
+    const [todaySnap, leavesSnap, excSnap] = await Promise.all([
       DB.ref(`companies/${COMPANY_ID}/today`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/leaves`).once('value')
+      DB.ref(`companies/${COMPANY_ID}/leaves`).once('value'),
+      DB.ref(`companies/${COMPANY_ID}/excuses`).once('value')
     ]);
     const todayData = todaySnap.val() || {};
     const allLeaves = leavesSnap.val() || {};
@@ -1128,6 +1129,13 @@ async function loadDashboard() {
     const approvedLeaveEids = new Set(
       Object.values(allLeaves).filter(l=>l.date===today&&l.status==='approved'&&!l.isPartial).map(l=>l.empId)
     );
+    const excusesByEmpDate = {};
+    excSnap.forEach(c => {
+      const ex = c.val();
+      if (!ex || !ex.empId || !ex.date) return;
+      if (!excusesByEmpDate[ex.empId]) excusesByEmpDate[ex.empId] = {};
+      excusesByEmpDate[ex.empId][ex.date] = ex;
+    });
     const approved = Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
     document.getElementById('ds-total').textContent = approved.length;
     let present=0, absent=0, onLeave=0;
@@ -1142,7 +1150,13 @@ async function loadDashboard() {
       if (isOnLeave) { status='🌴 إجازة'; statusBadge='badge-purple'; onLeave++; }
       else if (td.checkIn && td.checkOut) { status='🚪 انصرف'; statusBadge='badge-blue'; present++; }
       else if (td.checkIn) { status='✅ حاضر'; statusBadge='badge-green'; present++; }
-      else { status='❌ غائب'; statusBadge='badge-red'; absent++; }
+      else {
+        const exc = excusesByEmpDate[eid]?.[today];
+        const hasApprovedExcuse = exc && exc.status === 'approved';
+        if (td.checkOut && hasApprovedExcuse) { status='🚪 انصرف (بعذر)'; statusBadge='badge-blue'; present++; }
+        else if (hasApprovedExcuse) { status='📝 معذور'; statusBadge='badge-gold'; present++; }
+        else { status='❌ غائب'; statusBadge='badge-red'; absent++; }
+      }
       const tr = document.createElement('tr');
       tr.className = 'cursor-pointer';
       tr.onclick = () => showEmpModal(eid);
