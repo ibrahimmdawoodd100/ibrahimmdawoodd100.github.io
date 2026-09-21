@@ -631,6 +631,22 @@ let clockInterval = null, notifListener = null, notifPageListener = null;
 let pendingListener = null, todayChangeListener = null;
 let ACTIVATION_TOKEN = null, ACTIVATION_UID = null, bypassApproved = false;
 let GEO_ZONE_OK = null;
+let isBioPending=false;
+let _bioAbortController=null;
+
+async function checkPlatformAuthAvailable(){
+  try{
+    if(!window.PublicKeyCredential) return false;
+    if(!PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return true;
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  }catch(e){return true;}
+}
+function withTimeout(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject({ name:'TimeoutError', message:'Timeout '+ms+'ms' }), ms))
+  ]);
+}
 
 function serverNow() { return new Date(Date.now() + SERVER_TIME_OFFSET); }
 
@@ -906,10 +922,8 @@ async function registerBio() {
   try {
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
-    // FIX: user.id فريد بدلاً من 16 صفر - كان يسبب تضارب
     let userIdBytes;
-    try { userIdBytes = new TextEncoder().encode(crypto.randomUUID()); } 
-    catch { userIdBytes = crypto.getRandomValues(new Uint8Array(16)); }
+    try { userIdBytes = new TextEncoder().encode(crypto.randomUUID()); } catch { userIdBytes = crypto.getRandomValues(new Uint8Array(16)); }
     const credential = await navigator.credentials.create({
       publicKey: {
         challenge,
@@ -1467,27 +1481,37 @@ async function recBio(type) {
   if (type === 'out' && !todayData.checkIn && todayData.excuseCheckout !== true) { showToast('يجب تسجيل حضورك أولاً قبل تسجيل الانصراف', 'error'); return; }
   if (type === 'out' && todayData.checkOut) { showToast('سجّلت انصرافك مسبقاً اليوم', 'error'); return; }
 
+  if(isBioPending){ showToast('يوجد طلب بصمة قيد التنفيذ - انتظر...','info'); return; }
   const fpIcon = document.getElementById('fp-icon');
   const fpHint = document.getElementById('fp-hint');
+  const btnIn = document.getElementById('btn-checkin');
+  const btnOut = document.getElementById('btn-checkout');
+  if(btnIn) btnIn.disabled=true;
+  if(btnOut) btnOut.disabled=true;
   fpIcon.classList.add('scanning');
-  if (fpHint) fpHint.textContent = 'جاري طلب بصمة الجهاز...';
+  if(fpHint) fpHint.textContent='جاري طلب بصمة الجهاز...';
   try {
     await verifyBio();
     fpIcon.classList.remove('scanning'); fpIcon.innerHTML = '✅';
-    if (fpHint) fpHint.textContent = '✅ تم التحقق';
-    setTimeout(() => { fpIcon.innerHTML = '🫆'; if (fpHint) fpHint.textContent='اضغط أحد الزرين أدناه للتسجيل'; }, 2000);
+    if(fpHint) fpHint.textContent='✅ تم التحقق';
+    if(btnIn) btnIn.disabled=false;
+    if(btnOut) btnOut.disabled=false;
+    setTimeout(() => { fpIcon.innerHTML = '🫆'; if(fpHint) fpHint.textContent='اضغط أحد الزرين أدناه للتسجيل'; }, 2000);
   } catch(e) {
     fpIcon.classList.remove('scanning');
-    fpIcon.innerHTML = '🫆';
-    if (fpHint) fpHint.textContent = 'فشل: ' + (e.message || e.name);
-    console.error('[recBio] verifyBio failed', e);
-    if (e.name === 'DeviceReplaced') { showToast('تم استبدال الجهاز — يُعاد تحميل التطبيق', 'error'); setTimeout(() => location.reload(), 2500); }
-    else if (e.name === 'CredMismatch') { showToast('معرف البصمة مختلف - اضغط إعادة تسجيل البصمة أدناه', 'error'); showReBioBanner(); }
-    else if (e.name === 'NotAllowedError') { showToast(e.message || 'لم يتم التعرف على البصمة', 'error'); showReBioBanner(); }
+    fpIcon.innerHTML='🫆';
+    if(fpHint) fpHint.textContent='فشل: '+(e.message||e.name);
+    if(btnIn) btnIn.disabled=false;
+    if(btnOut) btnOut.disabled=false;
+    console.error('[recBio] failed', e);
+    if (e.name === 'DeviceReplaced') { showToast('تم استبدال جهازك — يُعاد تحميل التطبيق', 'error'); setTimeout(() => location.reload(), 2500); }
+    else if (e.name === 'CredMismatch') { showToast('معرف البصمة مختلف - اضغط إعادة تسجيل البصمة', 'error'); showReBioBanner(); }
+    else if (e.name === 'NotAllowedError') { showToast(e.message||'لم يتم التعرف على البصمة', 'error'); showReBioBanner(); }
     else if (e.name === 'TimeoutError') { showToast('انتهت مهلة البصمة - تأكد أن البصمة مفعلة وحاول مجددا', 'error'); }
-    else if (e.name === 'NotSupported') { showToast(e.message, 'error'); }
-    else if (e.name === 'InvalidCredId') { showToast(e.message, 'error'); showReBioBanner(); }
-    else { showToast('فشل التحقق: ' + (e.message || e.name), 'error'); showReBioBanner(); }
+    else if (e.name === 'AlreadyPending') { showToast('يوجد طلب معلق - أغلق المتصفح تماما وأعد فتحه', 'error'); }
+    else if (e.name === 'AbortError') { showToast('تم إلغاء الطلب - حاول مجددا', 'info'); }
+    else if (e.name === 'NotSupported' || e.name==='InvalidCredId') { showToast(e.message, 'error'); if(e.name==='InvalidCredId') showReBioBanner(); }
+    else { showToast('فشل التحقق: '+(e.message||e.name), 'error'); showReBioBanner(); }
     return;
   }
 
@@ -1522,26 +1546,31 @@ async function recBio(type) {
 }
 
 async function verifyBio() {
-  console.log('[verifyBio] START, CRED_ID exists?', !!CRED_ID);
+  console.log('[verifyBio] START CRED_ID?', !!CRED_ID, 'pending?', isBioPending);
+  if(isBioPending){
+    console.warn('[verifyBio] Already pending, abort previous');
+    if(_bioAbortController){ try{_bioAbortController.abort();}catch(e){} }
+    await new Promise(r=>setTimeout(r,400));
+  }
   if (!CRED_ID) {
-    console.error('[verifyBio] No CRED_ID');
-    throw { name: 'NotAllowedError', message: 'لا يوجد معرف بصمة - أعد التسجيل' };
+    throw { name: 'NotAllowedError', message: 'لا يوجد معرف بصمة - اضغط إعادة تسجيل البصمة' };
+  }
+  const platformAvailable = await checkPlatformAuthAvailable();
+  console.log('[verifyBio] platformAvailable', platformAvailable);
+  if(!platformAvailable){
+    throw { name: 'NotSupported', message: 'الجهاز لا يدعم بصمة النظام أو البصمة غير مفعلة' };
   }
   let empData=null;
   try {
     const empSnap = await withTimeout(DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value'), 8000);
     empData = empSnap.val();
-    console.log('[verifyBio] cred match?', empData?.credId===CRED_ID);
   } catch(e) {
-    console.warn('[verifyBio] fetch emp failed, continue', e);
+    console.warn('[verifyBio] fetch emp failed', e);
   }
   if (empData) {
     if (empData.credId && empData.credId !== CRED_ID) {
-      console.warn('[verifyBio] credId mismatch');
-      throw { name: 'CredMismatch', message: 'معرف البصمة مختلف في السيرفر' };
+      throw { name: 'CredMismatch', message: 'معرف البصمة في السيرفر مختلف - أعد التسجيل' };
     }
-    // تم تعطيل فحص deviceFingerprint لمنع مشكلة التعليق - كان يسبب DeviceReplaced وهمي
-    // if (empData.deviceFingerprint && empData.deviceFingerprint !== getDeviceFingerprint()) { ... }
   }
   const challenge = new Uint8Array(32);
   crypto.getRandomValues(challenge);
@@ -1554,12 +1583,17 @@ async function verifyBio() {
   if (!window.PublicKeyCredential) {
     throw { name: 'NotSupported', message: 'المتصفح لا يدعم البصمة - استخدم Chrome' };
   }
+  if(_bioAbortController){ try{_bioAbortController.abort();}catch(_){} }
+  _bioAbortController = new AbortController();
+  isBioPending = true;
   try {
+    console.log('[verifyBio] Calling get...');
     const cred = await withTimeout(
       navigator.credentials.get({
+        signal: _bioAbortController.signal,
         publicKey: {
           challenge,
-          allowCredentials: [{ id: credIdBytes, type: 'public-key' }],
+          allowCredentials: [{ id: credIdBytes, type: 'public-key', transports: ['internal'] }],
           userVerification: 'required',
           timeout: 30000
         }
@@ -1567,22 +1601,25 @@ async function verifyBio() {
       35000
     );
     console.log('[verifyBio] SUCCESS');
+    isBioPending = false;
+    _bioAbortController = null;
     return cred;
   } catch(e) {
+    isBioPending = false;
+    _bioAbortController = null;
     console.error('[verifyBio] FAILED', e.name, e.message);
-    if (e.name==='NotAllowedError') throw e;
-    else if (e.name==='TimeoutError') throw { name:'TimeoutError', message:'انتهت مهلة البصمة' };
-    else if (e.name==='InvalidStateError') throw { name:'NotAllowedError', message:'البصمة غير متاحة' };
-    else if (e.name==='NotSupportedError') throw { name:'NotSupported', message:'الجهاز لا يدعم البصمة' };
+    if(e.name==='AbortError'){
+      throw { name: 'AbortError', message: 'تم إلغاء طلب البصمة' };
+    }
+    if(e.name==='NotAllowedError' && e.message && e.message.includes('already pending')){
+      throw { name: 'AlreadyPending', message: 'يوجد طلب بصمة معلق - أغلق التطبيق وأعد فتحه' };
+    }
+    if(e.name==='NotAllowedError') throw e;
+    else if(e.name==='TimeoutError') throw { name:'TimeoutError', message:'انتهت مهلة البصمة - تأكد أن البصمة مفعلة' };
+    else if(e.name==='InvalidStateError') throw { name:'NotAllowedError', message:'البصمة غير متاحة - أعد التسجيل' };
+    else if(e.name==='NotSupportedError') throw { name:'NotSupported', message:'الجهاز لا يدعم البصمة' };
     else throw e;
   }
-}
-
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject({ name:'TimeoutError', message:'Timeout '+ms+'ms' }), ms))
-  ]);
 }
 
 function showReBioBanner() { document.getElementById('re-bio-banner').style.display = 'block'; }
@@ -1594,7 +1631,7 @@ async function doReBioReg() {
     const credential = await navigator.credentials.create({
       publicKey: {
         challenge, rp: { name: 'نظام الحضور', id: location.hostname },
-        user: { id: Uint8Array.from(EMP.id, c => c.charCodeAt(0)), name: EMP.empId, displayName: EMP.name },
+        user: { id: (()=>{ try{return new TextEncoder().encode(crypto.randomUUID());}catch{return crypto.getRandomValues(new Uint8Array(16));} })(), name: EMP.empId, displayName: EMP.name },
         pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
         authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
         timeout: 60000
@@ -2410,5 +2447,5 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3e7d5bdc9182845',t:'MTc4OTk4MDc1OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3e827f80bc27a93',t:'MTc4OTk4NDEyNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
