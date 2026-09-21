@@ -906,13 +906,17 @@ async function registerBio() {
   try {
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
+    // FIX: user.id فريد بدلاً من 16 صفر - كان يسبب تضارب
+    let userIdBytes;
+    try { userIdBytes = new TextEncoder().encode(crypto.randomUUID()); } 
+    catch { userIdBytes = crypto.getRandomValues(new Uint8Array(16)); }
     const credential = await navigator.credentials.create({
       publicKey: {
         challenge,
         rp: { name: 'نظام الحضور', id: location.hostname },
-        user: { id: new Uint8Array(16), name: 'employee', displayName: 'موظف' },
+        user: { id: userIdBytes, name: 'employee', displayName: 'موظف' },
         pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
-        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', requireResidentKey: false },
         timeout: 60000
       }
     });
@@ -1464,16 +1468,26 @@ async function recBio(type) {
   if (type === 'out' && todayData.checkOut) { showToast('سجّلت انصرافك مسبقاً اليوم', 'error'); return; }
 
   const fpIcon = document.getElementById('fp-icon');
+  const fpHint = document.getElementById('fp-hint');
   fpIcon.classList.add('scanning');
+  if (fpHint) fpHint.textContent = 'جاري طلب بصمة الجهاز...';
   try {
     await verifyBio();
     fpIcon.classList.remove('scanning'); fpIcon.innerHTML = '✅';
-    setTimeout(() => { fpIcon.innerHTML = '🫆'; }, 2000);
+    if (fpHint) fpHint.textContent = '✅ تم التحقق';
+    setTimeout(() => { fpIcon.innerHTML = '🫆'; if (fpHint) fpHint.textContent='اضغط أحد الزرين أدناه للتسجيل'; }, 2000);
   } catch(e) {
     fpIcon.classList.remove('scanning');
-    if (e.name === 'DeviceReplaced') { showToast('تم استبدال جهازك — يُعاد تحميل التطبيق', 'error'); setTimeout(() => location.reload(), 2500); }
-    else if (e.name === 'NotAllowedError') { showReBioBanner(); }
-    else { showToast('فشل التحقق من البصمة', 'error'); }
+    fpIcon.innerHTML = '🫆';
+    if (fpHint) fpHint.textContent = 'فشل: ' + (e.message || e.name);
+    console.error('[recBio] verifyBio failed', e);
+    if (e.name === 'DeviceReplaced') { showToast('تم استبدال الجهاز — يُعاد تحميل التطبيق', 'error'); setTimeout(() => location.reload(), 2500); }
+    else if (e.name === 'CredMismatch') { showToast('معرف البصمة مختلف - اضغط إعادة تسجيل البصمة أدناه', 'error'); showReBioBanner(); }
+    else if (e.name === 'NotAllowedError') { showToast(e.message || 'لم يتم التعرف على البصمة', 'error'); showReBioBanner(); }
+    else if (e.name === 'TimeoutError') { showToast('انتهت مهلة البصمة - تأكد أن البصمة مفعلة وحاول مجددا', 'error'); }
+    else if (e.name === 'NotSupported') { showToast(e.message, 'error'); }
+    else if (e.name === 'InvalidCredId') { showToast(e.message, 'error'); showReBioBanner(); }
+    else { showToast('فشل التحقق: ' + (e.message || e.name), 'error'); showReBioBanner(); }
     return;
   }
 
@@ -1508,17 +1522,67 @@ async function recBio(type) {
 }
 
 async function verifyBio() {
-  if (!CRED_ID) throw { name: 'NotAllowedError' };
-  const empSnap = await DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value');
-  const empData = empSnap.val();
+  console.log('[verifyBio] START, CRED_ID exists?', !!CRED_ID);
+  if (!CRED_ID) {
+    console.error('[verifyBio] No CRED_ID');
+    throw { name: 'NotAllowedError', message: 'لا يوجد معرف بصمة - أعد التسجيل' };
+  }
+  let empData=null;
+  try {
+    const empSnap = await withTimeout(DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value'), 8000);
+    empData = empSnap.val();
+    console.log('[verifyBio] cred match?', empData?.credId===CRED_ID);
+  } catch(e) {
+    console.warn('[verifyBio] fetch emp failed, continue', e);
+  }
   if (empData) {
-    if (empData.credId && empData.credId !== CRED_ID) { localStorage.removeItem('ap_emp'); localStorage.removeItem('ap_cred_' + EMP.id); throw { name: 'DeviceReplaced' }; }
-    if (empData.deviceFingerprint && empData.deviceFingerprint !== getDeviceFingerprint()) { localStorage.removeItem('ap_emp'); localStorage.removeItem('ap_cred_' + EMP.id); throw { name: 'DeviceReplaced' }; }
+    if (empData.credId && empData.credId !== CRED_ID) {
+      console.warn('[verifyBio] credId mismatch');
+      throw { name: 'CredMismatch', message: 'معرف البصمة مختلف في السيرفر' };
+    }
+    // تم تعطيل فحص deviceFingerprint لمنع مشكلة التعليق - كان يسبب DeviceReplaced وهمي
+    // if (empData.deviceFingerprint && empData.deviceFingerprint !== getDeviceFingerprint()) { ... }
   }
   const challenge = new Uint8Array(32);
   crypto.getRandomValues(challenge);
-  const credIdBytes = Uint8Array.from(atob(CRED_ID), c => c.charCodeAt(0));
-  await navigator.credentials.get({ publicKey: { challenge, allowCredentials: [{ id: credIdBytes, type: 'public-key' }], userVerification: 'required', timeout: 30000 } });
+  let credIdBytes;
+  try {
+    credIdBytes = Uint8Array.from(atob(CRED_ID), c => c.charCodeAt(0));
+  } catch(e) {
+    throw { name: 'InvalidCredId', message: 'معرف البصمة تالف: '+e.message };
+  }
+  if (!window.PublicKeyCredential) {
+    throw { name: 'NotSupported', message: 'المتصفح لا يدعم البصمة - استخدم Chrome' };
+  }
+  try {
+    const cred = await withTimeout(
+      navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: credIdBytes, type: 'public-key' }],
+          userVerification: 'required',
+          timeout: 30000
+        }
+      }),
+      35000
+    );
+    console.log('[verifyBio] SUCCESS');
+    return cred;
+  } catch(e) {
+    console.error('[verifyBio] FAILED', e.name, e.message);
+    if (e.name==='NotAllowedError') throw e;
+    else if (e.name==='TimeoutError') throw { name:'TimeoutError', message:'انتهت مهلة البصمة' };
+    else if (e.name==='InvalidStateError') throw { name:'NotAllowedError', message:'البصمة غير متاحة' };
+    else if (e.name==='NotSupportedError') throw { name:'NotSupported', message:'الجهاز لا يدعم البصمة' };
+    else throw e;
+  }
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject({ name:'TimeoutError', message:'Timeout '+ms+'ms' }), ms))
+  ]);
 }
 
 function showReBioBanner() { document.getElementById('re-bio-banner').style.display = 'block'; }
@@ -2346,5 +2410,5 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3e7d5bdc9182845',t:'MTc4OTk4MDc1OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
