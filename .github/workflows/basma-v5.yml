@@ -1,0 +1,85 @@
+name: Basma v5.2 shared-site release
+on:
+  push:
+    branches: [basma-v5-pages]
+  workflow_dispatch:
+permissions:
+  contents: read
+  deployments: read
+concurrency:
+  group: basma-pages
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify published source
+        run: node validation/scripts/prepare-pages.js --verify .
+      - name: Install test dependencies
+        working-directory: validation
+        run: npm ci
+      - name: Install backend dependencies
+        working-directory: validation
+        run: npm --prefix functions ci
+      - name: Load installed backend SDKs on Node 22
+        working-directory: validation
+        env:
+          GCLOUD_PROJECT: demo-basma
+          FIREBASE_CONFIG: '{"projectId":"demo-basma","databaseURL":"https://demo-basma-default-rtdb.firebaseio.com"}'
+        run: node -e "require('./functions/index.js'); const req=require('node:module').createRequire(require('node:path').resolve('functions/package.json')); const {getApps,deleteApp}=req('firebase-admin/app'); Promise.all(getApps().map(deleteApp)).catch(error=>{console.error(error.message);process.exitCode=1;});"
+      - name: Syntax and CSP checks
+        working-directory: validation
+        run: npm run check
+      - name: Application tests
+        working-directory: validation
+        run: npm test
+      - name: Mandatory Firebase rules and real pagination on the Database Emulator
+        working-directory: validation
+        run: |
+          set -o pipefail
+          npm run test:rules 2>&1 | tee rules-emulator-result.txt
+      - name: Save emulator logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rules-emulator-logs
+          path: |
+            validation/rules-emulator-result.txt
+            validation/*debug.log
+          if-no-files-found: ignore
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      deployments: read
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Display scoped diff and verify current live site before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node validation/scripts/prepare-pages.js --preflight .
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

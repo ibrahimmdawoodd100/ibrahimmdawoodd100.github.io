@@ -1,0 +1,6 @@
+node_modules/
+.firebase/
+.env*
+.cloud-shell.env
+*credentials*.json
+*-debug.log

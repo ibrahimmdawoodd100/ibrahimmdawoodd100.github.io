@@ -1,0 +1,14 @@
+{
+  "name": "basma-signature-v5.2",
+  "private": true,
+  "scripts": {
+    "test": "node tests/policy.test.js && node tests/backend.test.js && node tests/frontend.test.js && node tests/report-model.test.js && node tests/ui.integration.test.js && node tests/attendance-clock.test.js && node tests/bootstrap.test.js && node tests/pages.test.js && node tests/measurement.test.js && node tests/manager-data.test.js",
+    "test:rules": "firebase emulators:exec --only database --project demo-basma 'node --test tests/rules.integration.js'",
+    "check": "node scripts/check.js"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "4.0.1",
+    "firebase": "11.10.0",
+    "firebase-tools": "14.22.0"
+  }
+}
