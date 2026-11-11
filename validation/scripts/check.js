@@ -28,5 +28,22 @@ for (const relative of ['public/manager/index.html','public/employee/index.html'
   if (/createUserWithEmailAndPassword|managerPassword|document\.write\(/.test(source)) throw new Error(`Legacy sensitive path: ${relative}`);
   if ((source.match(/src="\/manager\/assets\/(?:manager|employee|seller)\.js"/g) || []).length !== 1) throw new Error(`Invalid entrypoint count: ${relative}`);
 }
+// Diagnostics page: same CSP, no inline scripts, every script present.
+{
+  const relative = 'public/manager/diagnostics.html';
+  const referenced = ['public/seller.html', 'public/manager/index.html', 'public/employee/index.html', ...fs.readdirSync(path.join(root, 'public/assets')).map(f => 'public/assets/' + f)]
+    .some(file => fs.readFileSync(path.join(root, file), 'utf8').includes('/manager/diagnostics.html'));
+  if (referenced && !fs.existsSync(path.join(root, relative))) throw new Error('A page links to /manager/diagnostics.html but the file is missing');
+  if (fs.existsSync(path.join(root, relative))) {
+    const source = fs.readFileSync(path.join(root, relative), 'utf8');
+    const meta = source.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/);
+    const expected = csp.split('; ').filter(x => !x.startsWith('frame-ancestors ')).join('; ');
+    if (!meta || meta[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&') !== expected) throw new Error(`Missing or stale GitHub Pages CSP: ${relative}`);
+    if (source.indexOf(meta[0]) > source.indexOf('<script')) throw new Error(`CSP must precede scripts: ${relative}`);
+    for (const match of source.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) if (!/\bsrc=/.test(match[1]) || match[2].trim()) throw new Error(`Inline script not allowed: ${relative}`);
+    for (const match of source.matchAll(/<(?:script|link)[^>]+(?:src|href)="(\/manager\/assets\/[^"]+)"/g)) if (!fs.existsSync(path.join(root, 'public/assets', match[1].slice('/manager/assets/'.length)))) throw new Error(`Missing asset ${match[1]}`);
+    if (/\s(?:onclick|onchange|onkeydown|oninput|onload)=/.test(source)) throw new Error(`Inline handler: ${relative}`);
+  }
+}
 JSON.parse(fs.readFileSync(path.join(root, 'database.rules.json')));
 console.log(`Syntax, CSP hashes, and legacy-path checks passed (${scripts} scripts).`);
