@@ -42,7 +42,7 @@ resetManagerCredentials = doResetManagerCredentials = async function(cid) {
 };
 confirmDeleteCompany = cid => { if (confirm('تعليق الشركة مع الاحتفاظ بالسجلات؟')) return suspendCompany(cid); };
 resetAdminPin = changeSellerPin;
-countCompanyEmployees = async function() { for (const company of Object.values(allCompanies)) company.empCount = Object.keys(company.employees || {}).length; };
+window.countCompanyEmployees = async function() { for (const company of Object.values(allCompanies)) company.empCount = Object.keys(company.employees || {}).length; };
 refreshLiveEmployeeCounts = async () => {};
 loadAllCompanies = async function() {
   allCompanies = {}; let cursor;

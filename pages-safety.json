@@ -1,7 +1,7 @@
 {
   "version": 5,
   "mode": "release",
-  "liveRevision": "deployment:7683025593:7bbb7ec1604552f4020bbcdf7f8f4d63ce3a2c39",
+  "liveRevision": "deployment:7704639523:8e995ae067af84eb3170df014718cd2b100cf70f",
   "origin": "https://ibrahimmdawoodd100.github.io",
   "baselineHashes": {
     ".nojekyll": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
@@ -22,7 +22,7 @@
     "manager/assets/manager.js": "5d6c939a740cd1ed69e9508d8308814d1da40ff92e64a3b4c5b732e94858e7f6",
     "manager/assets/report-model.js": "3944e4125a5f4972754d897ec7a8750ee113de28c67b21abff97dde5816d4abc",
     "manager/assets/safe-dom.js": "8afb875996d76474f2fc367e31b1706a0dbd4221507b8cd31b5fa254e4543905",
-    "manager/assets/seller.js": "d85b8ac40ac69f77a9eb3ef718cbd05932e3bbdacdb166ad4498c5de3a4064ed",
+    "manager/assets/seller.js": "800bd215d19cb492f32729246c354d569e73043b907449d7880133f2d2c5f405",
     "manager/icon-manager-192.png": "432358d6f141dc65f46b5fda510f01aacb41235afd213fa261876502c60e78ad",
     "manager/icon-manager-512.png": "92c5f11bb6dd49761fd8b40b2bbded4823b28d601d2fd1ad70fbbff5b7eee22a",
     "manager/index.html": "5ededec58d712c74a016e46e2a26852710e5350120178701d3de8f43d5e02e56",
@@ -47,7 +47,7 @@
     "manager/assets/manager.js": "5d6c939a740cd1ed69e9508d8308814d1da40ff92e64a3b4c5b732e94858e7f6",
     "manager/assets/report-model.js": "3944e4125a5f4972754d897ec7a8750ee113de28c67b21abff97dde5816d4abc",
     "manager/assets/safe-dom.js": "8afb875996d76474f2fc367e31b1706a0dbd4221507b8cd31b5fa254e4543905",
-    "manager/assets/seller.js": "800bd215d19cb492f32729246c354d569e73043b907449d7880133f2d2c5f405",
+    "manager/assets/seller.js": "4305adcf5c3913f9075ea41cb8685485888c42fb28e46019849ea539b8c01c95",
     "manager/icon-manager-192.png": "432358d6f141dc65f46b5fda510f01aacb41235afd213fa261876502c60e78ad",
     "manager/icon-manager-512.png": "92c5f11bb6dd49761fd8b40b2bbded4823b28d601d2fd1ad70fbbff5b7eee22a",
     "manager/index.html": "5ededec58d712c74a016e46e2a26852710e5350120178701d3de8f43d5e02e56",

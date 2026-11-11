@@ -49,19 +49,27 @@ loadAllCompanies = async function() {
   do { const page = await Basma.call('listCompanies', cursor ? { cursor } : {}); Object.assign(allCompanies, page.companies); cursor = page.cursor; } while (cursor);
 };
 async function secureEditPlan(cid) {
-  const maxEmployees = Number(prompt('الحد الأقصى للموظفين:'));
-  const expiry = prompt('تاريخ الصلاحية بصيغة YYYY-MM-DD:'); if (!expiry) return;
-  const plan = prompt('اسم الخطة:') || 'manual';
-  await Basma.call('updatePlan', { companyId: cid, maxEmployees, expiresAt: new Date(expiry).getTime(), plan });
-  await loadAllCompanies(); openPanel(cid);
+  const info = allCompanies[cid]?.info || {};
+  const answer = await sellerForm('تعديل الخطة والصلاحية', [
+    { id: 'maxEmployees', label: 'الحد الأقصى للموظفين', value: String(info.maxEmployees ?? ''), numeric: true },
+    { id: 'expiry', label: 'تاريخ الصلاحية', type: 'date', value: Number.isFinite(info.expiresAt) ? new Date(info.expiresAt).toISOString().slice(0, 10) : '' },
+    { id: 'plan', label: 'اسم الخطة', value: info.plan || 'manual' }
+  ]);
+  if (!answer) return;
+  const maxEmployees = Number(answer.maxEmployees), expiresAt = new Date(answer.expiry).getTime();
+  if (!Number.isInteger(maxEmployees) || maxEmployees < 1) { showToast('اكتب حدًا صحيحًا للموظفين', 'error'); return; }
+  if (!Number.isFinite(expiresAt)) { showToast('اختر تاريخ صلاحية صحيحًا', 'error'); return; }
+  try { await Basma.call('updatePlan', { companyId: cid, maxEmployees, expiresAt, plan: answer.plan || 'manual' }); showToast('حُفظت الخطة', 'success'); await loadAllCompanies(); openPanel(cid); }
+  catch (error) { showToast(error.message, 'error'); }
 }
 const secureSellerPanel=openPanel;
 openPanel=async function(cid){
   await secureSellerPanel(cid);
   const button=document.createElement('button');button.className='action-btn-full';button.textContent='تجديد الاشتراك';
   button.addEventListener('click',async()=>{
-    const value=prompt('عدد أيام التجديد:','30');if(value==null)return;
-    const days=Number(value),operationKey=`basma_shared_renew_${cid}`;
+    const answer=await sellerForm('تجديد الاشتراك',[{id:'days',label:'عدد أيام التجديد (1 إلى 3660)',value:'30',numeric:true}]);if(!answer)return;
+    const days=Number(answer.days),operationKey=`basma_shared_renew_${cid}`;
+    if(!Number.isInteger(days)||days<1||days>3660){showToast('اكتب عدد أيام صحيحًا بين 1 و3660','error');return;}
     let prior;try{prior=JSON.parse(sessionStorage.getItem(operationKey)||'null');}catch{}
     const requestId=prior?.days===days?prior.requestId:crypto.randomUUID();
     sessionStorage.setItem(operationKey,JSON.stringify({days,requestId}));button.disabled=true;
@@ -74,3 +82,28 @@ openPanel=async function(cid){
     }catch(error){showToast(error.message,'error');}finally{button.disabled=false;}
   });document.getElementById('panel-content').appendChild(button);
 };
+const toLatinDigits = s => s.replace(/[٠-٩]/g, d => d.charCodeAt(0) - 0x0660).replace(/[۰-۹]/g, d => d.charCodeAt(0) - 0x06F0);
+function sellerForm(title, fields) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:#000a;z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--surface,#1a1a1a);border-radius:14px;padding:18px;width:100%;max-width:360px;direction:rtl;display:grid;gap:10px';
+    const heading = document.createElement('h3'); heading.textContent = title; heading.style.margin = '0'; box.appendChild(heading);
+    const inputs = {};
+    for (const f of fields) {
+      const label = document.createElement('label'); label.textContent = f.label; label.style.cssText = 'display:grid;gap:4px;font-size:14px';
+      const input = document.createElement('input'); input.type = f.type || 'text'; input.value = f.value ?? ''; input.className = 'form-input';
+      if (f.numeric) input.inputMode = 'numeric';
+      label.appendChild(input); box.appendChild(label); inputs[f.id] = input;
+    }
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px';
+    const ok = document.createElement('button'); ok.type = 'button'; ok.textContent = 'موافق'; ok.className = 'action-btn-sm btn-gold';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'إلغاء'; cancel.className = 'action-btn-sm';
+    row.append(ok, cancel); box.appendChild(row); overlay.appendChild(box); document.body.appendChild(overlay);
+    const done = value => { overlay.remove(); resolve(value); };
+    ok.addEventListener('click', () => { const out = {}; for (const [k, el] of Object.entries(inputs)) out[k] = toLatinDigits(el.value.trim()); done(out); });
+    cancel.addEventListener('click', () => done(null));
+    Object.values(inputs)[0]?.focus();
+  });
+}
