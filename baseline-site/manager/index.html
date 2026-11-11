@@ -2,6 +2,36 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-f+NMH9jdYQyJCrkW49u7e3lF2ciJOG0A2gkVD5CYmZg=' 'sha256-nNhTtcjYSWacRIsrTD6E4tiX9f1XBG2h63K1szkSsGM=' 'sha256-NaCdbowwwUFozbLuVDjk7Kr237NiNLIV0T62JdKxm3Q='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>لوحة تحكم المدير — النسخة المخصصة</title>
 <link rel="manifest" href="./manifest.json">
@@ -15,9 +45,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-auth-compat.js"></script>
+<script src="/manager/assets/config.js"></script>
+<script src="/manager/assets/actions.js"></script>
+<script src="/manager/assets/safe-dom.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-app-check-compat.js"></script>
+<script src="/manager/assets/core.js"></script>
+
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -235,21 +272,21 @@ tr:hover td{background:#1a1f30}
   <div style="font-size:13px;color:var(--text2)">أدخل رمز الدخول للمدير</div>
   <div class="pin-display" id="ps-pin-display"></div>
   <div class="pin-keyboard">
-    <button class="pin-key" onclick="adminPinKey('1')">1</button>
-    <button class="pin-key" onclick="adminPinKey('2')">2</button>
-    <button class="pin-key" onclick="adminPinKey('3')">3</button>
-    <button class="pin-key" onclick="adminPinKey('4')">4</button>
-    <button class="pin-key" onclick="adminPinKey('5')">5</button>
-    <button class="pin-key" onclick="adminPinKey('6')">6</button>
-    <button class="pin-key" onclick="adminPinKey('7')">7</button>
-    <button class="pin-key" onclick="adminPinKey('8')">8</button>
-    <button class="pin-key" onclick="adminPinKey('9')">9</button>
+    <button class="pin-key" data-basma-click="adminPinKey('1')">1</button>
+    <button class="pin-key" data-basma-click="adminPinKey('2')">2</button>
+    <button class="pin-key" data-basma-click="adminPinKey('3')">3</button>
+    <button class="pin-key" data-basma-click="adminPinKey('4')">4</button>
+    <button class="pin-key" data-basma-click="adminPinKey('5')">5</button>
+    <button class="pin-key" data-basma-click="adminPinKey('6')">6</button>
+    <button class="pin-key" data-basma-click="adminPinKey('7')">7</button>
+    <button class="pin-key" data-basma-click="adminPinKey('8')">8</button>
+    <button class="pin-key" data-basma-click="adminPinKey('9')">9</button>
     <button class="pin-key empty"></button>
-    <button class="pin-key" onclick="adminPinKey('0')">0</button>
-    <button class="pin-key del" onclick="adminPinDel()">⌫</button>
+    <button class="pin-key" data-basma-click="adminPinKey('0')">0</button>
+    <button class="pin-key del" data-basma-click="adminPinDel()">⌫</button>
   </div>
   <div class="pin-error" id="ps-error"></div>
-  <button id="ps-reset-btn" onclick="resetFbCfg()" style="display:none;background:none;border:1px solid var(--border);color:var(--text2);font-family:'Cairo',sans-serif;font-size:12px;padding:8px 16px;border-radius:20px;cursor:pointer;margin-top:4px">🔧 إعادة ضبط إعدادات الاتصال</button>
+  <button id="ps-reset-btn" data-basma-click="resetFbCfg()" style="display:none;background:none;border:1px solid var(--border);color:var(--text2);font-family:'Cairo',sans-serif;font-size:12px;padding:8px 16px;border-radius:20px;cursor:pointer;margin-top:4px">🔧 إعادة ضبط إعدادات الاتصال</button>
 </div>
 
 <!-- Modal: Employee Detail -->
@@ -264,7 +301,7 @@ tr:hover td{background:#1a1f30}
     <p id="confirm-msg">هل أنت متأكد؟</p>
     <div class="confirm-actions">
       <button class="modal-btn btn-red" id="confirm-ok">تأكيد</button>
-      <button class="modal-btn btn-gray" onclick="closeConfirm()">إلغاء</button>
+      <button class="modal-btn btn-gray" data-basma-click="closeConfirm()">إلغاء</button>
     </div>
   </div>
 </div>
@@ -274,7 +311,7 @@ tr:hover td{background:#1a1f30}
   <div class="modal-box" style="max-width:480px">
     <div class="modal-header">
       <div class="modal-title" id="act-link-modal-title">🔑 بيانات دخول الموظف</div>
-      <button class="modal-close" onclick="closeActLinkModal()">×</button>
+      <button class="modal-close" data-basma-click="closeActLinkModal()">×</button>
     </div>
     <div style="font-size:13px;color:var(--text2);margin-bottom:12px" id="act-link-desc"></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:4px">👤 اسم المستخدم</div>
@@ -283,7 +320,7 @@ tr:hover td{background:#1a1f30}
     <div style="background:var(--bg);border-radius:8px;padding:12px;font-size:14px;font-weight:700;word-break:break-all;color:var(--gold);margin-bottom:12px;border:1px solid var(--border)" id="act-link-password"></div>
     <div class="modal-actions">
       <button class="modal-btn btn-green" id="act-link-wa-btn">📲 واتساب</button>
-      <button class="modal-btn btn-gray" onclick="closeActLinkModal()">إغلاق</button>
+      <button class="modal-btn btn-gray" data-basma-click="closeActLinkModal()">إغلاق</button>
     </div>
   </div>
 </div>
@@ -293,7 +330,7 @@ tr:hover td{background:#1a1f30}
   <div class="modal-box" style="max-width:500px">
     <div class="modal-header">
       <div class="modal-title" id="mission-modal-title">📋 إضافة مهمة</div>
-      <button class="modal-close" onclick="closeMissionModal()">×</button>
+      <button class="modal-close" data-basma-click="closeMissionModal()">×</button>
     </div>
     <div class="form-group">
       <label class="form-label">الموظف</label>
@@ -318,7 +355,7 @@ tr:hover td{background:#1a1f30}
       </div>
     </div>
     <input type="hidden" id="mission-edit-key">
-    <button class="action-btn-full" onclick="saveMission()">💾 حفظ المهمة</button>
+    <button class="action-btn-full" data-basma-click="saveMission()">💾 حفظ المهمة</button>
   </div>
 </div>
 
@@ -330,32 +367,32 @@ tr:hover td{background:#1a1f30}
     <div class="sidebar-sub">لوحة تحكم المدير — مخصص</div>
   </div>
   <div class="nav-items">
-    <div class="nav-item active" onclick="showPage('dash')"><span class="nav-icon">📊</span><span class="nav-label">لوحة التحكم</span></div>
-    <div class="nav-item" onclick="showPage('attend')"><span class="nav-icon">📅</span><span class="nav-label">الحضور</span></div>
-    <div class="nav-item" onclick="showPage('emps')"><span class="nav-icon">👥</span><span class="nav-label">الموظفون</span></div>
-    <div class="nav-item" onclick="showPage('excuses')" id="nav-excuses"><span class="nav-icon">📝</span><span class="nav-label">الأعذار</span><span class="nav-badge" id="excuse-badge" style="display:none">0</span></div>
-    <div class="nav-item" onclick="showPage('leaves')" id="nav-leaves"><span class="nav-icon">🌴</span><span class="nav-label">الإجازات</span><span class="nav-badge" id="leaves-badge" style="display:none">0</span></div>
-    <div class="nav-item" onclick="showPage('messages')"><span class="nav-icon">💬</span><span class="nav-label">رسائل خاصة</span></div>
-    <div class="nav-item" onclick="showPage('warehouses')"><span class="nav-icon">🏭</span><span class="nav-label">إدارة الفروع</span></div>
-    <div class="nav-item" onclick="showPage('settings')"><span class="nav-icon">⚙️</span><span class="nav-label">الإعدادات</span></div>
-    <div class="nav-item" onclick="showPage('reports')"><span class="nav-icon">📄</span><span class="nav-label">تقارير PDF</span></div>
-    <div class="nav-item" onclick="showPage('payroll')"><span class="nav-icon">💰</span><span class="nav-label">الرواتب</span></div>
-    <div class="nav-item" onclick="showPage('admin-notifs')"><span class="nav-icon">🔔</span><span class="nav-label">الإشعارات</span><span id="admin-notif-badge" style="display:none" class="nav-badge">0</span></div>
+    <div class="nav-item active" data-basma-click="showPage('dash')"><span class="nav-icon">📊</span><span class="nav-label">لوحة التحكم</span></div>
+    <div class="nav-item" data-basma-click="showPage('attend')"><span class="nav-icon">📅</span><span class="nav-label">الحضور</span></div>
+    <div class="nav-item" data-basma-click="showPage('emps')"><span class="nav-icon">👥</span><span class="nav-label">الموظفون</span></div>
+    <div class="nav-item" data-basma-click="showPage('excuses')" id="nav-excuses"><span class="nav-icon">📝</span><span class="nav-label">الأعذار</span><span class="nav-badge" id="excuse-badge" style="display:none">0</span></div>
+    <div class="nav-item" data-basma-click="showPage('leaves')" id="nav-leaves"><span class="nav-icon">🌴</span><span class="nav-label">الإجازات</span><span class="nav-badge" id="leaves-badge" style="display:none">0</span></div>
+    <div class="nav-item" data-basma-click="showPage('messages')"><span class="nav-icon">💬</span><span class="nav-label">رسائل خاصة</span></div>
+    <div class="nav-item" data-basma-click="showPage('warehouses')"><span class="nav-icon">🏭</span><span class="nav-label">إدارة الفروع</span></div>
+    <div class="nav-item" data-basma-click="showPage('settings')"><span class="nav-icon">⚙️</span><span class="nav-label">الإعدادات</span></div>
+    <div class="nav-item" data-basma-click="showPage('reports')"><span class="nav-icon">📄</span><span class="nav-label">تقارير PDF</span></div>
+    <div class="nav-item" data-basma-click="showPage('payroll')"><span class="nav-icon">💰</span><span class="nav-label">الرواتب</span></div>
+    <div class="nav-item" data-basma-click="showPage('admin-notifs')"><span class="nav-icon">🔔</span><span class="nav-label">الإشعارات</span><span id="admin-notif-badge" style="display:none" class="nav-badge">0</span></div>
   </div>
-  <div class="sidebar-footer"><button class="lock-btn" onclick="lockAdmin()">🔒 قفل الشاشة</button></div>
+  <div class="sidebar-footer"><button class="lock-btn" data-basma-click="lockAdmin()">🔒 قفل الشاشة</button></div>
 </div>
 
 <!-- Main Area -->
 <div id="main-area">
   <div class="top-header">
     <div class="header-right">
-      <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+      <button class="menu-btn" data-basma-click="toggleSidebar()">☰</button>
       <span style="font-size:18px;font-weight:900" id="page-title">لوحة التحكم</span>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
       <div class="live-indicator"><span class="live-dot"></span>مباشر</div>
-      <button class="refresh-btn" onclick="refreshCurrentPage()">↻ تحديث</button>
-      <button id="sound-toggle-btn" onclick="toggleAdminSound()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px">🔊</button>
+      <button class="refresh-btn" data-basma-click="refreshCurrentPage()">↻ تحديث</button>
+      <button id="sound-toggle-btn" data-basma-click="toggleAdminSound()" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px">🔊</button>
     </div>
   </div>
 
@@ -371,7 +408,7 @@ tr:hover td{background:#1a1f30}
       </div>
       <div class="section-card">
         <div class="section-title">🏭 تصفية حسب الفرع</div>
-        <div class="wh-chips" id="dash-wh-chips"><span class="filter-chip active" data-wh="all" onclick="dashSelectWH(this,'all')">الكل</span></div>
+        <div class="wh-chips" id="dash-wh-chips"><span class="filter-chip active" data-wh="all" data-basma-click="dashSelectWH(this,'all')">الكل</span></div>
       </div>
       <div class="section-card">
         <div class="section-title">📋 سجل الحضور المباشر</div>
@@ -389,7 +426,7 @@ tr:hover td{background:#1a1f30}
       <div class="section-card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div class="section-title" style="margin:0">🔔 إشعارات النشاط</div>
-          <button onclick="clearAdminNotifs()" style="background:var(--surface);border:1px solid var(--border);color:var(--red);border-radius:20px;padding:4px 14px;font-size:12px;font-family:Cairo,sans-serif;cursor:pointer">🗑 مسح الكل</button>
+          <button data-basma-click="clearAdminNotifs()" style="background:var(--surface);border:1px solid var(--border);color:var(--red);border-radius:20px;padding:4px 14px;font-size:12px;font-family:Cairo,sans-serif;cursor:pointer">🗑 مسح الكل</button>
         </div>
         <div id="admin-notif-list"><div style="text-align:center;padding:40px;color:var(--text2)"><div class="spinner-sm" style="margin:0 auto 12px"></div>جاري التحميل...</div></div>
       </div>
@@ -400,14 +437,14 @@ tr:hover td{background:#1a1f30}
       <div class="section-card">
         <div class="section-title">🗓 فلترة الحضور</div>
         <div class="filter-bar">
-          <input class="filter-input" type="date" id="att-date" onchange="loadAttendance()">
-          <select class="filter-input form-select" id="att-wh" onchange="loadAttendance()"><option value="all">كل الفروع</option></select>
+          <input class="filter-input" type="date" id="att-date" data-basma-change="loadAttendance()">
+          <select class="filter-input form-select" id="att-wh" data-basma-change="loadAttendance()"><option value="all">كل الفروع</option></select>
         </div>
         <div class="filter-bar" id="att-status-chips">
-          <span class="filter-chip active" onclick="attChip(this,'all')">الكل</span>
-          <span class="filter-chip" onclick="attChip(this,'present')">حاضر</span>
-          <span class="filter-chip" onclick="attChip(this,'absent')">غائب</span>
-          <span class="filter-chip" onclick="attChip(this,'leave')">إجازة</span>
+          <span class="filter-chip active" data-basma-click="attChip(this,'all')">الكل</span>
+          <span class="filter-chip" data-basma-click="attChip(this,'present')">حاضر</span>
+          <span class="filter-chip" data-basma-click="attChip(this,'excused_out')">انصرف (بعذر)</span><span class="filter-chip" data-basma-click="attChip(this,'absent')">غائب</span>
+          <span class="filter-chip" data-basma-click="attChip(this,'leave')">إجازة</span>
         </div>
       </div>
       <div class="section-card">
@@ -423,10 +460,7 @@ tr:hover td{background:#1a1f30}
 
     <!-- EMPLOYEES -->
     <div class="page" id="page-emps">
-      <div class="section-card" id="bypass-req-section" style="display:none;border:1px solid var(--red)">
-        <div class="section-title" style="color:var(--red)">🔐 طلبات تخطي الجهاز</div>
-        <div id="bypass-req-list"></div>
-      </div>
+      
       <div class="section-card" id="pending-act-section" style="display:none;border:1px solid var(--orange)">
         <div class="section-title" style="color:var(--orange)">⏳ بانتظار التفعيل</div>
         <div id="pending-act-list"></div>
@@ -434,7 +468,7 @@ tr:hover td{background:#1a1f30}
       <div class="section-card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div class="section-title" style="margin:0">👥 إدارة الموظفين</div>
-          <button class="modal-btn btn-gold" onclick="toggleAddEmpPanel()">+ إضافة موظف</button>
+          <button class="modal-btn btn-gold" data-basma-click="toggleAddEmpPanel()">+ إضافة موظف</button>
         </div>
         <div id="add-emp-panel" style="display:none;background:var(--surface);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid var(--border)">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -445,11 +479,11 @@ tr:hover td{background:#1a1f30}
             <div class="form-group"><label class="form-label">الراتب الأساسي (شهري)</label><input class="form-input" type="number" id="ae-salary" placeholder="مثال: 500000"></div>
             <div class="form-group"><label class="form-label">نسبة الاستقطاع لكل يوم غياب %</label><input class="form-input" type="number" id="ae-deduction" placeholder="100" value="100"></div>
           </div>
-          <button class="action-btn-full" onclick="addEmployee()">✅ إضافة وإنشاء بيانات الدخول</button>
+          <button class="action-btn-full" data-basma-click="addEmployee()">✅ إضافة وإنشاء بيانات الدخول</button>
         </div>
         <div class="filter-bar">
-          <input class="filter-input" id="emp-search" placeholder="بحث بالاسم أو الرقم..." oninput="filterEmps()" style="flex:1">
-          <select class="filter-input form-select" id="emp-wh-filter" onchange="filterEmps()"><option value="all">كل الفروع</option></select>
+          <input class="filter-input" id="emp-search" placeholder="بحث بالاسم أو الرقم..." data-basma-input="filterEmps()" style="flex:1">
+          <select class="filter-input form-select" id="emp-wh-filter" data-basma-change="filterEmps()"><option value="all">كل الفروع</option></select>
         </div>
         <div class="emp-grid" id="emp-grid"><div style="text-align:center;padding:30px;color:var(--text2);grid-column:span 4"><div class="spinner-sm"></div></div></div>
       </div>
@@ -459,6 +493,8 @@ tr:hover td{background:#1a1f30}
     <div class="page" id="page-excuses">
       <div class="section-card">
         <div class="section-title">📝 الأعذار</div>
+        <div class="filter-bar"><label for="excuses-month">شهر الأعذار</label><input class="filter-input" type="month" id="excuses-month" data-basma-change="loadExcuses()"><button class="modal-btn" data-basma-click="refreshManagerRequests('excuses')">تحديث</button></div>
+        <p>تظهر طلبات الشهر المحدد وجميع الطلبات المعلقة، بما فيها الأشهر السابقة.</p>
         <div id="excuses-list"></div>
       </div>
     </div>
@@ -467,6 +503,8 @@ tr:hover td{background:#1a1f30}
     <div class="page" id="page-leaves">
       <div class="section-card">
         <div class="section-title">🌴 طلبات الإجازة</div>
+        <div class="filter-bar"><label for="leaves-month">شهر الإجازات</label><input class="filter-input" type="month" id="leaves-month" data-basma-change="loadLeaves()"><button class="modal-btn" data-basma-click="refreshManagerRequests('leaves')">تحديث</button></div>
+        <p>تظهر طلبات الشهر المحدد وجميع الطلبات المعلقة، بما فيها الأشهر السابقة.</p>
         <div id="leaves-list"></div>
       </div>
     </div>
@@ -480,7 +518,7 @@ tr:hover td{background:#1a1f30}
           <select class="form-input form-select" id="msg-emp-select"><option value="">اختر موظفاً...</option></select>
         </div>
         <div class="form-group"><textarea class="form-textarea" id="msg-body" placeholder="اكتب رسالتك هنا..." style="min-height:100px"></textarea></div>
-        <button class="action-btn-full" onclick="sendPrivateMsg()">📤 إرسال الرسالة</button>
+        <button class="action-btn-full" data-basma-click="sendPrivateMsg()">📤 إرسال الرسالة</button>
       </div>
       <div class="section-card">
         <div class="section-title">📬 الرسائل المُرسلة</div>
@@ -494,7 +532,7 @@ tr:hover td{background:#1a1f30}
         <div class="section-title">🏭 إضافة فرع جديد</div>
         <div style="display:flex;gap:10px">
           <input class="form-input" id="new-wh-name" placeholder="اسم الفرع" style="flex:1">
-          <button class="modal-btn btn-gold" onclick="addWarehouse()">إضافة</button>
+          <button class="modal-btn btn-gold" data-basma-click="addWarehouse()">إضافة</button>
         </div>
       </div>
       <div class="section-card">
@@ -508,7 +546,7 @@ tr:hover td{background:#1a1f30}
       <div class="section-card" style="border:1px solid var(--gold);background:linear-gradient(135deg,#1a1600,var(--card))">
         <div class="section-title">👤 الحساب</div>
         <div style="margin-top:4px">
-          <button onclick="resetFirebaseConfig()" style="background:transparent;border:1px solid var(--red);color:var(--red);border-radius:50px;padding:10px 20px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%">🚪 تسجيل الخروج من هذا الجهاز</button>
+          <button data-basma-click="resetFirebaseConfig()" style="background:transparent;border:1px solid var(--red);color:var(--red);border-radius:50px;padding:10px 20px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%">🚪 تسجيل الخروج من هذا الجهاز</button>
         </div>
       </div>
 
@@ -521,7 +559,7 @@ tr:hover td{background:#1a1f30}
           <div><div class="form-label" style="margin-bottom:8px">وقت الانصراف — من</div><input class="form-input" type="time" id="co-from"></div>
           <div><div class="form-label" style="margin-bottom:8px">وقت الانصراف — إلى</div><input class="form-input" type="time" id="co-to"></div>
         </div>
-        <button class="action-btn-full" onclick="saveTimeWindows()">💾 حفظ نوافذ الوقت</button>
+        <button class="action-btn-full" data-basma-click="saveTimeWindows()">💾 حفظ نوافذ الوقت</button>
       </div>
 
       <!-- ① جدول مواعيد خاص بكل موظف -->
@@ -529,7 +567,7 @@ tr:hover td{background:#1a1f30}
         <div class="section-title" style="color:var(--blue)">🗓 جدول مواعيد خاص بموظف</div>
         <div class="form-group">
           <label class="form-label">اختر الموظف</label>
-          <select class="form-input form-select" id="sched-emp-sel" onchange="loadEmpSchedule()"><option value="">اختر...</option></select>
+          <select class="form-input form-select" id="sched-emp-sel" data-basma-change="loadEmpSchedule()"><option value="">اختر...</option></select>
         </div>
         <div id="sched-form" style="display:none">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
@@ -539,8 +577,8 @@ tr:hover td{background:#1a1f30}
             <div><div class="form-label" style="margin-bottom:8px">انصرافه — إلى</div><input class="form-input" type="time" id="sched-co-to"></div>
           </div>
           <div style="display:flex;gap:10px">
-            <button class="action-btn-full" onclick="saveEmpSchedule()" style="flex:1">💾 حفظ جدول الموظف</button>
-            <button class="modal-btn btn-red" onclick="clearEmpSchedule()" style="margin-top:8px">🗑 إزالة الجدول الخاص</button>
+            <button class="action-btn-full" data-basma-click="saveEmpSchedule()" style="flex:1">💾 حفظ جدول الموظف</button>
+            <button class="modal-btn btn-red" data-basma-click="clearEmpSchedule()" style="margin-top:8px">🗑 إزالة الجدول الخاص</button>
           </div>
           <div style="font-size:11px;color:var(--text2);margin-top:8px">ملاحظة: إزالة الجدول الخاص يعيد الموظف لمواعيد الشركة الافتراضية</div>
         </div>
@@ -552,7 +590,7 @@ tr:hover td{background:#1a1f30}
         <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
           <input class="form-input" type="date" id="holiday-date" style="flex:1">
           <input class="form-input" id="holiday-name" placeholder="اسم العطلة" style="flex:1">
-          <button class="modal-btn btn-gold" onclick="addHoliday()">إضافة</button>
+          <button class="modal-btn btn-gold" data-basma-click="addHoliday()">إضافة</button>
         </div>
         <div id="holidays-list"></div>
       </div>
@@ -561,7 +599,7 @@ tr:hover td{background:#1a1f30}
       <div class="section-card">
         <div class="section-title">📢 إشعار جماعي</div>
         <div class="form-group"><textarea class="form-textarea" id="broadcast-msg" placeholder="اكتب رسالتك للجميع..."></textarea></div>
-        <button class="action-btn-full" onclick="sendBroadcast()">📤 إرسال لجميع الموظفين</button>
+        <button class="action-btn-full" data-basma-click="sendBroadcast()">📤 إرسال لجميع الموظفين</button>
       </div>
     </div>
 
@@ -571,7 +609,7 @@ tr:hover td{background:#1a1f30}
         <div class="section-title">⚙️ إعدادات التقرير</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
           <div class="form-group"><label class="form-label">نوع التقرير</label>
-            <select class="form-input form-select" id="rep-type" onchange="updateRepDates()">
+            <select class="form-input form-select" id="rep-type" data-basma-change="updateRepDates()">
               <option value="daily">يومي</option>
               <option value="weekly">أسبوعي</option>
               <option value="monthly" selected>شهري</option>
@@ -582,7 +620,7 @@ tr:hover td{background:#1a1f30}
           <div class="form-group"><label class="form-label">الفرع</label><select class="form-input form-select" id="rep-wh"><option value="all">الكل</option></select></div>
           <div class="form-group"><label class="form-label">الموظف</label><select class="form-input form-select" id="rep-emp"><option value="all">كل الموظفين</option></select></div>
         </div>
-        <button class="action-btn-full" onclick="generateReport()">📊 عرض التقرير</button>
+        <button class="action-btn-full" data-basma-click="generateReport()">📊 عرض التقرير</button>
       </div>
       <div id="report-output" style="display:none">
         <div class="section-card">
@@ -597,14 +635,14 @@ tr:hover td{background:#1a1f30}
         <!-- ملخص موظف محدد -->
         <div id="emp-detail-summary" style="display:none;margin-top:14px"></div>
         <div class="section-card">
-          <div class="section-title" id="rep-table-title">📋 جدول التقرير (أول 50 سجل)</div>
+          <div class="section-title" id="rep-table-title">📋 جدول التقرير — اضغط السجل لعرض التفاصيل</div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>الموظف</th><th>التاريخ</th><th>الحضور</th><th>الانصراف</th><th>ساعات</th><th>التأخير (د)</th><th>ملاحظات</th></tr></thead>
               <tbody id="rep-tbody"></tbody>
             </table>
           </div>
-          <button class="action-btn-full" style="margin-top:12px" onclick="generatePDF()">🖨️ طباعة / حفظ PDF</button>
+          <button class="action-btn-full" style="margin-top:12px" data-basma-click="generatePDF()">🖨️ طباعة / حفظ PDF</button>
         </div>
       </div>
     </div>
@@ -615,11 +653,11 @@ tr:hover td{background:#1a1f30}
         <div class="section-title">💰 احتساب الرواتب</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
           <div class="form-group"><label class="form-label">الشهر</label><input class="form-input" type="month" id="pr-month"></div>
-          <div class="form-group"><label class="form-label">الفرع</label><select class="form-input form-select" id="pr-wh" onchange="populatePrEmpFilter()"><option value="all">كل الفروع</option></select></div>
-          <div class="form-group"><label class="form-label">الموظف</label><select class="form-input form-select" id="pr-emp"><option value="all">كل الموظفين</option></select></div>
+<div class="form-group"><label class="form-label">الفرع الحالي للموظف</label><select class="form-input" id="pr-wh"><option value="all">كل الفروع الحالية</option></select></div>
+<div class="form-group"><label class="form-label">الموظف</label><select class="form-input" id="pr-emp"><option value="all">كل الموظفين</option></select></div>
         </div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px">يُحتسب الاستقطاع كالتالي: (الراتب ÷ أيام العمل بالشهر) × عدد أيام الغياب × نسبة الاستقطاع. أيام الجمعة والعطل الرسمية والإجازات المعتمدة لا تُحتسب غيابًا.</div>
-        <button class="action-btn-full" onclick="calculatePayroll()">📊 احتساب الرواتب</button>
+        <button class="action-btn-full" data-basma-click="calculatePayroll()">📊 احتساب الرواتب</button>
       </div>
       <div id="payroll-output" style="display:none">
         <div class="section-card">
@@ -628,27 +666,18 @@ tr:hover td{background:#1a1f30}
         </div>
         <div class="section-card">
           <div class="section-title">📋 تفصيل الرواتب</div>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">💡 اضغط على أي موظف لعرض تفاصيل أيامه كاملة</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الفرع</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>أيام الإجازة</th><th>مبلغ الاستقطاع</th><th>الصافي</th></tr></thead>
+              <thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>نسبة الاستقطاع</th><th>مبلغ الاستقطاع</th><th>الصافي</th><th>التفاصيل اليومية</th></tr></thead>
               <tbody id="pr-tbody"></tbody>
             </table>
           </div>
-          <button class="action-btn-full" style="margin-top:12px" onclick="generatePayrollPDF()">🖨️ طباعة / حفظ PDF</button>
+          <button class="action-btn-full" style="margin-top:12px" data-basma-click="generatePayrollPDF()">🖨️ طباعة / حفظ PDF</button>
         </div>
       </div>
     </div>
 
   </div>
-</div>
-
-<!-- Subscription Blocked Screen -->
-<div id="sub-blocked-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:10000;align-items:center;justify-content:center;flex-direction:column;padding:24px;text-align:center">
-  <div style="font-size:56px" id="sub-blocked-icon">⛔</div>
-  <div style="font-size:20px;font-weight:900;color:var(--red);margin-top:12px" id="sub-blocked-title">الاشتراك متوقف</div>
-  <div style="font-size:14px;color:var(--text2);margin-top:10px;line-height:1.8;max-width:320px" id="sub-blocked-msg">يرجى التواصل مع المورّد لتجديد الاشتراك أو الاستفسار.</div>
-  <button onclick="resetFirebaseConfig()" style="margin-top:24px;background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:50px;padding:10px 24px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer">🚪 تسجيل الخروج من هذا الجهاز</button>
 </div>
 
 <!-- Directory Login Screen -->
@@ -663,22 +692,13 @@ tr:hover td{background:#1a1f30}
       <input id="dl-username" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:15px;outline:none;width:100%" placeholder="اسم المستخدم">
       <input id="dl-password" type="password" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;color:var(--text);font-size:15px;outline:none;width:100%" placeholder="الرقم السري">
       <div id="setup-error" style="color:var(--red);font-size:13px;text-align:center;display:none"></div>
-      <button id="dl-submit-btn" onclick="directoryLogin()" style="background:var(--gold);color:#0a0c14;border:none;border-radius:50px;padding:14px;font-size:16px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;margin-top:4px">✅ دخول</button>
+      <button id="dl-submit-btn" data-basma-click="directoryLogin()" style="background:var(--gold);color:#0a0c14;border:none;border-radius:50px;padding:14px;font-size:16px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;margin-top:4px">✅ دخول</button>
     </div>
   </div>
 </div>
 
 <script>
 // ==================== CONFIG ====================
-// يحوّل أي Date إلى "YYYY-MM-DD" حسب التوقيت المحلي لجهاز المستخدم
-// (بدل UTC) — يمنع تسجيل عمليات قريبة من منتصف الليل بتوقيت العراق
-// (UTC+3) تحت تاريخ اليوم السابق بالخطأ.
-function localDateStr(d) {
-  d = d || new Date();
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - off).toISOString().split('T')[0];
-}
-
 let COMPANY_ID = 'main';
 let DB = null, COMPANY_INFO = {}, ALL_EMPLOYEES = {}, ALL_WAREHOUSES = {};
 let currentPage = 'dash', dashWHFilter = 'all', attStatusFilter = 'all';
@@ -695,90 +715,9 @@ let excusesListener = null;
 let leavesListener = null;
 let adminNotifPageListener = null;
 
-// ==================== الدليل المركزي (Directory) ====================
-// مشروع Firebase ثابت مشترك: يحوّل اسم مستخدم/رقم سري إلى إعدادات
-// Firebase الخاصة بشركة هذا المدير (tenantConfig) + معرّف الشركة.
-const DIRECTORY_CONFIG = {
-  apiKey: "AIzaSyA569Cn0DbbJ-gZIAEtAI4-Y1qOU9Wzfps",
-  authDomain: "signature-7706e.firebaseapp.com",
-  databaseURL: "https://signature-7706e-default-rtdb.firebaseio.com",
-  projectId: "signature-7706e",
-  storageBucket: "signature-7706e.firebasestorage.app",
-  messagingSenderId: "25739438341",
-  appId: "1:25739438341:web:a394b046ed29d96bd36f6c"
-};
-const DIRECTORY_EMAIL_DOMAIN = 'basma.app';
+async function directoryLogin() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-function getStoredTenant() {
-  const cfg = localStorage.getItem('tenant_cfg');
-  const cid = localStorage.getItem('tenant_company_id');
-  if (cfg && cid) { try { return { tenantConfig: JSON.parse(cfg), companyId: cid }; } catch(e) {} }
-  return null;
-}
-
-function initTenantAndLoad(tenantConfig, companyId) {
-  COMPANY_ID = companyId;
-  const tenantApp = firebase.initializeApp(tenantConfig, 'tenantApp');
-  DB = tenantApp.database();
-  loadCompanyAndShowPin();
-}
-
-window.onload = async () => {
-  const soundBtn = document.getElementById('sound-toggle-btn');
-  if (soundBtn) soundBtn.textContent = adminSoundEnabled ? '🔊' : '🔇';
-  const stored = getStoredTenant();
-  if (stored) {
-    initTenantAndLoad(stored.tenantConfig, stored.companyId);
-    return;
-  }
-  document.getElementById('setup-screen').style.display = 'flex';
-};
-
-async function directoryLogin() {
-  const username = document.getElementById('dl-username').value.trim();
-  const password = document.getElementById('dl-password').value;
-  const err = document.getElementById('setup-error');
-  err.style.display = 'none';
-  if (!username || !password) {
-    err.textContent = 'يرجى إدخال اسم المستخدم والرقم السري';
-    err.style.display = 'block'; return;
-  }
-  const btn = document.getElementById('dl-submit-btn');
-  btn.disabled = true; btn.textContent = 'جاري التحقق...';
-  try {
-    const dirApp = firebase.apps.find(a => a.name === 'directoryApp') || firebase.initializeApp(DIRECTORY_CONFIG, 'directoryApp');
-    const email = `${username}@${DIRECTORY_EMAIL_DOMAIN}`;
-    const cred = await dirApp.auth().signInWithEmailAndPassword(email, password);
-    const uid = cred.user.uid;
-    const snap = await dirApp.database().ref(`directory/managers/${uid}`).once('value');
-    const record = snap.val();
-    if (!record || record.active === false) {
-      await dirApp.auth().signOut();
-      err.textContent = 'الحساب غير موجود أو معطّل — تواصل مع المورّد';
-      err.style.display = 'block';
-      btn.disabled = false; btn.textContent = '✅ دخول';
-      return;
-    }
-    localStorage.setItem('tenant_cfg', JSON.stringify(record.tenantConfig));
-    localStorage.setItem('tenant_company_id', record.companyId);
-    localStorage.setItem('manager_dir_uid', uid);
-    document.getElementById('setup-screen').style.display = 'none';
-    initTenantAndLoad(record.tenantConfig, record.companyId);
-  } catch(e) {
-    err.textContent = 'اسم المستخدم أو الرقم السري غير صحيح';
-    err.style.display = 'block';
-    btn.disabled = false; btn.textContent = '✅ دخول';
-  }
-}
-
-function resetFirebaseConfig() {
-  if (!confirm('سيتم تسجيل الخروج من هذا الجهاز وحذف بيانات الشركة المحفوظة محليًا. هل أنت متأكد؟')) return;
-  localStorage.removeItem('tenant_cfg');
-  localStorage.removeItem('tenant_company_id');
-  localStorage.removeItem('manager_dir_uid');
-  sessionStorage.clear();
-  location.reload();
-}
+function resetFirebaseConfig() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== PIN ====================
 function adminPinKey(d) {
@@ -804,135 +743,13 @@ function updateAdminPinDisplay() {
     disp.appendChild(d);
   }
 }
-function checkAdminPin() {
-  if (pinChecking) return;
-  pinChecking = true;
+function checkAdminPin() { throw new Error('Legacy path disabled; use the secure service.'); }
+function unlockAdmin() { throw new Error('Legacy path disabled; use the secure service.'); }
+function lockAdmin() { throw new Error('Legacy path disabled; use the secure service.'); }
+function resetInactivity() { throw new Error('Legacy path disabled; use the secure service.'); }
+function resetFbCfg() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-  // لم يُحمَّل PIN بعد
-  if (cachedAdminPin === null) {
-    document.getElementById('ps-error').textContent = 'جاري تحميل البيانات...';
-    adminPinVal = '';
-    updateAdminPinDisplay();
-    pinChecking = false;
-    return;
-  }
-
-  // لم يتم إيجاد بيانات الشركة — غالباً إعدادات Firebase غير صحيحة
-  if (cachedAdminPin === '') {
-    document.getElementById('ps-error').textContent = '⚠️ لم يتم إيجاد بيانات الشركة — تحقق من صحة الرابط أو اضغط إعادة ضبط';
-    document.getElementById('ps-reset-btn').style.display = 'inline-block';
-    adminPinVal = '';
-    updateAdminPinDisplay();
-    pinChecking = false;
-    return;
-  }
-
-  const storedPin = cachedAdminPin;
-  if (adminPinVal === storedPin) {
-    document.getElementById('ps-error').textContent = '';
-    pinChecking = false;
-    unlockAdmin();
-  } else if (adminPinVal.length >= Math.max(storedPin.length, 4)) {
-    document.getElementById('ps-error').textContent = '❌ رمز غير صحيح، حاول مجدداً';
-    adminPinVal = '';
-    updateAdminPinDisplay();
-    pinChecking = false;
-  } else {
-    pinChecking = false;
-  }
-}
-function unlockAdmin() {
-  sessionStorage.setItem('admin_session_' + COMPANY_ID, Date.now().toString());
-  document.getElementById('pin-screen').classList.add('hidden');
-  loadAllData();
-  resetInactivity();
-  document.addEventListener('click', resetInactivity);
-  document.addEventListener('keydown', resetInactivity);
-  if (!window._subCheckInterval) {
-    window._subCheckInterval = setInterval(async () => {
-      try {
-        const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
-        COMPANY_INFO = snap.val() || COMPANY_INFO;
-        checkSubscriptionBlocked();
-      } catch(e) {}
-    }, 300000); // كل 5 دقائق
-  }
-}
-function lockAdmin() {
-  sessionStorage.removeItem('admin_session_' + COMPANY_ID);
-  document.getElementById('ps-error').textContent = '';
-  adminPinVal = '';
-  updateAdminPinDisplay();
-  document.getElementById('pin-screen').classList.remove('hidden');
-}
-function resetInactivity() {
-  if (inactivityTimer) clearTimeout(inactivityTimer);
-  inactivityTimer = setTimeout(lockAdmin, 1800000);
-}
-function resetFbCfg() {
-  localStorage.removeItem('tenant_cfg');
-  localStorage.removeItem('tenant_company_id');
-  localStorage.removeItem('manager_dir_uid');
-  location.reload();
-}
-
-function checkSubscriptionBlocked() {
-  const now = Date.now();
-  const info = COMPANY_INFO || {};
-  const ol = document.getElementById('loading-overlay');
-  if (info.status === 'suspended') {
-    if (ol) ol.style.display = 'none';
-    document.getElementById('sub-blocked-icon').textContent = '⛔';
-    document.getElementById('sub-blocked-title').textContent = 'الاشتراك موقوف مؤقتًا';
-    document.getElementById('sub-blocked-msg').textContent = 'تم إيقاف اشتراك شركتك مؤقتًا. يرجى التواصل مع المورّد لمعرفة السبب أو استئناف الخدمة.';
-    document.getElementById('sub-blocked-screen').style.display = 'flex';
-    return true;
-  }
-  if (info.expiresAt && info.expiresAt > 0 && info.expiresAt < now) {
-    if (ol) ol.style.display = 'none';
-    document.getElementById('sub-blocked-icon').textContent = '⏰';
-    document.getElementById('sub-blocked-title').textContent = 'انتهت صلاحية الاشتراك';
-    document.getElementById('sub-blocked-msg').textContent = 'انتهت مدة اشتراك شركتك بتاريخ ' + new Date(info.expiresAt).toLocaleDateString('ar-SA') + '. يرجى التواصل مع المورّد للتجديد.';
-    document.getElementById('sub-blocked-screen').style.display = 'flex';
-    return true;
-  }
-  document.getElementById('sub-blocked-screen').style.display = 'none';
-  return false;
-}
-
-async function loadCompanyAndShowPin() {
-  try {
-    const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
-    COMPANY_INFO = snap.val() || {};
-    if (checkSubscriptionBlocked()) return;
-    if (COMPANY_INFO.adminPin != null) {
-      cachedAdminPin = String(COMPANY_INFO.adminPin);
-    } else {
-      try {
-        const pinSnap = await DB.ref(`companies/${COMPANY_ID}/info/adminPin`).once('value');
-        cachedAdminPin = pinSnap.val() != null ? String(pinSnap.val()) : '';
-      } catch(e) { cachedAdminPin = ''; }
-    }
-    const logo = COMPANY_INFO.logo || '🏭';
-    const name = COMPANY_INFO.nameAr || COMPANY_INFO.name || 'الشركة';
-    document.getElementById('ps-logo').textContent = logo;
-    document.getElementById('ps-company').textContent = name + (COMPANY_ID !== 'main' ? ` (${COMPANY_ID})` : ' — لم يتم تحديد الشركة');
-    document.getElementById('sb-logo').textContent = logo;
-    document.getElementById('sb-company').textContent = name;
-    const ol = document.getElementById('loading-overlay');
-    if (ol) ol.style.display = 'none';
-    const session = sessionStorage.getItem('admin_session_' + COMPANY_ID);
-    if (session && (Date.now() - parseInt(session)) < 1800000) {
-      unlockAdmin();
-    } else {
-      document.getElementById('pin-screen').classList.remove('hidden');
-    }
-  } catch(e) {
-    const ol = document.getElementById('loading-overlay');
-    if (ol) ol.style.display = 'none';
-    showToast('خطأ في الاتصال — تحقق من الإنترنت وأعد التحميل', 'error');
-  }
-}
+async function loadCompanyAndShowPin() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== DATA LOAD ====================
 async function loadAllData() {
@@ -954,8 +771,8 @@ async function loadAllData() {
 
 function populateWHSelects() {
   const chips = document.getElementById('dash-wh-chips');
-  chips.innerHTML = '<span class="filter-chip active" data-wh="all" onclick="dashSelectWH(this,\'all\')">الكل</span>';
-  ['att-wh', 'emp-wh-filter', 'rep-wh', 'pr-wh'].forEach(id => {
+  chips.innerHTML = '<span class="filter-chip active" data-wh="all" data-basma-click="dashSelectWH(this,\'all\')">الكل</span>';
+  ['att-wh', 'emp-wh-filter', 'rep-wh'].forEach(id => {
     const el = document.getElementById(id);
     if (el) while (el.options.length > 1) el.remove(1);
   });
@@ -966,7 +783,7 @@ function populateWHSelects() {
     chip.onclick = () => dashSelectWH(chip, id);
     chip.textContent = wh.name;
     chips.appendChild(chip);
-    ['att-wh', 'emp-wh-filter', 'rep-wh', 'pr-wh'].forEach(sel => {
+    ['att-wh', 'emp-wh-filter', 'rep-wh'].forEach(sel => {
       const el = document.getElementById(sel);
       if (el) { const opt = document.createElement('option'); opt.value = id; opt.textContent = wh.name; el.appendChild(opt); }
     });
@@ -995,7 +812,7 @@ function loadBadges() {
     const badge = document.getElementById('leaves-badge');
     badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none';
   });
-  DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('locStatus').equalTo('pending').on('value', snap => {
+  DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('locStatus').equalTo('pending').limitToLast(1000).on('value', snap => {
     const count = snap.numChildren();
     const badge = document.getElementById('loc-badge');
     badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none';
@@ -1037,44 +854,9 @@ function toggleAdminSound() {
   showToast(adminSoundEnabled ? 'تم تشغيل صوت الإشعارات' : 'تم إيقاف صوت الإشعارات', 'success');
 }
 
-function loadAdminNotifBadge() {
-  if (adminNotifBadgeListener) DB.ref(`companies/${COMPANY_ID}/notifications/admin`).off('value', adminNotifBadgeListener);
-  let firstLoad = true;
-  adminNotifBadgeListener = DB.ref(`companies/${COMPANY_ID}/notifications/admin`).on('value', snap => {
-    let count = 0;
-    snap.forEach(c => { const v=c.val(); if(v&&typeof v==='object'&&!v.read) count++; });
-    const badge = document.getElementById('admin-notif-badge');
-    if (count > 0) {
-      if (!firstLoad && count > adminNotifCount && adminSoundEnabled) playNotifSound();
-      badge.textContent = count; badge.style.display = 'inline';
-    } else { badge.style.display = 'none'; }
-    firstLoad = false;
-    adminNotifCount = count;
-  });
+function loadAdminNotifBadge() { throw new Error('Use the integrated secure view.'); }
 
-  DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests`).on('value', snap => {
-    const section = document.getElementById('bypass-req-section');
-    const list = document.getElementById('bypass-req-list');
-    if (!section || !list) return;
-    const pending = [];
-    snap.forEach(c => { const v = c.val(); if (v && v.status === 'pending') pending.push({ key: c.key, ...v }); });
-    if (!pending.length) { section.style.display = 'none'; return; }
-    section.style.display = 'block';
-    list.innerHTML = '';
-    pending.forEach(req => {
-      const row = document.createElement('div');
-      row.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;margin-bottom:8px';
-      row.innerHTML = `<div style="flex:1"><div style="font-weight:700;font-size:14px">${req.name||req.uid}</div><div style="font-size:12px;color:var(--text2)">يطلب تسجيل جهاز جديد</div></div><button class="action-btn-sm btn-green" onclick="answerBypass('${req.key}','approved')">✅ موافقة</button><button class="action-btn-sm btn-red" onclick="answerBypass('${req.key}','rejected')" style="margin-right:6px">❌ رفض</button>`;
-      list.appendChild(row);
-    });
-  });
-}
-
-async function answerBypass(uid, decision) {
-  await DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${uid}/status`).set(decision);
-  if (decision === 'approved') showToast('تمت الموافقة — الموظف يسجّل الآن', 'success');
-  else showToast('تم رفض الطلب', 'error');
-}
+function answerBypass() { throw new Error('Use the integrated secure view.'); }
 
 function loadAdminNotifPage() {
   const list = document.getElementById('admin-notif-list');
@@ -1115,60 +897,7 @@ async function clearAdminNotifs() {
 }
 
 // ==================== DASHBOARD ====================
-async function loadDashboard() {
-  try {
-    const today = localDateStr(new Date());
-    const [todaySnap, leavesSnap, excSnap] = await Promise.all([
-      DB.ref(`companies/${COMPANY_ID}/today`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/leaves`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/excuses`).once('value')
-    ]);
-    const todayData = todaySnap.val() || {};
-    const allLeaves = leavesSnap.val() || {};
-    // Partial leaves do NOT count as full-day leave in dashboard
-    const approvedLeaveEids = new Set(
-      Object.values(allLeaves).filter(l=>l.date===today&&l.status==='approved'&&!l.isPartial).map(l=>l.empId)
-    );
-    const excusesByEmpDate = {};
-    excSnap.forEach(c => {
-      const ex = c.val();
-      if (!ex || !ex.empId || !ex.date) return;
-      if (!excusesByEmpDate[ex.empId]) excusesByEmpDate[ex.empId] = {};
-      excusesByEmpDate[ex.empId][ex.date] = ex;
-    });
-    const approved = Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
-    document.getElementById('ds-total').textContent = approved.length;
-    let present=0, absent=0, onLeave=0;
-    const tbody = document.getElementById('dash-tbody');
-    tbody.innerHTML = '';
-    for (const [eid, emp] of approved) {
-      if (dashWHFilter !== 'all' && emp.warehouseId !== dashWHFilter) continue;
-      const rawTd = todayData[eid] || {};
-      const td = (rawTd.dateKey && rawTd.dateKey !== today) ? {} : rawTd;
-      const isOnLeave = approvedLeaveEids.has(eid);
-      let status, statusBadge;
-      if (isOnLeave) { status='🌴 إجازة'; statusBadge='badge-purple'; onLeave++; }
-      else if (td.checkIn && td.checkOut) { status='🚪 انصرف'; statusBadge='badge-blue'; present++; }
-      else if (td.checkIn) { status='✅ حاضر'; statusBadge='badge-green'; present++; }
-      else {
-        const exc = excusesByEmpDate[eid]?.[today];
-        const hasApprovedExcuse = exc && exc.status === 'approved';
-        if (td.checkOut && hasApprovedExcuse) { status='🚪 انصرف (بعذر)'; statusBadge='badge-blue'; present++; }
-        else if (hasApprovedExcuse) { status='📝 معذور'; statusBadge='badge-gold'; present++; }
-        else { status='❌ غائب'; statusBadge='badge-red'; absent++; }
-      }
-      const tr = document.createElement('tr');
-      tr.className = 'cursor-pointer';
-      tr.onclick = () => showEmpModal(eid);
-      tr.innerHTML=`<td><b>${emp.name}</b></td><td>${emp.role||''}</td><td>${emp.warehouseName||''}</td><td><span class="badge ${statusBadge}">${status}</span></td><td>${td.checkIn?format12(td.checkIn):'--'}</td><td>${td.checkOut?format12(td.checkOut):'--'}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${td.locationName||'--'}</td>`;
-      tbody.appendChild(tr);
-    }
-    document.getElementById('ds-present').textContent = present;
-    document.getElementById('ds-absent').textContent = absent;
-    document.getElementById('ds-leave').textContent = onLeave;
-    if (!tbody.children.length) tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text2)">لا توجد بيانات</td></tr>';
-  } catch(e) { showToast('خطأ في تحميل البيانات', 'error'); }
-}
+function loadDashboard() { throw new Error('Use the integrated secure view.'); }
 
 function dashSelectWH(el, wh) {
   document.querySelectorAll('#dash-wh-chips .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -1185,87 +914,7 @@ function attChip(el, status) {
   loadAttendance();
 }
 
-async function loadAttendance() {
-  const dateVal = document.getElementById('att-date').value;
-  const whVal = document.getElementById('att-wh').value;
-  if (!dateVal) return;
-  const tbody = document.getElementById('att-tbody');
-  tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px"><div class="spinner-sm"></div></td></tr>';
-  try {
-    const settSnap = await DB.ref(`companies/${COMPANY_ID}/settings`).once('value');
-    const settings = settSnap.val() || {};
-    const todayStr = localDateStr(new Date());
-    const isToday = dateVal === todayStr;
-    const dateObj = new Date(dateVal);
-    const isHoliday = dateObj.getDay()===5 || Object.values(settings.holidays||{}).some(h=>h.date===dateVal&&h.active!==false);
-    const excSnap = await DB.ref(`companies/${COMPANY_ID}/excuses`).once('value');
-    const excusesByEmpDate = {};
-    excSnap.forEach(c => {
-      const ex = c.val();
-      if (!ex || !ex.empId || !ex.date) return;
-      if (!excusesByEmpDate[ex.empId]) excusesByEmpDate[ex.empId] = {};
-      excusesByEmpDate[ex.empId][ex.date] = ex;
-    });
-    const attMap = {};
-    if (isToday) {
-      const todaySnap = await DB.ref(`companies/${COMPANY_ID}/today`).once('value');
-      const todayAll = todaySnap.val() || {};
-      Object.entries(todayAll).forEach(([eid, td]) => {
-        if (td && typeof td==='object' && (!td.dateKey || td.dateKey===todayStr))
-          attMap[eid] = { checkIn:td.checkIn, checkOut:td.checkOut, locationName:td.locationName, delayMins:td.delayMins||0 };
-      });
-    } else {
-      const recSnap = await DB.ref(`companies/${COMPANY_ID}/records`).once('value');
-      recSnap.forEach(c => {
-        const r = c.val();
-        if (!r||!r.timestamp||!r.empId) return;
-        const recDate = r.timestamp.split('T')[0];
-        if (recDate!==dateVal) return;
-        if (!attMap[r.empId]) attMap[r.empId] = {};
-        if (r.type==='in'&&!attMap[r.empId].checkIn) attMap[r.empId].checkIn = r.timestamp;
-        if (r.type==='out'&&!attMap[r.empId].checkOut) attMap[r.empId].checkOut = r.timestamp;
-        if (r.locationName) attMap[r.empId].locationName = r.locationName;
-        if (r.delayMins) attMap[r.empId].delayMins = r.delayMins;
-      });
-    }
-    tbody.innerHTML = '';
-    const approved = Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
-    for (const [eid, emp] of approved) {
-      if (whVal!=='all'&&emp.warehouseId!==whVal) continue;
-      const td = attMap[eid] || {};
-      let status, badge;
-      if (isHoliday) { status='🎉 عطلة'; badge='badge-gold'; }
-      else {
-        const leaveSnap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(eid).once('value');
-        let isLeave=false;
-        // Partial leaves do NOT override attendance status
-        leaveSnap.forEach(c=>{const lv=c.val();if(lv.date===dateVal&&lv.status==='approved'&&!lv.isPartial)isLeave=true;});
-        if (isLeave) { status='🌴 إجازة'; badge='badge-purple'; }
-        else if (td.checkIn&&td.checkOut) { status='🚪 انصرف'; badge='badge-blue'; }
-        else if (td.checkIn) { status='✅ حاضر'; badge='badge-green'; }
-        else {
-          const exc = excusesByEmpDate[eid]?.[dateVal];
-          const hasApprovedExcuse = exc && exc.status === 'approved';
-          if (td.checkOut && hasApprovedExcuse) { status='🚪 انصرف (بعذر)'; badge='badge-blue'; }
-          else if (hasApprovedExcuse) { status='📝 معذور'; badge='badge-gold'; }
-          else { status='❌ غائب'; badge='badge-red'; }
-        }
-      }
-      if (attStatusFilter!=='all') {
-        const smap={present:['✅ حاضر','🚪 انصرف','🚪 انصرف (بعذر)','📝 معذور'],absent:['❌ غائب'],leave:['🌴 إجازة']};
-        if (!smap[attStatusFilter]?.includes(status)) continue;
-      }
-      const delayMins = td.delayMins || 0;
-      const delayCell = delayMins > 0
-        ? `<span style="color:var(--orange);font-weight:700">${delayMins} د</span>`
-        : '<span style="color:var(--text2)">—</span>';
-      const tr = document.createElement('tr');
-      tr.innerHTML=`<td><b>${emp.name}</b></td><td>${emp.role||''}</td><td>${emp.warehouseName||''}</td><td><span class="badge ${badge}">${status}</span></td><td>${td.checkIn?format12(td.checkIn):'--'}</td><td>${td.checkOut?format12(td.checkOut):'--'}</td><td>${delayCell}</td>`;
-      tbody.appendChild(tr);
-    }
-    if (!tbody.children.length) tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text2)">لا توجد بيانات</td></tr>';
-  } catch(e) { tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--red)">خطأ في التحميل</td></tr>'; }
-}
+function loadAttendance() { throw new Error('Use the integrated secure view.'); }
 
 // ==================== EMPLOYEES ====================
 async function loadEmployees() {
@@ -1287,7 +936,7 @@ function filterEmps() {
     pendingAct.forEach(([eid,emp])=>{
       const row=document.createElement('div');
       row.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:12px;margin-bottom:8px';
-      row.innerHTML=`<div style="width:36px;height:36px;border-radius:50%;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${(emp.name||'?')[0]}</div><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">${emp.name}</div><div style="font-size:12px;color:var(--text2)">${emp.empId||''} • ${emp.role||''}</div></div><button class="action-btn-sm btn-blue" onclick="regenerateActLink('${eid}')" style="flex-shrink:0">🔗 رابط التفعيل</button>`;
+      row.innerHTML=`<div style="width:36px;height:36px;border-radius:50%;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${(emp.name||'?')[0]}</div><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">${emp.name}</div><div style="font-size:12px;color:var(--text2)">${emp.empId||''} • ${emp.role||''}</div></div><button class="action-btn-sm btn-blue" data-basma-click="regenerateActLink('${eid}')" style="flex-shrink:0">🔗 رابط التفعيل</button>`;
       paList.appendChild(row);
     });
   } else { paSection.style.display='none'; }
@@ -1302,7 +951,7 @@ function filterEmps() {
     const card=document.createElement('div');
     card.className='emp-card';
     card.onclick=()=>showEmpModal(eid);
-    card.innerHTML=`<div class="emp-card-top"><div class="emp-avatar">${(emp.name||'?')[0]}</div><div><div class="emp-name">${emp.name}</div><div class="emp-id">${emp.empId||''}</div></div></div><div class="emp-tags"><span class="badge badge-blue">${emp.role||''}</span><span class="badge badge-purple">${emp.warehouseName||''}</span></div><div style="margin-top:10px"><button class="action-btn-sm btn-blue" onclick="event.stopPropagation();regenerateActLink('${eid}')" style="font-size:11px;padding:5px 10px">🔗 رابط التفعيل</button></div>`;
+    card.innerHTML=`<div class="emp-card-top"><div class="emp-avatar">${(emp.name||'?')[0]}</div><div><div class="emp-name">${emp.name}</div><div class="emp-id">${emp.empId||''}</div></div></div><div class="emp-tags"><span class="badge badge-blue">${emp.role||''}</span><span class="badge badge-purple">${emp.warehouseName||''}</span></div><div style="margin-top:10px"><button class="action-btn-sm btn-blue" data-basma-click="event.stopPropagation();regenerateActLink('${eid}')" style="font-size:11px;padding:5px 10px">🔗 رابط التفعيل</button></div>`;
     grid.appendChild(card);
   });
 }
@@ -1324,32 +973,22 @@ async function showEmpModal(eid) {
   box.innerHTML=`
   <div class="modal-header">
     <div class="modal-title">👤 ${emp.name}</div>
-    <button class="modal-close" onclick="closeEmpModal()">×</button>
+    <button class="modal-close" data-basma-click="closeEmpModal()">×</button>
   </div>
   <div class="modal-section">
     <div class="modal-section-title">معلومات الموظف</div>
     <div class="info-row"><span class="info-label">الاسم</span><span class="info-value">${emp.name}</span></div>
     <div class="info-row"><span class="info-label">الرقم الوظيفي</span><span class="info-value">${emp.empId||'--'}</span></div>
     <div class="info-row"><span class="info-label">المسمى</span><span class="info-value">${emp.role||'--'}</span></div>
+    <div class="info-row"><span class="info-label">الفرع</span><span class="info-value">${emp.warehouseName||'--'}</span></div>
     <div class="info-row"><span class="info-label">الحالة</span><span class="info-value">${emp.status==='approved'?'✅ معتمد':emp.status}</span></div>
   </div>
   ${schedHtml}
   <div class="modal-section">
-    <div class="modal-section-title">🏢 نقل الفرع</div>
-    <div class="info-row"><span class="info-label">الفرع الحالي</span><span class="info-value">${emp.warehouseName||'--'}</span></div>
-    <div class="form-group">
-      <label class="form-label">نقل الموظف إلى فرع آخر</label>
-      <select class="form-input form-select" id="emp-wh-transfer">
-        ${Object.entries(ALL_WAREHOUSES).map(([wid,w])=>`<option value="${wid}" ${wid===emp.warehouseId?'selected':''}>${w.name}</option>`).join('')}
-      </select>
-    </div>
-    <button class="action-btn-sm btn-purple" onclick="transferEmployeeWarehouse('${eid}')" style="width:100%">🔄 نقل الفرع الآن</button>
-  </div>
-  <div class="modal-section">
     <div class="modal-section-title">💰 الراتب</div>
-    <div class="form-group"><label class="form-label">الراتب الأساسي (شهري)</label><input class="form-input" type="number" id="emp-salary-input" value="${emp.salary||0}"></div>
-    <div class="form-group"><label class="form-label">نسبة الاستقطاع لكل يوم غياب %</label><input class="form-input" type="number" id="emp-deduction-input" value="${emp.deductionPercent!=null?emp.deductionPercent:100}"></div>
-    <button class="action-btn-sm btn-blue" onclick="saveEmpSalary('${eid}')" style="width:100%">💾 حفظ بيانات الراتب</button>
+    <div class="form-group"><label class="form-label">الراتب الأساسي (شهري)</label><input class="form-input" type="number" id="emp-salary-input" value=""></div>
+    <div class="form-group"><label class="form-label">نسبة الاستقطاع لكل يوم غياب %</label><input class="form-input" type="number" id="emp-deduction-input" value=""></div>
+    <button class="action-btn-sm btn-blue" data-basma-click="saveEmpSalary('${eid}')" style="width:100%">💾 حفظ بيانات الراتب</button>
   </div>
   <div class="modal-section">
     <div class="modal-section-title">سجل اليوم</div>
@@ -1360,88 +999,25 @@ async function showEmpModal(eid) {
     ${mapsLink?`<div class="info-row"><span class="info-label">خريطة</span><a href="${mapsLink}" target="_blank" style="color:var(--blue);font-size:13px">🗺 فتح الخريطة</a></div>`:''}
   </div>
   <div class="modal-actions">
-    <button class="modal-btn btn-green" onclick="overrideAttendance('${eid}','present')">✅ تعديل → حاضر</button>
-    <button class="modal-btn btn-red" onclick="overrideAttendance('${eid}','absent')">❌ تسجيل غياب</button>
-    <button class="modal-btn btn-blue" onclick="resetEmployeeBio('${eid}')">🔑 إعادة البصمة</button>
-    <button class="modal-btn btn-gray" onclick="confirmDeleteEmp('${eid}')">🗑 حذف</button>
+    <button class="modal-btn btn-green" data-basma-click="overrideAttendance('${eid}','present')">✅ تعديل → حاضر</button>
+    <button class="modal-btn btn-red" data-basma-click="overrideAttendance('${eid}','absent')">❌ تسجيل غياب</button>
+    <button class="modal-btn btn-blue" data-basma-click="resetEmployeeBio('${eid}')">🔑 إعادة البصمة</button>
+    <button class="modal-btn btn-gray" data-basma-click="confirmDeleteEmp('${eid}')">🗑 حذف</button>
   </div>`;
   modal.classList.add('active');
 }
 
 function closeEmpModal() { document.getElementById('emp-modal').classList.remove('active'); }
 
-async function transferEmployeeWarehouse(eid){
-  const newWhId = document.getElementById('emp-wh-transfer').value;
-  const emp = ALL_EMPLOYEES[eid];
-  if (!emp || !newWhId) return;
-  if (newWhId === emp.warehouseId) { showToast('الموظف أصلاً بهذا الفرع', 'info'); return; }
-  const newWhName = ALL_WAREHOUSES[newWhId]?.name || '';
-  const oldWhName = emp.warehouseName || '--';
-  showConfirm('🔄 نقل الفرع', `هل تريد نقل "${emp.name}" من "${oldWhName}" إلى "${newWhName}"؟`, async () => {
-    closeConfirm();
-    showLoading('جاري نقل الموظف...');
-    try {
-      await DB.ref(`companies/${COMPANY_ID}/employees/${eid}`).update({ warehouseId: newWhId, warehouseName: newWhName });
-      ALL_EMPLOYEES[eid] = { ...ALL_EMPLOYEES[eid], warehouseId: newWhId, warehouseName: newWhName };
-      hideLoading();
-      showToast(`تم نقل "${emp.name}" إلى ${newWhName}`, 'success');
-      closeEmpModal();
-      await loadEmployees();
-    } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-  });
-}
+function saveEmpSalary() { throw new Error('Use the integrated secure view.'); }
 
-async function saveEmpSalary(eid){
-  const salary=Number(document.getElementById('emp-salary-input').value)||0;
-  const deductionPercent=Number(document.getElementById('emp-deduction-input').value)||0;
-  try{
-    await DB.ref(`companies/${COMPANY_ID}/employees/${eid}`).update({salary,deductionPercent});
-    ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],salary,deductionPercent};
-    showToast('تم حفظ بيانات الراتب','success');
-  }catch(e){showToast('خطأ: '+e.message,'error');}
-}
-
-async function overrideAttendance(eid, status) {
-  try {
-    const now = new Date().toISOString();
-    const todayStr = now.split('T')[0];
-    if (status==='present') {
-      await DB.ref(`companies/${COMPANY_ID}/today/${eid}`).update({checkIn:now,dateKey:todayStr,empId:eid,empName:ALL_EMPLOYEES[eid]?.name||''});
-    } else {
-      await DB.ref(`companies/${COMPANY_ID}/today/${eid}`).remove();
-    }
-    showToast('تم التعديل بنجاح','success'); closeEmpModal();
-  } catch(e) { showToast('خطأ: '+e.message,'error'); }
-}
+async function overrideAttendance(eid, status) { throw new Error('Legacy path disabled; use the secure service.'); }
 
 function confirmDeleteEmp(eid) {
   showConfirm('حذف الموظف',`هل أنت متأكد من حذف الموظف "${ALL_EMPLOYEES[eid]?.name}"؟ سيتم حذف جميع بياناته.`,()=>doDeleteEmp(eid));
 }
 
-async function doDeleteEmp(eid) {
-  closeConfirm(); closeEmpModal();
-  const overlay=document.getElementById('loading-overlay');
-  const loText=document.getElementById('lo-text');
-  overlay.classList.add('active');
-  const steps=[
-    {text:'حذف بيانات الموظف...',pct:10,fn:()=>DB.ref(`companies/${COMPANY_ID}/employees/${eid}`).remove()},
-    {text:'حذف السجلات...',pct:25,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/records`).update(ups);}},
-    {text:'حذف سجل اليوم...',pct:40,fn:()=>DB.ref(`companies/${COMPANY_ID}/today/${eid}`).remove()},
-    {text:'حذف الإشعارات...',pct:55,fn:()=>DB.ref(`companies/${COMPANY_ID}/notifications/${eid}`).remove()},
-    {text:'حذف الأعذار...',pct:65,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/excuses`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/excuses`).update(ups);}},
-    {text:'حذف الإجازات...',pct:75,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/leaves`).update(ups);}},
-    {text:'حذف الرسائل...',pct:88,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/private_messages`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/private_messages`).update(ups);}},
-    {text:'حذف المهام...',pct:94,fn:async()=>{const snap=await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(eid).once('value');const ups={};snap.forEach(c=>ups[c.key]=null);if(Object.keys(ups).length)await DB.ref(`companies/${COMPANY_ID}/missions`).update(ups);}},
-  ];
-  try {
-    for (const step of steps) { loText.textContent=step.text+` (${step.pct}%)`; await step.fn(); }
-    loText.textContent='اكتمل الحذف (100%)';
-    await new Promise(r=>setTimeout(r,800));
-    overlay.classList.remove('active');
-    showToast('تم حذف الموظف بنجاح','success');
-    await loadAllData(); filterEmps();
-  } catch(e) { overlay.classList.remove('active'); showToast('خطأ أثناء الحذف: '+e.message,'error'); }
-}
+async function doDeleteEmp(eid) { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== ① EMPLOYEE SCHEDULE ====================
 async function loadEmpSchedule() {
@@ -1500,7 +1076,7 @@ async function loadApprovals() {
     items.forEach(emp=>{
       const card=document.createElement('div');
       card.className='approval-card';
-      card.innerHTML=`<div class="approval-card-head"><div><div style="font-size:15px;font-weight:700">${emp.name}</div><div style="font-size:12px;color:var(--text2)">${emp.empId||''} | ${emp.role||''}</div></div><span class="badge badge-gold">⏳ معلّق</span></div><div class="approval-actions"><button class="modal-btn btn-green" onclick="approveEmp('${emp.key}','${emp.name}')">✅ موافقة</button><button class="modal-btn btn-red" onclick="rejectEmp('${emp.key}','${emp.name}')">❌ رفض</button></div>`;
+      card.innerHTML=`<div class="approval-card-head"><div><div style="font-size:15px;font-weight:700">${emp.name}</div><div style="font-size:12px;color:var(--text2)">${emp.empId||''} | ${emp.role||''}</div></div><span class="badge badge-gold">⏳ معلّق</span></div><div class="approval-actions"><button class="modal-btn btn-green" data-basma-click="approveEmp('${emp.key}')">✅ موافقة</button><button class="modal-btn btn-red" data-basma-click="rejectEmp('${emp.key}')">❌ رفض</button></div>`;
       list.appendChild(card);
     });
   } catch(e) {}
@@ -1526,36 +1102,10 @@ async function rejectEmp(key,name) {
 }
 
 // ==================== EXCUSES ====================
-function loadExcuses() {
-  const list=document.getElementById('excuses-list');
-  if(!list)return;
-  list.innerHTML='<div style="text-align:center;padding:30px"><div class="spinner-sm"></div></div>';
-  if(excusesListener) DB.ref(`companies/${COMPANY_ID}/excuses`).off('value',excusesListener);
-  const typeMap={no_checkin:'❌ لم يسجل حضوراً',no_checkout:'🚪 لم يسجل انصرافاً',no_both:'⚠️ لم يسجل الحضور ولا الانصراف'};
-  excusesListener=DB.ref(`companies/${COMPANY_ID}/excuses`).on('value',snap=>{
-    const el=document.getElementById('excuses-list');
-    if(!el)return;
-    const items=[];
-    snap.forEach(c=>{const v=c.val();if(v&&typeof v==='object')items.push({key:c.key,...v});});
-    items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-    if(!items.length){el.innerHTML='<div class="empty-state"><div class="es-icon">📭</div><p>لا توجد أعذار</p></div>';return;}
-    el.innerHTML='';
-    items.forEach(ex=>{
-      const card=document.createElement('div');card.className='approval-card';
-      const sb=ex.status==='approved'?'badge-green':ex.status==='rejected'?'badge-red':'badge-gold';
-      const st=ex.status==='approved'?'✅ مقبول':ex.status==='rejected'?'❌ مرفوض':'⏳ معلّق';
-      card.innerHTML=`<div class="approval-card-head"><div><div style="font-size:15px;font-weight:700">${ex.empName||''}</div><div style="font-size:12px;color:var(--text2)">${ex.warehouseName||''} | ${ex.date||''}</div><div style="font-size:12px;margin-top:4px">${typeMap[ex.type]||ex.type||''}</div><div style="font-size:13px;margin-top:6px">${ex.reason||''}</div></div><span class="badge ${sb}">${st}</span></div>${ex.status==='pending'?`<div class="approval-actions"><button class="modal-btn btn-green" onclick="approveExcuse('${ex.key}','${ex.empId}')">✅ قبول</button><button class="modal-btn btn-red" onclick="rejectExcuse('${ex.key}','${ex.empId}')">❌ رفض</button></div>`:''}`;
-      el.appendChild(card);
-    });
-  });
-}
+function loadExcuses() { throw new Error('Use the period-based secure view.'); }
 
-async function approveExcuse(key,empId){
-  try{await DB.ref(`companies/${COMPANY_ID}/excuses/${key}`).update({status:'approved'});await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({status:'excused',excuseCheckout:true,dateKey:localDateStr(new Date())});await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'excuse_res',message:'✅ تم قبول عذرك',timestamp:new Date().toISOString(),read:false});showToast('تم قبول العذر','success');loadExcuses();}catch(e){showToast('خطأ: '+e.message,'error');}
-}
-async function rejectExcuse(key,empId){
-  try{await DB.ref(`companies/${COMPANY_ID}/excuses/${key}`).update({status:'rejected'});await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({excuseCheckout:false,dateKey:localDateStr(new Date())});await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'excuse_res',message:'❌ تم رفض عذرك',timestamp:new Date().toISOString(),read:false});showToast('تم رفض العذر','info');loadExcuses();}catch(e){showToast('خطأ: '+e.message,'error');}
-}
+async function approveExcuse(key,empId){ throw new Error('Legacy path disabled; use the secure service.'); }
+async function rejectExcuse(key,empId){ throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== ③ LEAVES (مخصص — يظهر نوع الإجازة) ====================
 const LEAVE_TYPE_LABELS = {
@@ -1566,75 +1116,11 @@ const LEAVE_TYPE_LABELS = {
   partial: '⏱ زمنية (ساعات)'
 };
 
-function loadLeaves() {
-  const list=document.getElementById('leaves-list');
-  if(!list)return;
-  list.innerHTML='<div style="text-align:center;padding:30px"><div class="spinner-sm"></div></div>';
-  if(leavesListener) DB.ref(`companies/${COMPANY_ID}/leaves`).off('value',leavesListener);
-  leavesListener=DB.ref(`companies/${COMPANY_ID}/leaves`).on('value',snap=>{
-    const el=document.getElementById('leaves-list');
-    if(!el)return;
-    const items=[];
-    snap.forEach(c=>{const v=c.val();if(v&&typeof v==='object')items.push({key:c.key,...v});});
-    items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-    if(!items.length){el.innerHTML='<div class="empty-state"><div class="es-icon">🌴</div><p>لا توجد طلبات إجازة</p></div>';return;}
-    el.innerHTML='';
-    items.forEach(lv=>{
-      const card=document.createElement('div');card.className='approval-card';
-      const sb=lv.status==='approved'?'badge-green':lv.status==='rejected'?'badge-red':'badge-gold';
-      const st=lv.status==='approved'?'✅ مقبولة':lv.status==='rejected'?'❌ مرفوضة':'⏳ معلّقة';
-      const leaveTypeLabel = lv.leaveType ? (LEAVE_TYPE_LABELS[lv.leaveType]||lv.leaveType) : '';
-      const isPartial = lv.leaveType === 'partial';
-      const timeRange = isPartial && lv.fromTime && lv.toTime
-        ? `<div style="font-size:13px;color:var(--blue);margin-top:4px">⏰ من ${lv.fromTime} إلى ${lv.toTime}</div>` : '';
-      card.innerHTML=`
-      <div class="approval-card-head">
-        <div>
-          <div style="font-size:15px;font-weight:700">${lv.empName||''}</div>
-          <div style="font-size:12px;color:var(--text2)">${lv.warehouseName||''}</div>
-          <div style="font-size:13px;margin-top:4px;color:var(--gold)">📅 ${lv.date||''}</div>
-          ${timeRange}
-          ${leaveTypeLabel?`<div style="margin-top:4px"><span class="badge ${isPartial?'badge-blue':'badge-orange'}" style="font-size:12px">${leaveTypeLabel}</span></div>`:''}
-          <div style="font-size:13px;margin-top:4px">${lv.reason||''}</div>
-        </div>
-        <span class="badge ${sb}">${st}</span>
-      </div>
-      ${lv.status==='pending'?`<div class="approval-actions"><button class="modal-btn btn-green" onclick="approveLeave('${lv.key}','${lv.empId}','${lv.date}',${isPartial})">✅ قبول</button><button class="modal-btn btn-red" onclick="rejectLeave('${lv.key}','${lv.empId}')">❌ رفض</button></div>`:''}`;
-      el.appendChild(card);
-    });
-  });
-}
+function loadLeaves() { throw new Error('Use the period-based secure view.'); }
 
-async function approveLeave(key,empId,date,isPartial=false){
-  try{
-    // Fetch leave data first (need fromTime/toTime for partial)
-    const lvSnap = await DB.ref(`companies/${COMPANY_ID}/leaves/${key}`).once('value');
-    const lvData = lvSnap.val() || {};
-    await DB.ref(`companies/${COMPANY_ID}/leaves/${key}`).update({status:'approved'});
-    if(!isPartial){
-      await DB.ref(`companies/${COMPANY_ID}/today/${empId}`).update({status:'leave',leaveDate:date});
-    } else {
-      // Write to dedicated node → employee listener fires instantly (no query index needed)
-      await DB.ref(`companies/${COMPANY_ID}/todayPartialLeave/${empId}`).set({
-        status:'approved', date, fromTime:lvData.fromTime||'', toTime:lvData.toTime||'', leaveKey:key, approvedAt:Date.now()
-      });
-    }
-    await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'leave_res',message:(isPartial?'⏱ تمت الموافقة على إجازتك الزمنية في ':'🌴 تمت الموافقة على إجازتك في ')+date,timestamp:new Date().toISOString(),read:false});
-    showToast('تمت الموافقة على الإجازة','success');loadLeaves();loadBadges();
-  }catch(e){showToast('خطأ: '+e.message,'error');}
-}
-async function rejectPartialLeave(empId){
-  // Remove the dedicated partial leave node when rejected
-  try{ await DB.ref(`companies/${COMPANY_ID}/todayPartialLeave/${empId}`).remove(); }catch(e){}
-}
-async function rejectLeave(key,empId){
-  try{
-    await DB.ref(`companies/${COMPANY_ID}/leaves/${key}`).update({status:'rejected'});
-    await rejectPartialLeave(empId); // clean up dedicated node if it exists
-    await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'leave_res',message:'❌ تم رفض طلب إجازتك',timestamp:new Date().toISOString(),read:false});
-    showToast('تم رفض الإجازة','info');loadLeaves();loadBadges();
-  }catch(e){showToast('خطأ: '+e.message,'error');}
-}
+async function approveLeave(key,empId,date,isPartial=false){ throw new Error('Legacy path disabled; use the secure service.'); }
+async function rejectPartialLeave(empId){ throw new Error('Legacy path disabled; use the secure service.'); }
+async function rejectLeave(key,empId){ throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== MESSAGES ====================
 async function loadMessages() {
@@ -1682,26 +1168,10 @@ async function sendPrivateMsg(){
 }
 
 // ==================== LOC REVIEW ====================
-async function loadLocReview(){
-  const list=document.getElementById('loc-list');
-  if(!list)return;
-  list.innerHTML='<div style="text-align:center;padding:30px"><div class="spinner-sm"></div></div>';
-  try{
-    const snap=await DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('locStatus').equalTo('pending').once('value');
-    const items=[];snap.forEach(c=>items.push({key:c.key,...c.val()}));
-    if(!items.length){list.innerHTML='<div class="empty-state"><div class="es-icon">✅</div><p>لا توجد مواقع معلّقة</p></div>';return;}
-    list.innerHTML='';
-    items.forEach(rec=>{
-      const card=document.createElement('div');card.className='approval-card';
-      const ts=rec.timestamp?new Date(rec.timestamp).toLocaleString('ar-SA'):'';
-      const mapsLink=rec.lat&&rec.lng?`https://www.google.com/maps?q=${rec.lat},${rec.lng}`:null;
-      card.innerHTML=`<div class="approval-card-head"><div><div style="font-size:15px;font-weight:700">${rec.empName||''}</div><div style="font-size:12px;color:var(--text2)">${ts}</div><div style="font-size:13px;margin-top:4px">${rec.locationName||'غير محدد'}</div>${mapsLink?`<a href="${mapsLink}" target="_blank" style="color:var(--blue);font-size:12px">🗺 فتح الخريطة</a>`:''}</div><span class="badge badge-gold">⏳ معلّق</span></div><div class="approval-actions"><button class="modal-btn btn-green" onclick="approveLocation('${rec.key}')">✅ قبول</button><button class="modal-btn btn-red" onclick="rejectLocation('${rec.key}','${rec.empId}','${rec.type}')">❌ رفض</button></div>`;
-      list.appendChild(card);
-    });
-  }catch(e){list.innerHTML='<div style="color:var(--red);text-align:center;padding:20px">خطأ في التحميل</div>';}
-}
+function loadLocReview() { throw new Error('Use the integrated secure view.'); }
 
-async function approveLocation(key){try{await DB.ref(`companies/${COMPANY_ID}/records/${key}`).update({locStatus:'approved'});showToast('تم قبول الموقع','success');loadLocReview();loadBadges();}catch(e){showToast('خطأ: '+e.message,'error');}}
+function approveLocation() { throw new Error('Use the integrated secure view.'); }
+
 async function rejectLocation(key,empId,type){
   try{
     await DB.ref(`companies/${COMPANY_ID}/records/${key}`).update({locStatus:'rejected'});
@@ -1728,7 +1198,7 @@ async function loadWarehouses(){
       const gzBadge = hasGz ? `<span style="font-size:11px;color:var(--green)">📍 موقع محدد (${wh.geoZone.radius||300}م)</span>` : `<span style="font-size:11px;color:var(--text2)">📍 لا يوجد موقع</span>`;
       const sc = wh.schedule;
       const scBadge = sc ? `<span style="font-size:11px;color:var(--gold)">⏰ ${sc.checkIn?.from||'--'} – ${sc.checkOut?.to||'--'}</span>` : `<span style="font-size:11px;color:var(--text2)">⏰ لا يوجد دوام خاص</span>`;
-      card.innerHTML=`<div class="wh-info"><div class="wh-name">🏭 ${wh.name}</div><div class="wh-meta">${empCount} موظف</div><div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">${gzBadge}${scBadge}</div></div><div class="wh-actions"><button class="modal-btn btn-gold" onclick="showWhScheduleModal('${id}','${wh.name}')">⏰</button><button class="modal-btn btn-green" onclick="whSetGeoZone('${id}','${wh.name}')">📍</button><button class="modal-btn btn-gray" onclick="editWH('${id}','${wh.name}')">✏️</button><button class="modal-btn btn-red" onclick="deleteWH('${id}')">🗑</button></div>`;
+      card.innerHTML=`<div class="wh-info"><div class="wh-name">🏭 ${wh.name}</div><div class="wh-meta">${empCount} موظف</div><div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">${gzBadge}${scBadge}</div></div><div class="wh-actions"><button class="modal-btn btn-gold" data-basma-click="showWhScheduleModal('${id}')">⏰</button><button class="modal-btn btn-green" data-basma-click="whSetGeoZone('${id}')">📍</button><button class="modal-btn btn-gray" data-basma-click="editWH('${id}')">✏️</button><button class="modal-btn btn-red" data-basma-click="deleteWH('${id}')">🗑</button></div>`;
       list.appendChild(card);
     }
     if(!Object.keys(ALL_WAREHOUSES).length)list.innerHTML='<div class="empty-state"><p>لا توجد فروع</p></div>';
@@ -1892,7 +1362,7 @@ function loadHolidays(holidays){
   for(const[id,h]of Object.entries(holidays)){
     const el=document.createElement('div');
     el.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--surface);border-radius:10px;margin-bottom:8px;border:1px solid var(--border)';
-    el.innerHTML=`<div><b>${h.name||''}</b> <span style="font-size:12px;color:var(--text2)">${h.date||''}</span></div><button class="modal-btn btn-red" style="padding:6px 12px;font-size:12px" onclick="deleteHoliday('${id}')">حذف</button>`;
+    el.innerHTML=`<div><b>${h.name||''}</b> <span style="font-size:12px;color:var(--text2)">${h.date||''}</span></div><button class="modal-btn btn-red" style="padding:6px 12px;font-size:12px" data-basma-click="deleteHoliday('${id}')">حذف</button>`;
     list.appendChild(el);
   }
 }
@@ -2057,8 +1527,8 @@ function gzRenderZonesList() {
           <div style="font-size:11px;color:var(--text2);margin-top:3px">نصف القطر: ${rText}</div>
         </div>
         <div style="display:flex;gap:8px">
-          <button onclick="gzEditZone(${i})" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">✏️ تعديل</button>
-          <button onclick="gzRemoveZone(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:18px">✕</button>
+          <button data-basma-click="gzEditZone(${i})" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">✏️ تعديل</button>
+          <button data-basma-click="gzRemoveZone(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:18px">✕</button>
         </div>
       </div>`;
     }).join('');
@@ -2101,10 +1571,10 @@ async function saveGeoZone() {
 function updateRepDates(){
   const type=document.getElementById('rep-type').value;
   const now=new Date();let from,to;
-  const today=localDateStr(now);
+  const today=now.toISOString().split('T')[0];
   if(type==='daily'){from=to=today;}
-  else if(type==='weekly'){const day=now.getDay();const diff=now.getDate()-day;from=localDateStr(new Date(now.setDate(diff)));to=localDateStr(new Date(new Date(from).getTime()+6*86400000));}
-  else{from=localDateStr(new Date(now.getFullYear(),now.getMonth(),1));to=localDateStr(new Date(now.getFullYear(),now.getMonth()+1,0));}
+  else if(type==='weekly'){const day=now.getDay();const diff=now.getDate()-day;from=new Date(now.setDate(diff)).toISOString().split('T')[0];to=new Date(new Date(from).getTime()+6*86400000).toISOString().split('T')[0];}
+  else{from=new Date(now.getFullYear(),now.getMonth(),1).toISOString().split('T')[0];to=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().split('T')[0];}
   // Clamp to today if future
   if(to>today)to=today;
   if(from>today)from=today;
@@ -2124,381 +1594,20 @@ function updateRepDates(){
   }
 }
 
-async function generateReport(){
-  const from=document.getElementById('rep-from').value;
-  const to=document.getElementById('rep-to').value;
-  const whFilter=document.getElementById('rep-wh').value;
-  const empFilter=document.getElementById('rep-emp')?.value||'all';
-  const today=localDateStr(new Date());
-  if(!from||!to){showToast('اختر نطاق التاريخ','error');return;}
-  if(from>today||to>today){showToast('لا يمكن اختيار تاريخ مستقبلي','error');return;}
-  showLoading('جاري إنشاء التقرير...');
-  try{
-    const[recSnap,todaySnap,excSnap,leaveSnap,settSnap,plRecSnap]=await Promise.all([
-      DB.ref(`companies/${COMPANY_ID}/records`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/today`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/excuses`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/leaves`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/settings`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/partialLeaveRecords`).once('value')
-    ]);
-    // Build partial leave fingerprint map: { empId: { dateStr: { departureAt, returnAt } } }
-    const plRecs={};
-    plRecSnap.forEach(empNode=>{
-      plRecs[empNode.key]={};
-      empNode.forEach(dateNode=>{ plRecs[empNode.key][dateNode.key]=dateNode.val(); });
-    });
-    const settings=settSnap.val()||{};
-    // Build records map with delayMins
-    const records={};
-    recSnap.forEach(c=>{
-      const r=c.val();if(!r||!r.empId||!r.timestamp)return;
-      if(!records[r.empId])records[r.empId]={};
-      const d=localDateStr(new Date(r.timestamp));
-      if(!records[r.empId][d])records[r.empId][d]={};
-      if(r.type==='in'&&!records[r.empId][d].in){records[r.empId][d].in=r.timestamp;records[r.empId][d].delayMins=r.delayMins||0;}
-      else if(r.type==='out'&&!records[r.empId][d].out)records[r.empId][d].out=r.timestamp;
-    });
-    const LEAVE_LABELS={'paid':'🌴 مدفوعة','unpaid':'🔴 غير مدفوعة','sick':'🏥 مرضية','emergency':'🚨 طارئة','partial':'⏱ زمنية'};
-    const excuses={};excSnap.forEach(c=>{const e=c.val();if(!excuses[e.empId])excuses[e.empId]={};excuses[e.empId][e.date]=e;});
-    const leaves={};leaveSnap.forEach(c=>{const l=c.val();if(l&&l.empId){if(!leaves[l.empId])leaves[l.empId]={};leaves[l.empId][l.date]=l;}});
-    const rows=[];
-    let stats={total:0,present:0,absent:0,onLeave:0,excused:0,holidays:0,totalDelayMins:0,totalWorkMins:0};
-    const fmtMins=m=>{if(!m)return'—';const h=Math.floor(m/60),mn=m%60;return h>0?(mn>0?`${h} س ${mn} د`:`${h} س`):`${mn} د`;};
-    const delayMap={};
-    // leave type breakdown for single-employee mode
-    const leaveTypeCounts={};
-    const approved=Object.entries(ALL_EMPLOYEES).filter(([id,e])=>e.status==='approved'&&(whFilter==='all'||e.warehouseId===whFilter)&&(empFilter==='all'||id===empFilter));
-    const dateRange=getDates(from,to);
-    for(const[eid,emp]of approved){
-      if(!delayMap[eid]) delayMap[eid]={name:emp.name,days:0,totalMins:0};
-      for(const dateStr of dateRange){
-        const dateObj=new Date(dateStr);
-        const isHoliday=dateObj.getDay()===5||Object.values(settings.holidays||{}).some(h=>h.date===dateStr&&h.active!==false);
-        if(isHoliday){rows.push({emp:emp.name,date:dateStr,in:'--',out:'--',hrs:'--',delay:'--',note:'🎉 عطلة',noteType:'holiday'});stats.holidays++;stats.total++;continue;}
-        const lv=leaves[eid]?.[dateStr];
-        if(lv&&lv.status==='approved'){
-          const lt=lv.leaveType||'paid';
-          if(lt!=='partial'){
-            // Full-day leave
-            const lbl=LEAVE_LABELS[lt]||'🌴 إجازة';
-            rows.push({emp:emp.name,date:dateStr,in:'--',out:'--',hrs:'--',delay:'--',note:lbl,noteType:'leave'});
-            stats.onLeave++;stats.total++;
-            leaveTypeCounts[lbl]=(leaveTypeCounts[lbl]||0)+1;
-            continue;
-          }
-          // ── Partial leave: uses dedicated departure/return fingerprints ──
-          const plRec=plRecs[eid]?.[dateStr]||{};
-          const hasDep=!!plRec.departureAt, hasRet=!!plRec.returnAt;
-          const dayRec=records[eid]?.[dateStr]||{};
-          const exc=excuses[eid]?.[dateStr];
-          let partialDelayMins=0;
-          if(lv.fromTime&&lv.toTime){
-            const wFrom=lv.fromTime.split(':').reduce((h,m,i)=>h+(i===0?+m*60:+m),0);
-            const wTo  =lv.toTime.split(':').reduce((h,m,i)=>h+(i===0?+m*60:+m),0);
-            if(wTo>wFrom)partialDelayMins=wTo-wFrom;
-          }
-          const timeLabel=lv.fromTime&&lv.toTime?` (${lv.fromTime}–${lv.toTime})`:'';
-          if(hasDep&&hasRet){
-            // Both departure & return fingerprints recorded → valid partial leave
-            const dm=dayRec.delayMins||0;
-            const depTime=plRec.departureAt?format12(plRec.departureAt):'--';
-            const retTime=plRec.returnAt?format12(plRec.returnAt):'--';
-            if(dm>0){delayMap[eid].days++;delayMap[eid].totalMins+=dm;stats.totalDelayMins+=dm;}
-            rows.push({emp:emp.name,date:dateStr,in:depTime,out:retTime,hrs:'—',delay:dm>0?`${dm} د`:'—',note:`✅ مكتمل + ⏱ زمنية${timeLabel}`,noteType:'present'});
-            stats.present++;stats.total++;
-            leaveTypeCounts['⏱ زمنية']=(leaveTypeCounts['⏱ زمنية']||0)+1;
-          } else {
-            // Missing departure or return fingerprint → window counts as delay
-            const totalDelay=(dayRec.delayMins||0)+partialDelayMins;
-            const delayStr=totalDelay>0?`${totalDelay} د`:'—';
-            let note,noteType;
-            if(hasDep&&!hasRet){
-              note=`❌ بصّم المغادرة — لم يسجل العودة (⏱ زمنية غير مكتملة${timeLabel})`;noteType='absent';stats.absent++;
-            } else if(!hasDep&&!hasRet){
-              if(exc?.status==='approved'){note='📝 غائب — معذور';noteType='excused';stats.excused++;}
-              else{note=`❌ غائب (⏱ إجازة زمنية لم يبصم${timeLabel})`;noteType='absent';stats.absent++;}
-            } else {
-              note=`❌ إجازة زمنية غير مكتملة${timeLabel}`;noteType='absent';stats.absent++;
-            }
-            if(totalDelay>0){delayMap[eid].days++;delayMap[eid].totalMins+=totalDelay;stats.totalDelayMins+=totalDelay;}
-            stats.total++;
-            rows.push({emp:emp.name,date:dateStr,in:plRec.departureAt?format12(plRec.departureAt):'--',out:plRec.returnAt?format12(plRec.returnAt):'--',hrs:'--',delay:delayStr,note,noteType});
-          }
-          continue;
-        }
-        const dayRec=records[eid]?.[dateStr]||{};
-        const hasIn=!!dayRec.in,hasOut=!!dayRec.out;
-        const exc=excuses[eid]?.[dateStr];
-        let note,noteType,hrs='--';
-        const delayMins=dayRec.delayMins||0;
-        const delayStr=delayMins>0?`${delayMins} د`:'—';
-        if(hasIn&&hasOut){const diff=(new Date(dayRec.out)-new Date(dayRec.in))/3600000;hrs=diff.toFixed(1)+' س';stats.totalWorkMins+=Math.round(diff*60);note='✅ مكتمل';noteType='present';stats.present++;}
-        else if(hasIn&&!hasOut){if(exc?.status==='approved'){note='📝 حضر — معذور';noteType='excused';stats.excused++;}else{note='❌ حضر — لم يسجل انصراف';noteType='absent';stats.absent++;}}
-        else if(hasOut&&exc?.status==='approved'){note='🚪 انصرف (بعذر)';noteType='excused';stats.excused++;}
-        else{if(exc?.status==='approved'){note='📝 معذور';noteType='excused';stats.excused++;}else{note='❌ غائب';noteType='absent';stats.absent++;}}
-        if(delayMins>0){delayMap[eid].days++;delayMap[eid].totalMins+=delayMins;stats.totalDelayMins+=delayMins;}
-        stats.total++;
-        rows.push({emp:emp.name,date:dateStr,in:dayRec.in?format12(dayRec.in):'--',out:dayRec.out?format12(dayRec.out):'--',hrs,delay:delayStr,note,noteType});
-      }
-    }
-    reportData=rows;
-    hideLoading();
-
-    // ── SINGLE EMPLOYEE: enhanced summary ──────────────────────────
-    const empDetailEl=document.getElementById('emp-detail-summary');
-    const isSingleEmp=empFilter!=='all';
-    if(isSingleEmp){
-      const empName=ALL_EMPLOYEES[empFilter]?.name||empFilter;
-      const leaveSummaryHtml=Object.entries(leaveTypeCounts).length
-        ? Object.entries(leaveTypeCounts).map(([lbl,cnt])=>`<span style="background:var(--surface);border-radius:8px;padding:4px 10px;font-size:13px;margin:3px">${lbl}: <b>${cnt}</b></span>`).join('')
-        : '<span style="color:var(--text2);font-size:13px">لا توجد إجازات</span>';
-      empDetailEl.innerHTML=`
-        <div class="section-card" style="border:1px solid var(--purple)">
-          <div class="section-title" style="color:var(--purple)">👤 ملخص الموظف: ${empName}</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
-            <div class="report-stat"><div class="rsn note-present">${stats.present}</div><div class="rsl">أيام الحضور</div></div>
-            <div class="report-stat"><div class="rsn note-holiday">${stats.holidays}</div><div class="rsl">أيام العطل</div></div>
-            <div class="report-stat"><div class="rsn note-leave">${stats.onLeave}</div><div class="rsl">أيام الإجازة</div></div>
-            <div class="report-stat"><div class="rsn note-absent">${stats.absent}</div><div class="rsl">أيام الغياب</div></div>
-            <div class="report-stat"><div class="rsn note-excused">${stats.excused}</div><div class="rsl">معذور</div></div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-            <div style="background:rgba(34,197,94,.08);border:1px solid var(--green);border-radius:12px;padding:12px;text-align:center">
-              <div style="font-size:20px;font-weight:900;color:var(--green)">${fmtMins(stats.totalWorkMins)}</div>
-              <div style="font-size:12px;color:var(--text2);margin-top:4px">⏱ إجمالي ساعات العمل</div>
-            </div>
-            <div style="background:rgba(251,146,60,.08);border:1px solid var(--orange);border-radius:12px;padding:12px;text-align:center">
-              <div style="font-size:20px;font-weight:900;color:var(--orange)">${fmtMins(stats.totalDelayMins)}</div>
-              <div style="font-size:12px;color:var(--text2);margin-top:4px">🔴 إجمالي التأخير</div>
-            </div>
-          </div>
-          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--gold)">🌴 تفصيل الإجازات:</div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px">${leaveSummaryHtml}</div>
-        </div>`;
-      empDetailEl.style.display='block';
-      document.getElementById('rep-stats').innerHTML='';
-      document.getElementById('delay-summary-section').style.display='none';
-      document.getElementById('rep-table-title').textContent='📋 تفصيل كل يوم';
-    } else {
-      empDetailEl.style.display='none';
-      document.getElementById('rep-stats').innerHTML=`
-        <div class="report-stat"><div class="rsn" style="color:var(--text)">${stats.total}</div><div class="rsl">إجمالي</div></div>
-        <div class="report-stat"><div class="rsn note-present">${stats.present}</div><div class="rsl">حضور كامل</div></div>
-        <div class="report-stat"><div class="rsn note-absent">${stats.absent}</div><div class="rsl">غياب</div></div>
-        <div class="report-stat"><div class="rsn note-leave">${stats.onLeave}</div><div class="rsl">إجازات</div></div>
-        <div class="report-stat"><div class="rsn note-excused">${stats.excused}</div><div class="rsl">معذور</div></div>
-        <div class="report-stat"><div class="rsn note-holiday">${stats.holidays}</div><div class="rsl">عطلات</div></div>`;
-      const delaySec=document.getElementById('delay-summary-section');
-      const delayTbody=document.getElementById('delay-summary-tbody');
-      const delayEntries=Object.values(delayMap).filter(d=>d.totalMins>0);
-      if(delayEntries.length){
-        delayEntries.sort((a,b)=>b.totalMins-a.totalMins);
-        delayTbody.innerHTML='';
-        delayEntries.forEach(d=>{
-          const tr=document.createElement('tr');
-          tr.innerHTML=`<td><b>${d.name}</b></td><td>${d.days} يوم</td><td style="color:var(--orange);font-weight:700">${d.totalMins} د</td><td>${d.days>0?Math.round(d.totalMins/d.days)+' د':'—'}</td>`;
-          delayTbody.appendChild(tr);
-        });
-        delaySec.style.display='block';
-      } else { delaySec.style.display='none'; }
-      document.getElementById('rep-table-title').textContent='📋 جدول التقرير (أول 50 سجل)';
-    }
-
-    const tbody=document.getElementById('rep-tbody');
-    tbody.innerHTML='';
-    // Show all rows for single employee, first 50 for all
-    const displayRows=isSingleEmp?rows:rows.slice(0,50);
-    displayRows.forEach(r=>{
-      const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${r.emp}</td><td>${r.date}</td><td>${r.in}</td><td>${r.out}</td><td>${r.hrs}</td><td style="color:var(--orange)">${r.delay}</td><td class="note-${r.noteType}">${r.note}</td>`;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('report-output').style.display='block';
-  }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
-}
+function generateReport() { throw new Error('Use the integrated secure view.'); }
 
 function getDates(from,to){
   const dates=[];const cur=new Date(from);const end=new Date(to);
-  while(cur<=end){dates.push(localDateStr(cur));cur.setDate(cur.getDate()+1);}
+  while(cur<=end){dates.push(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}
   return dates;
 }
 
 let payrollData=[];
-function populatePrEmpFilter(){
-  const whFilter=document.getElementById('pr-wh')?.value||'all';
-  const empSel=document.getElementById('pr-emp');
-  if(!empSel)return;
-  const cur=empSel.value;
-  empSel.innerHTML='<option value="all">كل الموظفين</option>';
-  Object.entries(ALL_EMPLOYEES)
-    .filter(([,e])=>e.status==='approved'&&(whFilter==='all'||e.warehouseId===whFilter))
-    .sort((a,b)=>(a[1].name||'').localeCompare(b[1].name||''))
-    .forEach(([id,e])=>{
-      const o=document.createElement('option');o.value=id;o.textContent=e.name||id;empSel.appendChild(o);
-    });
-  if(cur&&[...empSel.options].some(o=>o.value===cur))empSel.value=cur;
-}
+function calculatePayroll() { throw new Error('Use the integrated secure view.'); }
 
-function togglePrDetails(idx){
-  const row=document.getElementById(`pr-detail-${idx}`);
-  if(!row)return;
-  row.style.display=row.style.display==='none'?'table-row':'none';
-}
+function generatePayrollPDF(){ throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function calculatePayroll(){
-  const monthVal=document.getElementById('pr-month').value;
-  if(!monthVal){showToast('اختر الشهر','error');return;}
-  const whFilter=document.getElementById('pr-wh')?.value||'all';
-  const empFilter=document.getElementById('pr-emp')?.value||'all';
-  const[y,m]=monthVal.split('-').map(Number);
-  const firstDay=`${monthVal}-01`;
-  const lastDateObj=new Date(y,m,0);
-  const todayStr=localDateStr(new Date());
-  let lastDay=localDateStr(lastDateObj);
-  if(lastDay>todayStr)lastDay=todayStr;
-  showLoading('جاري احتساب الرواتب...');
-  try{
-    const[recSnap,excSnap,leaveSnap,settSnap]=await Promise.all([
-      DB.ref(`companies/${COMPANY_ID}/records`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/excuses`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/leaves`).once('value'),
-      DB.ref(`companies/${COMPANY_ID}/settings`).once('value')
-    ]);
-    const settings=settSnap.val()||{};
-    const records={};
-    recSnap.forEach(c=>{
-      const r=c.val();if(!r||!r.empId||!r.timestamp)return;
-      const d=localDateStr(new Date(r.timestamp));
-      if(!records[r.empId])records[r.empId]={};
-      if(!records[r.empId][d])records[r.empId][d]={};
-      if(r.type==='in'&&!records[r.empId][d].in)records[r.empId][d].in=r.timestamp;
-      else if(r.type==='out'&&!records[r.empId][d].out)records[r.empId][d].out=r.timestamp;
-    });
-    const excuses={};excSnap.forEach(c=>{const e=c.val();if(!excuses[e.empId])excuses[e.empId]={};excuses[e.empId][e.date]=e;});
-    const leaves={};leaveSnap.forEach(c=>{const l=c.val();if(l&&l.empId){if(!leaves[l.empId])leaves[l.empId]={};leaves[l.empId][l.date]=l;}});
-    const dateRange=getDates(firstDay,lastDay);
-    const isHolidayDate=dateStr=>{const d=new Date(dateStr);return d.getDay()===5||Object.values(settings.holidays||{}).some(h=>h.date===dateStr&&h.active!==false);};
-    const workingDays=dateRange.filter(d=>!isHolidayDate(d)).length;
-    const approved=Object.entries(ALL_EMPLOYEES).filter(([id,e])=>
-      e.status==='approved'
-      && (whFilter==='all'||e.warehouseId===whFilter)
-      && (empFilter==='all'||id===empFilter)
-    );
-    const rows=[];
-    let totalSalary=0,totalDeduction=0,totalNet=0;
-    for(const[eid,emp]of approved){
-      let absentDays=0,leaveDays=0;
-      const dayDetails=[];
-      for(const dateStr of dateRange){
-        const holiday=isHolidayDate(dateStr);
-        const lv=leaves[eid]?.[dateStr];
-        const dayRec=records[eid]?.[dateStr]||{};
-        const exc=excuses[eid]?.[dateStr];
-        let dayStatus,dayNote='';
-        if(holiday){
-          dayStatus='holiday'; dayNote='عطلة';
-        }else if(lv&&lv.status==='approved'&&(lv.leaveType||'paid')!=='partial'){
-          dayStatus='leave'; dayNote=LEAVE_TYPE_LABELS[lv.leaveType||'paid']||'إجازة'; leaveDays++;
-        }else if(dayRec.in){
-          dayStatus='present';
-        }else if(exc&&exc.status==='approved'){
-          dayStatus='excused'; dayNote='عذر مقبول';
-        }else{
-          dayStatus='absent'; dayNote='غياب'; absentDays++;
-        }
-        dayDetails.push({date:dateStr,status:dayStatus,note:dayNote,in:dayRec.in||null,out:dayRec.out||null});
-      }
-      const salary=Number(emp.salary)||0;
-      const deductPct=emp.deductionPercent!=null?Number(emp.deductionPercent):100;
-      const dailyRate=workingDays>0?salary/workingDays:0;
-      const deduction=Math.round(absentDays*dailyRate*(deductPct/100));
-      const net=Math.max(0,Math.round(salary-deduction));
-      totalSalary+=salary;totalDeduction+=deduction;totalNet+=net;
-      rows.push({eid,name:emp.name,empId:emp.empId||'--',warehouseName:emp.warehouseName||'--',salary,absentDays,leaveDays,deductPct,deduction,net,dayDetails});
-    }
-    payrollData={rows,monthVal,workingDays};
-    hideLoading();
-    document.getElementById('pr-stats').innerHTML=`
-      <div class="report-stat"><div class="rsn" style="color:var(--text)">${workingDays}</div><div class="rsl">أيام العمل بالشهر</div></div>
-      <div class="report-stat"><div class="rsn" style="color:var(--gold)">${totalSalary.toLocaleString()}</div><div class="rsl">إجمالي الرواتب الأساسية</div></div>
-      <div class="report-stat"><div class="rsn note-absent">${totalDeduction.toLocaleString()}</div><div class="rsl">إجمالي الاستقطاعات</div></div>
-      <div class="report-stat"><div class="rsn note-present">${totalNet.toLocaleString()}</div><div class="rsl">إجمالي الصافي</div></div>`;
-    const tbody=document.getElementById('pr-tbody');
-    tbody.innerHTML='';
-    if(!rows.length){
-      tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text2)">لا توجد نتائج مطابقة للفلترة المحددة</td></tr>';
-    }
-    rows.forEach((r,idx)=>{
-      const tr=document.createElement('tr');
-      tr.style.cursor='pointer';
-      tr.onclick=()=>togglePrDetails(idx);
-      tr.innerHTML=`<td>▾ <b>${r.name}</b></td><td>${r.empId}</td><td>${r.warehouseName}</td><td>${r.salary.toLocaleString()}</td><td style="color:var(--orange)">${r.absentDays}</td><td style="color:var(--purple)">${r.leaveDays}</td><td style="color:var(--red)">${r.deduction.toLocaleString()}</td><td style="color:var(--green);font-weight:700">${r.net.toLocaleString()}</td>`;
-      tbody.appendChild(tr);
-      const detailTr=document.createElement('tr');
-      detailTr.id=`pr-detail-${idx}`;
-      detailTr.style.display='none';
-      const dayRowsHtml=r.dayDetails.map(d=>{
-        const statusMap={present:['حاضر','var(--green)'],absent:['غائب','var(--red)'],leave:['إجازة: '+d.note,'var(--purple)'],excused:['عذر مقبول','var(--blue)'],holiday:['عطلة','var(--text2)']};
-        const[label,color]=statusMap[d.status]||[d.status,'var(--text2)'];
-        return `<tr><td>${d.date}</td><td style="color:${color}">${label}</td><td>${d.in?format12(d.in):'--'}</td><td>${d.out?format12(d.out):'--'}</td></tr>`;
-      }).join('');
-      detailTr.innerHTML=`<td colspan="8" style="padding:0"><div style="padding:12px;background:var(--bg)"><div style="font-size:13px;font-weight:700;margin-bottom:8px">📋 تفاصيل أيام ${r.name}</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>${dayRowsHtml}</tbody></table></div></div></td>`;
-      tbody.appendChild(detailTr);
-    });
-    document.getElementById('payroll-output').style.display='block';
-  }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
-}
-
-function generatePayrollPDF(){
-  const rows=payrollData.rows||[];
-  const monthVal=payrollData.monthVal||'';
-  const tableRows=rows.map(r=>`<tr><td>${r.name}</td><td>${r.empId}</td><td>${r.warehouseName}</td><td>${r.salary.toLocaleString()}</td><td style="color:#ef4444">${r.absentDays}</td><td style="color:#8b5cf6">${r.leaveDays}</td><td style="color:#ef4444">${r.deduction.toLocaleString()}</td><td style="color:#22c55e;font-weight:700">${r.net.toLocaleString()}</td></tr>`).join('');
-  const totalNet=rows.reduce((s,r)=>s+r.net,0);
-  const statusLabels={present:'حاضر',absent:'غائب',leave:'إجازة',excused:'عذر مقبول',holiday:'عطلة'};
-  const detailSections=rows.map(r=>{
-    const dayRows=r.dayDetails.map(d=>`<tr><td>${d.date}</td><td>${statusLabels[d.status]||d.status}${d.note&&d.status==='leave'?' — '+d.note:''}</td><td>${d.in?format12(d.in):'--'}</td><td>${d.out?format12(d.out):'--'}</td></tr>`).join('');
-    return `<div style="page-break-inside:avoid;margin-top:24px">
-      <h2 style="font-size:15px;color:#161b2e;border-bottom:2px solid #f5a623;padding-bottom:6px">📋 تفاصيل أيام: ${r.name} (${r.empId}) — ${r.warehouseName}</h2>
-      <table><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>${dayRows}</tbody></table>
-    </div>`;
-  }).join('');
-  const win=window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الرواتب</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-  <style>body{font-family:'Cairo',sans-serif;background:#fff;color:#1a1a2e;padding:24px}h1{font-size:22px;color:#f5a623;margin-bottom:4px}.sub{font-size:13px;color:#666;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#161b2e;color:#f5a623;padding:10px;text-align:right}td{padding:8px 10px;border-bottom:1px solid #eee}.print-btn{background:#f5a623;color:#0a0c14;border:none;border-radius:50px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:20px;font-family:'Cairo',sans-serif}@media print{.print-btn{display:none}}</style></head>
-  <body>
-  <h1>💰 كشف الرواتب — ${COMPANY_INFO.nameAr||''}</h1>
-  <div class="sub">شهر: ${monthVal}</div>
-  <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
-  <table><thead><tr><th>الموظف</th><th>الرقم الوظيفي</th><th>الفرع</th><th>الراتب الأساسي</th><th>أيام الغياب</th><th>أيام الإجازة</th><th>مبلغ الاستقطاع</th><th>الصافي</th></tr></thead>
-  <tbody>${tableRows}</tbody>
-  <tfoot><tr><td colspan="7" style="font-weight:900;text-align:left">إجمالي الصافي</td><td style="font-weight:900;color:#22c55e">${totalNet.toLocaleString()}</td></tr></tfoot>
-  </table>
-  ${detailSections}
-  </body></html>`);
-  win.document.close();
-}
-
-function generatePDF(){
-  const from=document.getElementById('rep-from').value;
-  const to=document.getElementById('rep-to').value;
-  const wh=document.getElementById('rep-wh').value;
-  const empId=document.getElementById('rep-emp')?.value||'all';
-  const whName=wh==='all'?'جميع الفروع':(ALL_WAREHOUSES[wh]?.name||wh);
-  const empName=empId==='all'?'كل الموظفين':(ALL_EMPLOYEES[empId]?.name||empId);
-  const rows=reportData;
-  const tableRows=rows.map(r=>`<tr><td>${r.emp}</td><td>${r.date}</td><td>${r.in}</td><td>${r.out}</td><td>${r.hrs}</td><td style="color:#f97316">${r.delay}</td><td class="note-${r.noteType}">${r.note}</td></tr>`).join('');
-  const win=window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>تقرير الحضور</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-  <style>body{font-family:'Cairo',sans-serif;background:#fff;color:#1a1a2e;padding:24px}h1{font-size:22px;color:#f5a623;margin-bottom:4px}.sub{font-size:13px;color:#666;margin-bottom:20px}.stats{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}.stat{background:#f5f5f5;border-radius:10px;padding:10px 16px;text-align:center}.stat .n{font-size:22px;font-weight:900}.stat .l{font-size:11px;color:#666}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#161b2e;color:#f5a623;padding:10px;text-align:right}td{padding:8px 10px;border-bottom:1px solid #eee}.note-present{color:#22c55e;font-weight:700}.note-absent{color:#ef4444;font-weight:700}.note-excused{color:#3b82f6;font-weight:700}.note-leave{color:#a855f7;font-weight:700}.note-holiday{color:#f5a623;font-weight:700}.print-btn{background:#f5a623;color:#0a0c14;border:none;border-radius:50px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:20px;font-family:'Cairo',sans-serif}@media print{.print-btn{display:none}}</style></head>
-  <body><h1>${COMPANY_INFO.nameAr||'الشركة'} — تقرير الحضور</h1><div class="sub">الفترة: ${from} — ${to} | الفرع: ${whName} | الموظف: ${empName}</div>
-  <button class="print-btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
-  <table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الحضور</th><th>الانصراف</th><th>الساعات</th><th>التأخير</th><th>ملاحظات</th></tr></thead><tbody>${tableRows}</tbody></table>
-  </body></html>`);
-  win.document.close();
-}
+function generatePDF(){ throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== ⑤ MISSIONS (الزمنيات) ====================
 function openMissionModal(key) {
@@ -2506,7 +1615,7 @@ function openMissionModal(key) {
   document.getElementById('mission-edit-key').value = key || '';
   document.getElementById('mission-location').value = '';
   document.getElementById('mission-desc').value = '';
-  document.getElementById('mission-date').value = localDateStr(new Date());
+  document.getElementById('mission-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('mission-time').value = '';
   // Populate emp select
   const sel = document.getElementById('mission-emp-select');
@@ -2609,9 +1718,9 @@ async function loadMissions() {
         ${ts?`<span style="color:var(--orange)">${ts} ${te}</span>`:''}
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="action-btn-sm btn-blue" onclick="openMissionModal('${m.key}')">✏️ تعديل</button>
-        <button class="action-btn-sm btn-red" onclick="deleteMission('${m.key}')">🗑 حذف</button>
-        ${m.status==='completed'?'':'<button class="action-btn-sm btn-green" onclick="completeMission(\''+m.key+'\',\''+m.empId+'\')">✅ إتمام</button>'}
+        <button class="action-btn-sm btn-blue" data-basma-click="openMissionModal('${m.key}')">✏️ تعديل</button>
+        <button class="action-btn-sm btn-red" data-basma-click="deleteMission('${m.key}')">🗑 حذف</button>
+        ${m.status==='completed'?'':'<button class="action-btn-sm btn-green" data-basma-click="completeMission(\''+m.key+'\',\''+m.empId+'\')">✅ إتمام</button>'}
       </div>`;
       list.appendChild(card);
     });
@@ -2638,7 +1747,7 @@ async function deleteMission(key) {
 // ==================== NAVIGATION ====================
 const pageLoaders = {
   dash: loadDashboard,
-  attend: ()=>{ const d=document.getElementById('att-date');if(!d.value)d.value=localDateStr(new Date());loadAttendance(); },
+  attend: ()=>{ const d=document.getElementById('att-date');if(!d.value)d.value=new Date().toISOString().split('T')[0];loadAttendance(); },
   emps: loadEmployees,
   excuses: loadExcuses,
   leaves: ()=>{ loadLeaves(); loadMissions(); },
@@ -2646,7 +1755,7 @@ const pageLoaders = {
   warehouses: loadWarehouses,
   settings: ()=>{ loadSettings(); updateRepDates(); },
   reports: updateRepDates,
-  payroll: ()=>{ const el=document.getElementById('pr-month'); if(el&&!el.value) el.value=new Date().toISOString().slice(0,7); populatePrEmpFilter(); },
+  payroll: ()=>{ const el=document.getElementById('pr-month'); if(el&&!el.value) el.value=new Date().toISOString().slice(0,7); },
   'admin-notifs': loadAdminNotifPage
 };
 
@@ -2654,7 +1763,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+page)?.classList.add('active');
-  document.querySelector(`.nav-item[onclick*="${page}"]`)?.classList.add('active');
+  document.querySelector(`.nav-item[data-basma-click*="${page}"]`)?.classList.add('active');
   const titles={dash:'لوحة التحكم',attend:'سجلات الحضور',emps:'الموظفون',excuses:'الأعذار',leaves:'الإجازات والمهام',messages:'الرسائل الخاصة',warehouses:'إدارة الفروع',settings:'الإعدادات',reports:'تقارير PDF',payroll:'الرواتب','admin-notifs':'إشعارات النشاط'};
   document.getElementById('page-title').textContent = titles[page]||page;
   currentPage = page;
@@ -2705,37 +1814,12 @@ function toggleAddEmpPanel(){
   }
 }
 
-function genEmpUsername(name, empId){
-  const base=(empId||name||'emp').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,10)||'emp';
-  const suffix=Math.floor(1000+Math.random()*9000);
-  return base+suffix;
-}
-function genEmpPassword(){
-  const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';let p='';
-  for(let i=0;i<8;i++)p+=chars[Math.floor(Math.random()*chars.length)];
-  return p;
-}
+function genEmpUsername(name, empId){ throw new Error('Legacy path disabled; use the secure service.'); }
+function genEmpPassword(){ throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ينشئ حساب دخول (يوزر/باسورد) بمشروع الدليل المركزي لموظف جديد،
 // عبر تطبيق Firebase ثانوي مؤقت حتى لا تتأثر جلسة دخول المدير الحالية.
-async function createEmployeeDirectoryAccount(employeeRecordId, name, empId){
-  const tenantConfig=JSON.parse(localStorage.getItem('tenant_cfg'));
-  const managerUid=localStorage.getItem('manager_dir_uid');
-  const username=genEmpUsername(name, empId);
-  const password=genEmpPassword();
-  const tempAppName='dirTemp_'+Date.now();
-  const dirApp=firebase.initializeApp(DIRECTORY_CONFIG, tempAppName);
-  try{
-    const email=`${username}@${DIRECTORY_EMAIL_DOMAIN}`;
-    const cred=await dirApp.auth().createUserWithEmailAndPassword(email, password);
-    const uid=cred.user.uid;
-    await dirApp.database().ref(`directory/employees/${uid}`).set({
-      username, managerUid, companyId: COMPANY_ID, companyName: COMPANY_INFO.nameAr||'',
-      employeeId: employeeRecordId, tenantConfig, createdAt: Date.now(), active: true
-    });
-    return { username, password, uid };
-  } finally { await dirApp.delete(); }
-}
+async function createEmployeeDirectoryAccount(employeeRecordId, name, empId){ throw new Error('Legacy path disabled; use the secure service.'); }
 
 function showActLinkModal(title,desc,username,password,empName){
   document.getElementById('act-link-modal-title').textContent=title;
@@ -2748,30 +1832,7 @@ function showActLinkModal(title,desc,username,password,empName){
 }
 function closeActLinkModal(){ document.getElementById('act-link-modal').classList.remove('active'); }
 
-async function addEmployee(){
-  const name=document.getElementById('ae-name').value.trim();
-  const empId=document.getElementById('ae-empid').value.trim();
-  const role=document.getElementById('ae-role').value.trim();
-  const whSel=document.getElementById('ae-wh');
-  const warehouseId=whSel.value;
-  const warehouseName=whSel.selectedOptions[0]?.text||'';
-  const salary=Number(document.getElementById('ae-salary').value)||0;
-  const deductionPercent=document.getElementById('ae-deduction').value!==''?Number(document.getElementById('ae-deduction').value):100;
-  if(!name||!empId||!role||!warehouseId){showToast('يرجى ملء جميع الحقول','error');return;}
-  showLoading('جاري إضافة الموظف...');
-  try{
-    const existing=await DB.ref(`companies/${COMPANY_ID}/employees`).orderByChild('empId').equalTo(empId).once('value');
-    if(existing.exists()){hideLoading();showToast('رقم الموظف مستخدم مسبقاً','error');return;}
-    const ref=DB.ref(`companies/${COMPANY_ID}/employees`).push();
-    const uid=ref.key;
-    await ref.set({name,empId,role,warehouseId,warehouseName,salary,deductionPercent,status:'pending_activation',createdAt:Date.now()});
-    const {username,password}=await createEmployeeDirectoryAccount(uid, name, empId);
-    hideLoading();
-    toggleAddEmpPanel();
-    await loadEmployees();
-    showActLinkModal('✅ تم إضافة الموظف',`أعطِ هذه البيانات لـ ${name} ليسجّل دخوله بتطبيق الموظف:`,username,password,name);
-  }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
-}
+async function addEmployee(){ throw new Error('Legacy path disabled; use the secure service.'); }
 
 async function regenerateActLink(eid){
   const emp=ALL_EMPLOYEES[eid];if(!emp)return;
@@ -2783,21 +1844,7 @@ async function regenerateActLink(eid){
   }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
 }
 
-async function resetEmployeeBio(eid){
-  const emp=ALL_EMPLOYEES[eid];if(!emp)return;
-  closeEmpModal();
-  showConfirm('🔑 إعادة تعيين البصمة',`هل تريد إعادة تعيين بصمة "${emp.name}"؟\nسيحتاج الموظف لبيانات دخول جديدة لتفعيل الجهاز من جديد.`,async()=>{
-    showLoading('جاري إعادة التعيين...');
-    try{
-      await DB.ref(`companies/${COMPANY_ID}/employees/${eid}`).update({credId:null,deviceFingerprint:null,status:'pending_activation'});
-      const {username,password}=await createEmployeeDirectoryAccount(eid, emp.name, emp.empId);
-      hideLoading();
-      ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],credId:null,status:'pending_activation'};
-      closeConfirm();
-      showActLinkModal('🔑 تم إعادة التعيين',`بيانات دخول جديدة لـ ${emp.name}:`,username,password,emp.name);
-    }catch(e){hideLoading();showToast('خطأ: '+e.message,'error');}
-  });
-}
+async function resetEmployeeBio(eid){ throw new Error('Legacy path disabled; use the secure service.'); }
 
 // copy helpers
 function fallbackCopy(text){
@@ -2817,7 +1864,7 @@ function copyLink(elementId){
   <div style="background:var(--card);border-radius:20px;padding:24px;width:92%;max-width:420px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <div id="wh-sched-modal-title" style="font-size:16px;font-weight:900;color:var(--gold)">⏰ دوام الفرع</div>
-      <button onclick="document.getElementById('wh-sched-modal').style.display='none'" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">×</button>
+      <button data-basma-click="document.getElementById('wh-sched-modal').style.display='none'" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">×</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
       <div><div class="form-label" style="margin-bottom:6px">وقت الحضور — من</div><input class="form-input" type="time" id="wh-ci-from"></div>
@@ -2827,8 +1874,8 @@ function copyLink(elementId){
     </div>
     <div style="font-size:11px;color:var(--text2);margin-bottom:14px">ملاحظة: هذه الأوقات تُطبَّق على موظفي الفرع ما لم يكن للموظف جدول خاص به</div>
     <div style="display:flex;gap:10px">
-      <button class="action-btn-full" onclick="saveWhSchedule()" style="flex:1">💾 حفظ</button>
-      <button class="modal-btn btn-red" onclick="clearWhSchedule()">🗑 إزالة</button>
+      <button class="action-btn-full" data-basma-click="saveWhSchedule()" style="flex:1">💾 حفظ</button>
+      <button class="modal-btn btn-red" data-basma-click="clearWhSchedule()">🗑 إزالة</button>
     </div>
   </div>
 </div>
@@ -2838,34 +1885,37 @@ function copyLink(elementId){
   <div style="background:var(--card);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div id="wh-gz-modal-title" style="font-size:16px;font-weight:900;color:var(--green)">📍 موقع الفرع</div>
-      <button onclick="whGzClose()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">✕</button>
+      <button data-basma-click="whGzClose()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">✕</button>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <input class="form-input" id="wh-gz-search" placeholder="ابحث عن موقع..." style="flex:1" onkeydown="if(event.key==='Enter')whGzSearch()">
-      <button class="modal-btn btn-gold" onclick="whGzSearch()">🔍</button>
+      <input class="form-input" id="wh-gz-search" placeholder="ابحث عن موقع..." style="flex:1" data-basma-keydown="if(event.key==='Enter')whGzSearch()">
+      <button class="modal-btn btn-gold" data-basma-click="whGzSearch()">🔍</button>
     </div>
-    <button class="modal-btn" style="background:var(--blue);color:#fff;width:100%;margin-bottom:10px;padding:10px" onclick="whGzMyLocation()">📱 موقعي الحالي</button>
+    <button class="modal-btn" style="background:var(--blue);color:#fff;width:100%;margin-bottom:10px;padding:10px" data-basma-click="whGzMyLocation()">📱 موقعي الحالي</button>
     <div id="wh-gz-map" style="height:280px;border-radius:12px;margin-bottom:10px;border:1px solid var(--border);overflow:hidden;background:var(--surface)">
       <div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:13px">ابحث أو اضغط "موقعي الحالي"</div>
     </div>
     <div id="wh-gz-coords" style="font-size:12px;color:var(--text2);margin-bottom:10px;background:var(--surface);border-radius:8px;padding:8px 12px">لم يتم تحديد موقع بعد</div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
       <label class="form-label" style="flex-shrink:0;margin:0">نصف القطر:</label>
-      <input type="number" class="form-input" id="wh-gz-radius-val" value="300" min="1" style="flex:1" oninput="whGzUpdateCircle()">
-      <select class="form-input form-select" id="wh-gz-radius-unit" onchange="whGzUpdateCircle()" style="width:120px;flex-shrink:0">
+      <input type="number" class="form-input" id="wh-gz-radius-val" value="300" min="1" style="flex:1" data-basma-input="whGzUpdateCircle()">
+      <select class="form-input form-select" id="wh-gz-radius-unit" data-basma-change="whGzUpdateCircle()" style="width:120px;flex-shrink:0">
         <option value="m">متر</option>
         <option value="km">كيلومتر</option>
       </select>
     </div>
-    <button class="action-btn-full" onclick="whGzSave()">💾 حفظ موقع الفرع</button>
+    <button class="action-btn-full" data-basma-click="whGzSave()">💾 حفظ موقع الفرع</button>
   </div>
 </div>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
-  });
-}
-</script>
+
+<div id="daily-details-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:#000c;align-items:center;justify-content:center;padding:20px">
+<div style="background:var(--card);padding:20px;border-radius:16px;width:95%;max-height:85vh;overflow:auto">
+<h3 id="daily-details-title">التفاصيل اليومية</h3><button id="daily-details-close" class="modal-btn">إغلاق</button>
+<div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>الموظف</th><th>الفرع</th><th>الحالة</th><th>الحضور الفعلي</th><th>الانصراف الفعلي</th><th>الساعات الفعلية</th><th>التأخير</th></tr></thead><tbody id="daily-details-body"></tbody></table></div>
+</div></div>
+<script src="/manager/assets/report-model.js"></script>
+<script src="/manager/assets/manager.js"></script>
+<script src="/manager/assets/manager-data.js"></script>
+<script src="/manager/assets/manager-views.js"></script>
 </body>
 </html>

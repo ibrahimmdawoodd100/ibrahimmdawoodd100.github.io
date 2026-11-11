@@ -2,12 +2,49 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-f+NMH9jdYQyJCrkW49u7e3lF2ciJOG0A2gkVD5CYmZg=' 'sha256-nNhTtcjYSWacRIsrTD6E4tiX9f1XBG2h63K1szkSsGM=' 'sha256-NaCdbowwwUFozbLuVDjk7Kr237NiNLIV0T62JdKxm3Q='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>لوحة تحكم المورّد</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-auth-compat.js"></script>
+<script src="/manager/assets/config.js"></script>
+<script src="/manager/assets/actions.js"></script>
+<script src="/manager/assets/safe-dom.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-app-check-compat.js"></script>
+<script src="/manager/assets/core.js"></script>
+
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -208,18 +245,18 @@ tr:hover td{background:#1a1f30}
   <div class="pin-new-hint" id="ps-new-hint" style="display:none">🔒 إنشاء رمز دخول جديد (4-6 أرقام)</div>
   <div class="pin-display" id="ps-pin-display"></div>
   <div class="pin-keyboard">
-    <button class="pin-key" onclick="sellerPinKey('1')">1</button>
-    <button class="pin-key" onclick="sellerPinKey('2')">2</button>
-    <button class="pin-key" onclick="sellerPinKey('3')">3</button>
-    <button class="pin-key" onclick="sellerPinKey('4')">4</button>
-    <button class="pin-key" onclick="sellerPinKey('5')">5</button>
-    <button class="pin-key" onclick="sellerPinKey('6')">6</button>
-    <button class="pin-key" onclick="sellerPinKey('7')">7</button>
-    <button class="pin-key" onclick="sellerPinKey('8')">8</button>
-    <button class="pin-key" onclick="sellerPinKey('9')">9</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('1')">1</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('2')">2</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('3')">3</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('4')">4</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('5')">5</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('6')">6</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('7')">7</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('8')">8</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('9')">9</button>
     <button class="pin-key empty"></button>
-    <button class="pin-key" onclick="sellerPinKey('0')">0</button>
-    <button class="pin-key del" onclick="sellerPinDel()">⌫</button>
+    <button class="pin-key" data-basma-click="sellerPinKey('0')">0</button>
+    <button class="pin-key del" data-basma-click="sellerPinDel()">⌫</button>
   </div>
   <div class="pin-error" id="ps-error"></div>
 </div>
@@ -228,11 +265,11 @@ tr:hover td{background:#1a1f30}
 <div class="slide-panel" id="company-panel">
   <div class="slide-panel-header">
     <div class="slide-panel-title" id="panel-company-name">تفاصيل الشركة</div>
-    <button class="close-btn" onclick="closePanel()">×</button>
+    <button class="close-btn" data-basma-click="closePanel()">×</button>
   </div>
   <div id="panel-content"></div>
 </div>
-<div id="panel-overlay" style="display:none;position:fixed;inset:0;background:#000a;z-index:590" onclick="closePanel()"></div>
+<div id="panel-overlay" style="display:none;position:fixed;inset:0;background:#000a;z-index:590" data-basma-click="closePanel()"></div>
 
 <!-- Confirm Modal -->
 <div class="confirm-modal-wrap" id="confirm-modal">
@@ -241,7 +278,7 @@ tr:hover td{background:#1a1f30}
     <p id="confirm-msg">هل أنت متأكد؟</p>
     <div class="confirm-actions">
       <button class="modal-btn btn-red" id="confirm-ok">تأكيد</button>
-      <button class="modal-btn btn-gray" onclick="closeConfirm()">إلغاء</button>
+      <button class="modal-btn btn-gray" data-basma-click="closeConfirm()">إلغاء</button>
     </div>
   </div>
 </div>
@@ -254,26 +291,26 @@ tr:hover td{background:#1a1f30}
     <div class="sidebar-sub">إدارة الشركات والاشتراكات</div>
   </div>
   <div class="nav-items">
-    <div class="nav-item active" onclick="showPage('dash')"><span class="nav-icon">📊</span><span class="nav-label">لوحة التحكم</span></div>
-    <div class="nav-item" onclick="showPage('companies')"><span class="nav-icon">🏢</span><span class="nav-label">الشركات</span></div>
-    <div class="nav-item" onclick="showPage('new-company')"><span class="nav-icon">➕</span><span class="nav-label">شركة جديدة</span></div>
-    <div class="nav-item" onclick="showPage('revenue')"><span class="nav-icon">💰</span><span class="nav-label">الإيرادات</span></div>
-    <div class="nav-item" onclick="showPage('notifs')"><span class="nav-icon">🔔</span><span class="nav-label">الإشعارات</span></div>
-    <div class="nav-item" onclick="showPage('my-settings')"><span class="nav-icon">⚙️</span><span class="nav-label">إعداداتي</span></div>
+    <div class="nav-item active" data-basma-click="showPage('dash')"><span class="nav-icon">📊</span><span class="nav-label">لوحة التحكم</span></div>
+    <div class="nav-item" data-basma-click="showPage('companies')"><span class="nav-icon">🏢</span><span class="nav-label">الشركات</span></div>
+    <div class="nav-item" data-basma-click="showPage('new-company')"><span class="nav-icon">➕</span><span class="nav-label">شركة جديدة</span></div>
+    <div class="nav-item" data-basma-click="showPage('revenue')"><span class="nav-icon">💰</span><span class="nav-label">الإيرادات</span></div>
+    <div class="nav-item" data-basma-click="showPage('notifs')"><span class="nav-icon">🔔</span><span class="nav-label">الإشعارات</span></div>
+    <div class="nav-item" data-basma-click="showPage('my-settings')"><span class="nav-icon">⚙️</span><span class="nav-label">إعداداتي</span></div>
   </div>
-  <div class="sidebar-footer"><button class="lock-btn" onclick="lockSeller()">🔒 قفل الشاشة</button></div>
+  <div class="sidebar-footer"><button class="lock-btn" data-basma-click="lockSeller()">🔒 قفل الشاشة</button></div>
 </div>
 
 <!-- Main Area -->
 <div id="main-area">
   <div class="top-header">
     <div style="display:flex;align-items:center;gap:12px">
-      <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+      <button class="menu-btn" data-basma-click="toggleSidebar()">☰</button>
       <span style="font-size:18px;font-weight:900" id="page-title">لوحة التحكم</span>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
       <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--purple);font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:var(--purple);display:inline-block;animation:pulse 1.5s ease-in-out infinite"></span>مورّد</div>
-      <button style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-btn);padding:8px 16px;color:var(--gold);font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer" onclick="refreshCurrentPage()">↻ تحديث</button>
+      <button style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-btn);padding:8px 16px;color:var(--gold);font-size:13px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer" data-basma-click="refreshCurrentPage()">↻ تحديث</button>
     </div>
   </div>
   <div class="content-area">
@@ -299,8 +336,8 @@ tr:hover td{background:#1a1f30}
     <!-- COMPANIES -->
     <div class="page" id="page-companies">
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-        <input class="form-input" type="text" id="comp-search" placeholder="🔍 بحث..." oninput="filterCompanies()" style="flex:1;min-width:200px">
-        <select class="form-input form-select" id="comp-status-filter" onchange="filterCompanies()" style="flex:0 0 auto;width:auto">
+        <input class="form-input" type="text" id="comp-search" placeholder="🔍 بحث..." data-basma-input="filterCompanies()" style="flex:1;min-width:200px">
+        <select class="form-input form-select" id="comp-status-filter" data-basma-change="filterCompanies()" style="flex:0 0 auto;width:auto">
           <option value="all">كل الحالات</option>
           <option value="active">نشطة</option>
           <option value="suspended">معلّقة</option>
@@ -335,26 +372,9 @@ tr:hover td{background:#1a1f30}
           <input class="form-input" id="nc-logo" placeholder="أو اكتب أي إيموجي" style="margin-top:8px;text-align:center;font-size:24px">
         </div>
         <div class="form-group">
-          <label class="form-label">الباقة</label>
-          <input type="hidden" id="nc-plan" value="yearly">
-          <div id="nc-plan-preview" style="background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:16px;text-align:center">
-            <div style="font-size:20px;font-weight:900;color:var(--gold)">📅 سنة كاملة</div>
-            <div style="font-size:15px;color:var(--text2);margin-top:6px">موظفون غير محدودين — 100$ كل سنة</div>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">نوع الاستضافة</label>
-          <div style="display:flex;gap:10px">
-            <label style="flex:1;background:var(--surface);border:2px solid var(--purple);border-radius:14px;padding:14px;text-align:center;cursor:pointer" id="nc-host-shared-label">
-              <input type="radio" name="nc-hosting" id="nc-host-shared" value="shared" checked onchange="toggleHostingType()" style="margin-bottom:6px">
-              <div style="font-weight:700;color:var(--purple)">⚡ مشترك (تلقائي)</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:4px">بدون أي إعداد Firebase — جاهز فورًا</div>
-            </label>
-            <label style="flex:1;background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:14px;text-align:center;cursor:pointer;opacity:0.5" id="nc-host-dedicated-label">
-              <input type="radio" name="nc-hosting" id="nc-host-dedicated" value="dedicated" onchange="toggleHostingType()" style="margin-bottom:6px">
-              <div style="font-weight:700;color:var(--gold)">👑 مستقل (VIP)</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:4px">مشروع Firebase خاص بالشركة</div>
-            </label>
+          <div style="background:var(--surface);border:2px solid var(--gold);border-radius:14px;padding:16px;text-align:center">
+            <div style="font-size:20px;font-weight:900;color:var(--gold)">خطة بإدارة المورّد</div>
+            <div style="font-size:15px;color:var(--text2);margin-top:6px">حد الموظفين حسب الخطة — دفعة واحدة $50</div>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -371,26 +391,18 @@ tr:hover td{background:#1a1f30}
         <div class="form-group"><label class="form-label">الفروع الافتراضية (اضغط إضافة)</label>
           <div style="display:flex;gap:8px;margin-bottom:8px">
             <input class="form-input" id="nc-wh-input" placeholder="اسم الفرع" style="flex:1">
-            <button onclick="addDefaultWH()" class="action-btn-sm btn-purple" style="padding:10px 16px">+ إضافة</button>
+            <button data-basma-click="addDefaultWH()" class="action-btn-sm btn-purple" style="padding:10px 16px">+ إضافة</button>
           </div>
           <div id="nc-wh-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
         </div>
 
-        <div id="nc-fb-section" style="display:none;border:1px solid var(--gold);border-radius:14px;padding:16px;margin-top:8px;background:linear-gradient(135deg,#1a1200,#1e2438)">
-          <div style="font-size:15px;font-weight:700;color:var(--gold);margin-bottom:4px">🔥 بيانات Firebase للزبون</div>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:14px">أنشئ مشروع Firebase جديد للزبون وأدخل بياناته هنا — سيُربط بحساب المدير تلقائيًا عبر الدليل المركزي، وسيحصل المدير على اسم مستخدم ورقم سري بدل الرابط</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div class="form-group" style="margin:0"><label class="form-label">apiKey *</label><input class="form-input" id="nc-fb-apiKey" placeholder="AIzaSy..."></div>
-            <div class="form-group" style="margin:0"><label class="form-label">projectId *</label><input class="form-input" id="nc-fb-projectId" placeholder="my-project-123"></div>
-            <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">databaseURL *</label><input class="form-input" id="nc-fb-databaseURL" placeholder="https://my-project-123-default-rtdb.firebaseio.com"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">authDomain</label><input class="form-input" id="nc-fb-authDomain" placeholder="my-project-123.firebaseapp.com"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">storageBucket</label><input class="form-input" id="nc-fb-storageBucket" placeholder="my-project-123.appspot.com"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">messagingSenderId</label><input class="form-input" id="nc-fb-messagingSenderId" placeholder="123456789"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">appId</label><input class="form-input" id="nc-fb-appId" placeholder="1:123:web:abc..."></div>
-          </div>
-        </div>
-
-        <button class="action-btn-full action-btn-gold" onclick="createCompany()">🚀 إنشاء الشركة</button>
+        <div class="section-card"><h3>الخطة والصلاحية</h3>
+  <label>اسم الخطة <input class="form-input" id="nc-plan" value="manual"></label>
+  <label>حد الموظفين <input class="form-input" id="nc-max-employees" type="number" min="1" max="10000" value="25"></label>
+  <label>انتهاء الصلاحية <input class="form-input" id="nc-expiry" type="date" required></label>
+  <label>المنطقة الزمنية <input class="form-input" id="nc-timezone" value="Asia/Baghdad"></label>
+  </div>
+<button class="action-btn-full action-btn-gold" data-basma-click="createCompany()">🚀 إنشاء الشركة</button>
       </div>
       <div id="nc-success" style="display:none" class="section-card">
         <div class="section-title" style="color:var(--green)">✅ تم إنشاء الشركة بنجاح!</div>
@@ -398,14 +410,14 @@ tr:hover td{background:#1a1f30}
         <div class="form-group">
           <label class="form-label" style="color:var(--gold)">👤 اسم المستخدم</label>
           <div class="copy-input" id="nc-admin-username" style="font-size:15px;font-weight:700;word-break:break-all"></div>
-          <button class="action-btn-sm btn-blue" onclick="copyLink('nc-admin-username')" style="margin-bottom:14px">📋 نسخ</button>
+          <button class="action-btn-sm btn-blue" data-basma-click="copyLink('nc-admin-username')" style="margin-bottom:14px">📋 نسخ</button>
         </div>
         <div class="form-group">
           <label class="form-label" style="color:var(--gold)">🔑 الرقم السري</label>
           <div class="copy-input" id="nc-admin-password" style="font-size:15px;font-weight:700;word-break:break-all"></div>
-          <button class="action-btn-sm btn-gold" onclick="copyLink('nc-admin-password')" style="margin-bottom:14px">📋 نسخ</button>
+          <button class="action-btn-sm btn-gold" data-basma-click="copyLink('nc-admin-password')" style="margin-bottom:14px">📋 نسخ</button>
         </div>
-        <button class="action-btn-sm btn-green" onclick="shareWhatsapp()" style="margin-top:4px;width:100%;padding:12px">📲 مشاركة بيانات الدخول عبر واتساب</button>
+        <button class="action-btn-sm btn-green" data-basma-click="shareWhatsapp()" style="margin-top:4px;width:100%;padding:12px">📲 مشاركة بيانات الدخول عبر واتساب</button>
       </div>
     </div>
 
@@ -437,7 +449,7 @@ tr:hover td{background:#1a1f30}
           <div class="form-group"><label class="form-label">التاريخ</label><input class="form-input" type="date" id="trans-date"></div>
           <div class="form-group"><label class="form-label">ملاحظة</label><input class="form-input" id="trans-note" placeholder="ملاحظة اختيارية"></div>
         </div>
-        <button class="action-btn-full" onclick="addTransaction()">💰 تسجيل المعاملة</button>
+        <button class="action-btn-full" data-basma-click="addTransaction()">💰 تسجيل المعاملة</button>
       </div>
     </div>
 
@@ -452,121 +464,43 @@ tr:hover td{background:#1a1f30}
         <div class="section-title">🔐 تغيير رمز الدخول</div>
         <div class="form-group"><label class="form-label">الرمز الجديد (4-6 أرقام)</label><input class="form-input" type="number" id="new-seller-pin" placeholder="الرمز الجديد"></div>
         <div class="form-group"><label class="form-label">تأكيد الرمز</label><input class="form-input" type="number" id="confirm-seller-pin" placeholder="أعد إدخال الرمز"></div>
-        <button class="action-btn-full" onclick="changeSellerPin()">💾 حفظ الرمز الجديد</button>
+        <button class="action-btn-full" data-basma-click="changeSellerPin()">💾 حفظ الرمز الجديد</button>
       </div>
       <div class="section-card" style="border:1px solid var(--red)">
         <div class="section-title">⚠️ إعادة ضبط Firebase</div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">حذف إعدادات Firebase الحالية وإدخال إعدادات جديدة.</div>
-        <button onclick="resetSellerFirebase()" style="background:transparent;border:1px solid var(--red);color:var(--red);border-radius:50px;padding:10px 20px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%">🗑️ إعادة ضبط إعدادات Firebase</button>
+        <button data-basma-click="resetSellerFirebase()" style="background:transparent;border:1px solid var(--red);color:var(--red);border-radius:50px;padding:10px 20px;font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%">🗑️ إعادة ضبط إعدادات Firebase</button>
       </div>
     </div>
 
   </div>
 </div>
 
-<!-- Firebase Setup Screen -->
-<div id="setup-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;overflow-y:auto;padding:24px;align-items:center;justify-content:center;flex-direction:column">
-  <div style="width:100%;max-width:460px">
-    <div style="text-align:center;margin-bottom:24px">
-      <div style="font-size:52px">🔥</div>
-      <div style="font-size:22px;font-weight:900;color:var(--gold);margin-top:8px">إعداد Firebase الخاص بك</div>
-      <div style="font-size:13px;color:var(--text2);margin-top:8px;line-height:1.8">أدخل إعدادات مشروع Firebase الخاص بك<br>ستُحفظ في هذا الجهاز ولن تُطلب مجدداً</div>
-    </div>
-    <div style="background:var(--card);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--border)">
-      <input id="fb-apiKey" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;font-family:monospace;outline:none;width:100%" placeholder="apiKey">
-      <input id="fb-authDomain" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="authDomain (xxx.firebaseapp.com)">
-      <input id="fb-databaseURL" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="databaseURL (https://xxx-default-rtdb.firebaseio.com)">
-      <input id="fb-projectId" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="projectId">
-      <input id="fb-storageBucket" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="storageBucket (xxx.appspot.com)">
-      <input id="fb-messagingSenderId" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="messagingSenderId">
-      <input id="fb-appId" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:13px;outline:none;width:100%" placeholder="appId (1:xxx:web:xxx)">
-      <div id="setup-error" style="color:var(--red);font-size:13px;text-align:center;display:none"></div>
-      <button onclick="saveSellerFirebaseSetup()" style="background:linear-gradient(135deg,var(--gold),var(--purple));color:#0a0c14;border:none;border-radius:50px;padding:14px;font-size:16px;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;margin-top:4px">✅ حفظ وتشغيل</button>
-      <div style="font-size:12px;color:var(--text2);text-align:center;line-height:1.7">احصل على هذه المعلومات من<br><strong>Firebase Console → Project Settings → Your apps → Config</strong></div>
-    </div>
-  </div>
-</div>
+<div id="setup-screen" style="display:none"></div>
 
 <script>
 // ==================== CONFIG ====================
-// يحوّل أي Date إلى "YYYY-MM-DD" حسب التوقيت المحلي لجهاز المستخدم
-// (بدل UTC) — هذا مهم لأن toISOString() ترجع دائمًا بتوقيت غرينتش،
-// فبدون هذا التحويل، أي عملية قريبة من منتصف الليل بتوقيت العراق
-// (UTC+3) كانت تُسجَّل تحت تاريخ اليوم السابق بالخطأ.
-function localDateStr(d) {
-  d = d || new Date();
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - off).toISOString().split('T')[0];
-}
-
 let DB = null;
 let sellerPinVal = '';
 let isNewPin = false;
 let allCompanies = {};
 let currentPage = 'dash';
-const LIFETIME_PRICE = 100;
+const LIFETIME_PRICE = 50;
 let defaultWHs = [];
 let selectedEmoji = '🏭';
 let lastCreatedCID = '';
 let lastCreatedData = {};
 let confirmCallback = null;
 
-const PLAN_PRICES = { yearly: LIFETIME_PRICE };
-const PLAN_NAMES = { yearly: 'سنوي' };
-const PLAN_MAX = { yearly: 999999 };
+const PLAN_PRICES = { lifetime: LIFETIME_PRICE };
+const PLAN_NAMES = { lifetime: 'مدى الحياة' };
+const PLAN_MAX = { lifetime: 999999 };
 
-const PLANS = {
-  yearly: { label: '📅 سنة كاملة', price: 100, days: 365 }
-};
+function getFirebaseConfig() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-function updatePlanPreview() {
-  const preview = document.getElementById('nc-plan-preview');
-  if (preview) preview.innerHTML = `<div style="font-size:20px;font-weight:900;color:var(--gold)">📅 سنة كاملة</div><div style="font-size:15px;color:var(--text2);margin-top:6px">موظفون غير محدودين — 100$ كل سنة</div>`;
-}
+function genUsername(nameEn, nameAr) { throw new Error('Legacy path disabled; use the secure service.'); }
+function genPassword() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-function toggleHostingType() {
-  const shared = document.getElementById('nc-host-shared').checked;
-  document.getElementById('nc-fb-section').style.display = shared ? 'none' : 'block';
-  document.getElementById('nc-host-shared-label').style.opacity = shared ? '1' : '0.5';
-  document.getElementById('nc-host-dedicated-label').style.opacity = shared ? '0.5' : '1';
-}
-
-
-function getFirebaseConfig() {
-  const stored = localStorage.getItem('seller_fb_cfg');
-  if (stored) { try { return JSON.parse(stored); } catch(e) {} }
-  return null;
-}
-
-// ==================== الدليل المركزي (Directory) ====================
-// مشروع Firebase ثابت مشترك بين كل التطبيقات: يربط اسم المستخدم/الرقم السري
-// بإعدادات Firebase الخاصة بكل زبون. هذا المشروع منفصل عن مشروع تتبّع المورد
-// (seller_fb_cfg) ومنفصل عن مشروع كل زبون (tenantConfig).
-const DIRECTORY_CONFIG = {
-  apiKey: "AIzaSyA569Cn0DbbJ-gZIAEtAI4-Y1qOU9Wzfps",
-  authDomain: "signature-7706e.firebaseapp.com",
-  databaseURL: "https://signature-7706e-default-rtdb.firebaseio.com",
-  projectId: "signature-7706e",
-  storageBucket: "signature-7706e.firebasestorage.app",
-  messagingSenderId: "25739438341",
-  appId: "1:25739438341:web:a394b046ed29d96bd36f6c"
-};
-const DIRECTORY_EMAIL_DOMAIN = 'basma.app'; // Auth يحتاج صيغة إيميل، نستخدم يوزرنيم@basma.app
-
-function genUsername(nameEn, nameAr) {
-  const base = (nameEn || nameAr || 'co').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'co';
-  const suffix = Math.floor(1000 + Math.random() * 9000);
-  return base + suffix;
-}
-function genPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let p = '';
-  for (let i = 0; i < 8; i++) p += chars[Math.floor(Math.random() * chars.length)];
-  return p;
-}
-
-// ينشئ حساب دخول (يوزر/باسورد) بمشروع الدليل المركزي لمدير أو موظف جديد،
-// عبر تطبيق Firebase ثانوي مؤقت حتى لا تتأثر جلسة دخولك الحالية كمورد.
 function withTimeout(promise, ms, msg) {
   return Promise.race([
     promise,
@@ -574,84 +508,12 @@ function withTimeout(promise, ms, msg) {
   ]);
 }
 
-async function createDirectoryAccount({ role, username, password, companyId, companyName, tenantConfig, managerUid, keepAlive }) {
-  const tempAppName = 'dirTemp_' + Date.now();
-  const dirApp = firebase.initializeApp(DIRECTORY_CONFIG, tempAppName);
-  try {
-    const email = `${username}@${DIRECTORY_EMAIL_DOMAIN}`;
-    const cred = await dirApp.auth().createUserWithEmailAndPassword(email, password);
-    const uid = cred.user.uid;
-    const record = {
-      username, companyId, companyName,
-      tenantConfig, createdAt: Date.now(), active: true
-    };
-    if (role === 'manager') {
-      await dirApp.database().ref(`directory/managers/${uid}`).set(record);
-    } else {
-      record.managerUid = managerUid;
-      await dirApp.database().ref(`directory/employees/${uid}`).set(record);
-    }
-    if (keepAlive) return { uid, app: dirApp };
-    return uid;
-  } finally {
-    if (!keepAlive) await dirApp.delete();
-  }
-}
 
-// يستخدم بيانات دخول المدير المحفوظة (بقاعدتك الخاصة) لتسجيل دخول مؤقت
-// بمشروع الدليل المشترك، وتنفيذ تحديث مصرَّح به على بيانات شركته —
-// ضروري فقط للشركات "المشتركة" (اللي تستضيف بياناتها بنفس مشروع الدليل)،
-// لأن قواعد الأمان هناك تتطلب مصادقة حقيقية، بعكس مشروع الزبون الخاص (VIP).
-async function writeSharedAsManager(cid, path, patch) {
-  const c = allCompanies[cid];
-  if (!c || !c.info.managerUsername || !c.info.managerPassword) {
-    throw new Error('لا توجد بيانات دخول محفوظة لهذه الشركة لإجراء هذا التحديث');
-  }
-  const tempAppName = 'sharedWrite_' + Date.now();
-  const app = firebase.initializeApp(DIRECTORY_CONFIG, tempAppName);
-  try {
-    const email = `${c.info.managerUsername}@${DIRECTORY_EMAIL_DOMAIN}`;
-    await app.auth().signInWithEmailAndPassword(email, c.info.managerPassword);
-    await app.database().ref(path).update(patch);
-  } finally {
-    await app.delete();
-  }
-}
+function saveSellerFirebaseSetup() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-function saveSellerFirebaseSetup() {
-  const cfg = {
-    apiKey: document.getElementById('fb-apiKey').value.trim(),
-    authDomain: document.getElementById('fb-authDomain').value.trim(),
-    databaseURL: document.getElementById('fb-databaseURL').value.trim(),
-    projectId: document.getElementById('fb-projectId').value.trim(),
-    storageBucket: document.getElementById('fb-storageBucket').value.trim(),
-    messagingSenderId: document.getElementById('fb-messagingSenderId').value.trim(),
-    appId: document.getElementById('fb-appId').value.trim()
-  };
-  if (!cfg.apiKey || !cfg.databaseURL || !cfg.projectId) {
-    const err = document.getElementById('setup-error');
-    err.textContent = 'يرجى ملء: apiKey و databaseURL و projectId على الأقل';
-    err.style.display = 'block';
-    return;
-  }
-  localStorage.setItem('seller_fb_cfg', JSON.stringify(cfg));
-  document.getElementById('setup-screen').style.display = 'none';
-  startSellerApp(cfg);
-}
+function startSellerApp(cfg) { throw new Error('Legacy path disabled; use the secure service.'); }
 
-function startSellerApp(cfg) {
-  if (!firebase.apps.length) firebase.initializeApp(cfg);
-  DB = firebase.database();
-  checkSellerPin();
-  initEmojiGrid();
-  document.getElementById('trans-date').value = localDateStr(new Date());
-}
-
-function resetSellerFirebase() {
-  if (!confirm('سيتم حذف إعدادات Firebase. هل أنت متأكد؟')) return;
-  localStorage.removeItem('seller_fb_cfg');
-  location.reload();
-}
+function resetSellerFirebase() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 window.onload = () => {
   const cfg = getFirebaseConfig();
@@ -660,23 +522,7 @@ window.onload = () => {
 };
 
 // ==================== PIN ====================
-async function checkSellerPin() {
-  try {
-    const snap = await DB.ref('seller/auth/pin').once('value');
-    if (!snap.exists()) {
-      isNewPin = true;
-      document.getElementById('ps-sub').textContent = 'مرحباً! أنشئ رمز دخولك الأول';
-      document.getElementById('ps-new-hint').style.display = 'block';
-    } else {
-      const session = sessionStorage.getItem('seller_session');
-      if (session && (Date.now() - parseInt(session)) < 3600000) {
-        unlockSeller();
-        return;
-      }
-    }
-    document.getElementById('pin-screen').classList.remove('hidden');
-  } catch(e) {}
-}
+async function checkSellerPin() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 function sellerPinKey(d) {
   if (sellerPinVal.length >= 6) return;
@@ -697,47 +543,13 @@ function updateSellerPinDisplay() {
   }
 }
 
-async function checkSellerPinVal() {
-  try {
-    const snap = await DB.ref('seller/auth/pin').once('value');
-    const stored = snap.val() || '';
-    if (sellerPinVal === stored) {
-      unlockSeller();
-    } else if (sellerPinVal.length >= 6) {
-      document.getElementById('ps-error').textContent = 'رمز غير صحيح';
-      sellerPinVal = ''; updateSellerPinDisplay();
-    } else if (sellerPinVal.length >= (stored.length || 4)) {
-      document.getElementById('ps-error').textContent = 'رمز غير صحيح';
-      sellerPinVal = ''; updateSellerPinDisplay();
-    }
-  } catch(e) {}
-}
+async function checkSellerPinVal() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function createSellerPin() {
-  if (sellerPinVal.length < 4) return;
-  try {
-    await DB.ref('seller/auth/pin').set(sellerPinVal);
-    isNewPin = false;
-    unlockSeller();
-  } catch(e) { showToast('خطأ في إنشاء الرمز', 'error'); }
-}
+async function createSellerPin() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-function unlockSeller() {
-  sessionStorage.setItem('seller_session', Date.now().toString());
-  document.getElementById('pin-screen').classList.add('hidden');
-  loadDashboard();
-}
+function unlockSeller() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-function lockSeller() {
-  sessionStorage.removeItem('seller_session');
-  sellerPinVal = '';
-  updateSellerPinDisplay();
-  document.getElementById('ps-error').textContent = '';
-  isNewPin = false;
-  document.getElementById('ps-sub').textContent = 'أدخل رمز الدخول';
-  document.getElementById('ps-new-hint').style.display = 'none';
-  document.getElementById('pin-screen').classList.remove('hidden');
-}
+function lockSeller() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== LOAD COMPANIES ====================
 async function loadAllCompanies() {
@@ -758,22 +570,9 @@ async function loadAllCompanies() {
   });
 }
 
-// يجيب العدد الحقيقي للموظفين مباشرة من مشروع Firebase الخاص بكل زبون
 // (المكان الفعلي اللي يضيف منه المدير موظفيه)، بدل الرقم القديم المخزّن
 // بقاعدة بيانات المورد (اللي ما تتحدّث تلقائيًا أبدًا).
-async function refreshLiveEmployeeCounts() {
-  const entries = Object.values(allCompanies).filter(c => c.info && c.info.tenantConfig);
-  await Promise.all(entries.map(async (c) => {
-    const tempAppName = 'countTemp_' + c.id + '_' + Date.now();
-    try {
-      const tApp = firebase.initializeApp(c.info.tenantConfig, tempAppName);
-      const snap = await tApp.database().ref(`companies/${c.id}/employees`).once('value');
-      const emps = Object.values(snap.val() || {}).filter(e => e && e.status === 'approved').length;
-      if (allCompanies[c.id]) allCompanies[c.id].empCount = emps;
-      await tApp.delete();
-    } catch (e) { /* شركة وحدة ممكن تفشل (بيانات ناقصة)، لا نوقف الباقي */ }
-  }));
-}
+async function refreshLiveEmployeeCounts() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== DASHBOARD ====================
 async function loadDashboard() {
@@ -828,7 +627,7 @@ async function loadDashboard() {
       const exp = c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('ar-SA') : '--';
       const stBadge = c.status==='active'?'badge-green':c.status==='suspended'?'badge-red':'badge-gray';
       const stText = c.status==='active'?'نشطة':c.status==='suspended'?'معلّقة':'منتهية';
-      el.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:24px">${c.info.logo||'🏢'}</span><div><div style="font-size:14px;font-weight:700">${c.info.nameAr||'شركة'}</div><div style="font-size:11px;color:var(--text2)">📅 سنوي | غير محدود</div></div></div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--gold)">${c.empCount} موظف</span><span class="badge ${stBadge}">${stText}</span></div>`;
+      el.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><span style="font-size:24px">${c.info.logo||'🏢'}</span><div><div style="font-size:14px;font-weight:700">${c.info.nameAr||'شركة'}</div><div style="font-size:11px;color:var(--text2)">${c.info.plan || 'manual'} | حد ${c.info.maxEmployees} موظف</div></div></div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--gold)">${c.empCount} موظف</span><span class="badge ${stBadge}">${stText}</span></div>`;
       mini.appendChild(el);
     });
     hideLoading();
@@ -871,7 +670,7 @@ function filterCompanies() {
         <div class="cc-name">${c.info.nameAr||'شركة'}</div>
         <div class="cc-name-en">${c.info.nameEn||''}</div>
         <div class="cc-tags">
-          <span class="badge badge-purple">📅 سنوي</span>
+          <span class="badge badge-purple">خطة بإدارة المورّد</span>
           <span class="badge ${stBadge}">${stText}</span>
           <span class="badge badge-blue">${c.info.industry||''}</span>
         </div>
@@ -880,38 +679,15 @@ function filterCompanies() {
     <div class="cc-stats">
       <div class="cc-stat"><div class="n">${c.empCount}</div><div class="l">موظف</div></div>
       <div class="cc-stat"><div class="n" style="color:var(--gold)">∞</div><div class="l">غير محدود</div></div>
-      <div class="cc-stat"><div class="n" style="color:var(--green)">$${LIFETIME_PRICE}</div><div class="l">سنويًا</div></div>
+      <div class="cc-stat"><div class="n" style="color:var(--green)">$${LIFETIME_PRICE}</div><div class="l">مدى الحياة</div></div>
     </div>
     <div class="cc-actions">
-      <button class="action-btn-sm btn-purple" onclick="openPanel('${c.id}')">👁 عرض</button>
-      ${c.status==='active'?`<button class="action-btn-sm btn-red" onclick="suspendCompany('${c.id}')">⛔ تعليق</button>`:`<button class="action-btn-sm btn-green" onclick="activateCompany('${c.id}')">✅ تفعيل</button>`}
-      <button class="action-btn-sm btn-gray" onclick="confirmDeleteCompany('${c.id}')">🗑</button>
+      <button class="action-btn-sm btn-purple" data-basma-click="openPanel('${c.id}')">👁 عرض</button>
+      ${c.status==='active'?`<button class="action-btn-sm btn-red" data-basma-click="suspendCompany('${c.id}')">⛔ تعليق</button>`:`<button class="action-btn-sm btn-green" data-basma-click="activateCompany('${c.id}')">✅ تفعيل</button>`}
+      <button class="action-btn-sm btn-gray" data-basma-click="confirmDeleteCompany('${c.id}')">🗑</button>
     </div>`;
     list.appendChild(card);
   });
-}
-
-async function renewSubscription(cid, planKey) {
-  const c = allCompanies[cid];
-  if (!c) return;
-  const plan = PLANS[planKey];
-  showLoading('جاري تجديد الاشتراك...');
-  try {
-    const base = (c.expiresAt && c.expiresAt > Date.now()) ? c.expiresAt : Date.now();
-    const newExpiresAt = base + plan.days * 86400000;
-    await DB.ref(`companies/${cid}/info`).update({ expiresAt: newExpiresAt, status: 'active', plan: planKey });
-    const patch = { expiresAt: newExpiresAt, status: 'active', plan: planKey };
-    if (c.info.hosting === 'shared') {
-      await writeSharedAsManager(cid, `companies/${cid}/info`, patch);
-    } else if (c.info.tenantConfig) {
-      await updateTenantManagerInfo(c.info.tenantConfig, cid, patch);
-    }
-    await DB.ref('seller/transactions').push({ companyId: cid, companyName: c.info.nameAr, plan: planKey, amount: plan.price, dateStr: localDateStr(new Date()), date: Date.now(), note: `تجديد اشتراك — ${plan.label}` });
-    hideLoading();
-    showToast(`تم التجديد حتى ${new Date(newExpiresAt).toLocaleDateString('ar-SA')}`, 'success');
-    await loadAllCompanies();
-    openPanel(cid);
-  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
 }
 
 async function openPanel(cid) {
@@ -929,30 +705,24 @@ async function openPanel(cid) {
     <div class="info-row"><span class="info-label">الاسم (عربي)</span><span class="info-value">${c.info.nameAr||'--'}</span></div>
     <div class="info-row"><span class="info-label">الاسم (إنجليزي)</span><span class="info-value">${c.info.nameEn||'--'}</span></div>
     <div class="info-row"><span class="info-label">القطاع</span><span class="info-value">${c.info.industry||'--'}</span></div>
-    <div class="info-row"><span class="info-label">الاستضافة</span><span class="info-value">${c.info.hosting==='dedicated'?'👑 مستقل (VIP)':'⚡ مشترك'}</span></div>
-    <div class="info-row"><span class="info-label">الخطة</span><span class="info-value">${(PLANS[c.info.plan]||PLANS.yearly).label} — $${(PLANS[c.info.plan]||PLANS.yearly).price}</span></div>
-    <div class="info-row"><span class="info-label">الموظفون</span><span class="info-value">${c.empCount} (غير محدود)</span></div>
-    <div class="info-row"><span class="info-label">الحالة</span><span class="info-value">${c.status==='active'?'✅ نشطة':c.status==='suspended'?'⛔ معلّقة':'❌ منتهية'}</span></div>
-    <div class="info-row"><span class="info-label">الانتهاء</span><span class="info-value">${!c.expiresAt?'♾️ بلا انتهاء':exp}</span></div>
+    <div class="info-row"><span class="info-label">الخطة</span><span class="info-value">${c.info.plan || 'manual'}</span></div>
+    <div class="info-row"><span class="info-label">الموظفون</span><span class="info-value">${c.empCount} / ${c.info.maxEmployees}</span></div>
+    <button class="action-btn-sm btn-gold" data-basma-click="secureEditPlan('${cid}')">تعديل الخطة والصلاحية</button><div class="info-row"><span class="info-label">الحالة</span><span class="info-value">${c.status==='active'?'✅ نشطة':c.status==='suspended'?'⛔ معلّقة':'❌ منتهية'}</span></div>
+    <div class="info-row"><span class="info-label">الانتهاء</span><span class="info-value">${exp}</span></div>
     <div class="info-row"><span class="info-label">البريد</span><span class="info-value">${c.info.adminEmail||'--'}</span></div>
     <div class="info-row"><span class="info-label">الهاتف</span><span class="info-value">${c.info.adminPhone||'--'}</span></div>
   </div>
   <div class="panel-section">
-    <div class="panel-section-title">💳 تجديد الاشتراك</div>
-    <button class="action-btn-sm btn-purple" onclick="renewSubscription('${cid}','yearly')" style="width:100%">📅 تجديد سنة كاملة — 100$</button>
-  </div>
-  <div class="panel-section">
     <div class="panel-section-title">🔐 بيانات دخول المدير</div>
     <div class="info-row"><span class="info-label">اسم المستخدم</span><span class="info-value">${c.info.managerUsername||'--'}</span></div>
-    <div class="info-row"><span class="info-label">الرقم السري</span><span class="info-value" id="pnl-pw-${cid}" style="font-family:monospace">${c.info.managerPassword?'••••••••':'--'}</span></div>
-    ${c.info.managerPassword?`<button class="action-btn-sm btn-blue" onclick="togglePwVisible('${cid}','${c.info.managerPassword}')" style="margin-top:8px">👁️ إظهار/إخفاء</button>`:''}
+    <div class="info-row"><span class="info-label">الرقم السري</span><span class="info-value" id="pnl-pw-${cid}" style="font-family:monospace">${''?'••••••••':'--'}</span></div>
+    ${''?`<button class="action-btn-sm btn-blue" data-basma-click="togglePwVisible('${cid}','${''}')" style="margin-top:8px">👁️ إظهار/إخفاء</button>`:''}
   </div>
   <div class="panel-section">
     <div class="panel-section-title">إجراءات سريعة</div>
     <div class="panel-actions">
-      ${c.status==='active'?`<button class="action-btn-sm btn-red" onclick="suspendCompany('${cid}');closePanel()">⛔ تعليق</button>`:`<button class="action-btn-sm btn-green" onclick="activateCompany('${cid}');closePanel()">✅ تفعيل</button>`}
-      <button class="action-btn-sm btn-gray" onclick="resetManagerCredentials('${cid}')">🔑 إعادة تعيين بيانات الدخول</button>
-      <button class="action-btn-sm btn-blue" onclick="syncTenantData('${cid}')">🔄 مزامنة البيانات مع مشروع الزبون</button>
+      ${c.status==='active'?`<button class="action-btn-sm btn-red" data-basma-click="suspendCompany('${cid}');closePanel()">⛔ تعليق</button>`:`<button class="action-btn-sm btn-green" data-basma-click="activateCompany('${cid}');closePanel()">✅ تفعيل</button>`}
+      <button class="action-btn-sm btn-gray" data-basma-click="resetManagerCredentials('${cid}')">🔑 إعادة تعيين بيانات الدخول</button>
     </div>
   </div>`;
 }
@@ -962,67 +732,10 @@ function togglePwVisible(cid, pw) {
   el.textContent = el.textContent === pw ? '••••••••' : pw;
 }
 
-async function syncTenantData(cid) {
-  const c = allCompanies[cid];
-  if (!c) return;
-  const tenantConfig = c.info.tenantConfig;
-  if (!tenantConfig) { showToast('لا توجد إعدادات Firebase محفوظة لهذه الشركة — أدخلها أول عبر "إعادة تعيين بيانات الدخول"', 'error'); return; }
-  showLoading('جاري مزامنة البيانات مع مشروع الزبون...');
-  try {
-    const whNames = c.warehouses ? Object.values(c.warehouses).map(w => w.name) : [];
-    const tempAppName = 'tenantTemp_' + Date.now();
-    const tenantApp = firebase.initializeApp(tenantConfig, tempAppName);
-    try {
-      const tdb = tenantApp.database();
-      const existing = await tdb.ref(`companies/${cid}/info`).once('value');
-      if (existing.exists()) {
-        hideLoading();
-        showToast('بيانات الشركة موجودة أصلاً بمشروعها — لا حاجة للمزامنة', 'info');
-        return;
-      }
-      await tdb.ref(`companies/${cid}`).set({ info: c.info, settings: c.settings || {} });
-      const names = whNames.length ? whNames : ['الفرع الرئيسي'];
-      for (const whName of names) {
-        await tdb.ref(`companies/${cid}/warehouses`).push({ name: whName, pin: '1234', active: true });
-      }
-    } finally {
-      await tenantApp.delete();
-    }
-    hideLoading();
-    showToast('✅ تمت المزامنة! جرّب تسجيل دخول المدير الآن', 'success');
-  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-}
 
-async function resetManagerCredentials(cid) {
-  const c = allCompanies[cid];
-  if (!c) return;
-  showConfirm ? showConfirm('إعادة تعيين بيانات الدخول', 'سيتم توليد اسم مستخدم ورقم سري جديدين للمدير. البيانات القديمة تتوقف عن الظهور هنا لكنها تبقى صالحة فنيًا. هل تريد المتابعة؟', () => doResetManagerCredentials(cid)) : doResetManagerCredentials(cid);
-}
+async function resetManagerCredentials(cid) { throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function doResetManagerCredentials(cid) {
-  const c = allCompanies[cid];
-  if (!c) return;
-  const tenantConfig = c.info.tenantConfig;
-  if (!tenantConfig) { showToast('لا توجد إعدادات Firebase محفوظة لهذه الشركة', 'error'); return; }
-  showLoading('جاري توليد بيانات دخول جديدة...');
-  try {
-    const username = genUsername(c.info.nameEn, c.info.nameAr);
-    const password = genPassword();
-    const { uid: managerUid, app: mgrApp } = await withTimeout(createDirectoryAccount({ role: 'manager', username, password, companyId: cid, companyName: c.info.nameAr, tenantConfig, keepAlive: true }), 15000);
-    if (c.info.hosting === 'shared') {
-      await mgrApp.database().ref(`companies/${cid}/info`).update({ managerUsername: username, managerUid });
-    }
-    await mgrApp.delete();
-    await DB.ref(`companies/${cid}/info`).update({ managerUsername: username, managerPassword: password, managerUid });
-    hideLoading();
-    await loadAllCompanies();
-    const msg = `🔑 بيانات دخول جديدة لشركة *${c.info.nameAr}*\n\n👤 اسم المستخدم: ${username}\n🔑 الرقم السري: ${password}`;
-    if (confirm('تم إنشاء بيانات جديدة:\n\nاسم المستخدم: ' + username + '\nالرقم السري: ' + password + '\n\nهل تريد مشاركتها عبر واتساب؟')) {
-      window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
-    }
-    closePanel();
-  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-}
+async function doResetManagerCredentials(cid) { throw new Error('Legacy path disabled; use the secure service.'); }
 
 function closePanel() {
   document.getElementById('company-panel').classList.remove('open');
@@ -1030,58 +743,14 @@ function closePanel() {
 }
 
 
-async function suspendCompany(cid) {
-  try {
-    await DB.ref(`companies/${cid}/info`).update({ status: 'suspended' });
-    const c = allCompanies[cid];
-    if (c?.info?.hosting === 'shared') {
-      await writeSharedAsManager(cid, `companies/${cid}/info`, { status: 'suspended' });
-    } else if (c?.info?.tenantConfig) {
-      await updateTenantManagerInfo(c.info.tenantConfig, cid, { status: 'suspended' });
-    }
-    showToast('تم تعليق الشركة', 'info');
-    await loadAllCompanies(); filterCompanies();
-  } catch(e) { showToast('خطأ', 'error'); }
-}
+async function suspendCompany(cid) { throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function activateCompany(cid) {
-  try {
-    await DB.ref(`companies/${cid}/info`).update({ status: 'active' });
-    const c = allCompanies[cid];
-    if (c?.info?.hosting === 'shared') {
-      await writeSharedAsManager(cid, `companies/${cid}/info`, { status: 'active' });
-    } else if (c?.info?.tenantConfig) {
-      await updateTenantManagerInfo(c.info.tenantConfig, cid, { status: 'active' });
-    }
-    showToast('تم تفعيل الشركة', 'success');
-    await loadAllCompanies(); filterCompanies();
-  } catch(e) { showToast('خطأ', 'error'); }
-}
+async function activateCompany(cid) { throw new Error('Legacy path disabled; use the secure service.'); }
 
 
-async function resetAdminPin(cid) {
-  const newPin = prompt('أدخل الرمز السري الجديد للمدير (4-6 أرقام):');
-  if (!newPin || newPin.length < 4) { showToast('رمز غير صالح', 'error'); return; }
-  try {
-    await DB.ref(`companies/${cid}/info`).update({ adminPin: newPin });
-    showToast('تم إعادة تعيين الرمز السري', 'success');
-  } catch(e) { showToast('خطأ', 'error'); }
-}
+async function resetAdminPin(cid) { throw new Error('Legacy path disabled; use the secure service.'); }
 
-function confirmDeleteCompany(cid) {
-  const name = allCompanies[cid]?.info?.nameAr || 'الشركة';
-  showConfirm('حذف الشركة', `هل أنت متأكد من حذف "${name}"؟ سيتم حذف جميع بيانات الشركة نهائياً.`, async () => {
-    closeConfirm();
-    showLoading('جاري حذف الشركة...');
-    try {
-      await DB.ref(`companies/${cid}`).remove();
-      hideLoading();
-      showToast('تم حذف الشركة', 'success');
-      delete allCompanies[cid];
-      filterCompanies();
-    } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-  });
-}
+function confirmDeleteCompany(cid) { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== CREATE COMPANY ====================
 function initEmojiGrid() {
@@ -1120,143 +789,14 @@ function renderDefaultWHs() {
   defaultWHs.forEach((wh, i) => {
     const el = document.createElement('div');
     el.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--surface);border-radius:20px;padding:4px 10px;border:1px solid var(--border)';
-    el.innerHTML = `<span style="font-size:13px">🏭 ${wh}</span><button onclick="removeWH(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;line-height:1">×</button>`;
+    el.innerHTML = `<span style="font-size:13px">🏭 ${wh}</span><button data-basma-click="removeWH(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;line-height:1">×</button>`;
     list.appendChild(el);
   });
 }
 
 function removeWH(i) { defaultWHs.splice(i,1); renderDefaultWHs(); }
 
-// يكتب نسخة الإعدادات الأساسية (معلومات الشركة + الإعدادات + فرع افتراضي)
-// داخل مشروع Firebase الخاص بالزبون نفسه (tenantConfig) — هذا هو المشروع
-// اللي يتصل فيه تطبيقا المدير والموظف فعليًا بعد تسجيل الدخول، فلازم
-// تكون بياناته موجودة هناك، مو بس بقاعدة بيانات المورد.
-async function seedTenantCompanyDoc(cid, companyData, warehouseNames, existingAuthedApp) {
-  const ownApp = !existingAuthedApp;
-  const tenantApp = existingAuthedApp || firebase.initializeApp(companyData.info.tenantConfig, 'tenantTemp_' + Date.now());
-  try {
-    const tdb = tenantApp.database();
-    const existing = await tdb.ref(`companies/${cid}/info`).once('value');
-    if (!existing.exists()) {
-      await tdb.ref(`companies/${cid}`).set({ info: companyData.info, settings: companyData.settings });
-      const names = (warehouseNames && warehouseNames.length) ? warehouseNames : ['الفرع الرئيسي'];
-      for (const whName of names) {
-        await tdb.ref(`companies/${cid}/warehouses`).push({ name: whName, pin: '1234', active: true });
-      }
-    } else {
-      // الشركة موجودة أصلاً بمشروعها — لا نلمس بيانات موظفيها وحضورهم،
-      // نكتفي بتحديث معلومات الدخول فقط لاحقًا عبر updateTenantManagerInfo
-    }
-  } finally {
-    if (ownApp) await tenantApp.delete();
-  }
-}
-
-// يحدّث بيانات دخول المدير (يوزر/uid) داخل مشروع الزبون نفسه أيضًا،
-// بدون التأثير على أي بيانات تشغيلية أخرى بذلك المشروع.
-async function updateTenantManagerInfo(tenantConfig, cid, patch) {
-  const tempAppName = 'tenantTemp_' + Date.now();
-  const tenantApp = firebase.initializeApp(tenantConfig, tempAppName);
-  try {
-    await tenantApp.database().ref(`companies/${cid}/info`).update(patch);
-  } finally {
-    await tenantApp.delete();
-  }
-}
-
-async function createCompany() {
-  const nameAr = document.getElementById('nc-name-ar').value.trim();
-  const nameEn = document.getElementById('nc-name-en').value.trim();
-  const adminPin = document.getElementById('nc-admin-pin').value.trim();
-  if (!nameAr || !nameEn) { showToast('أدخل اسم الشركة بالعربية والإنجليزية', 'error'); return; }
-  if (!adminPin || adminPin.length < 4) { showToast('أدخل رمز PIN للمدير (4 أرقام على الأقل)', 'error'); return; }
-  const planKey = document.getElementById('nc-plan').value;
-  const plan = PLANS[planKey];
-  const expiresAt = plan.days ? Date.now() + plan.days * 86400000 : 0;
-  const isShared = document.getElementById('nc-host-shared').checked;
-  const cid = 'c' + Date.now() + Math.random().toString(36).slice(2,7);
-  showLoading('جاري إنشاء الشركة...');
-  try {
-    let fbCfg;
-    if (isShared) {
-      // استضافة مشتركة: نستخدم مشروع الدليل المركزي نفسه، بدون أي إعداد يدوي
-      fbCfg = DIRECTORY_CONFIG;
-    } else {
-      fbCfg = {
-        apiKey: document.getElementById('nc-fb-apiKey').value.trim(),
-        authDomain: document.getElementById('nc-fb-authDomain').value.trim(),
-        databaseURL: document.getElementById('nc-fb-databaseURL').value.trim(),
-        projectId: document.getElementById('nc-fb-projectId').value.trim(),
-        storageBucket: document.getElementById('nc-fb-storageBucket').value.trim(),
-        messagingSenderId: document.getElementById('nc-fb-messagingSenderId').value.trim(),
-        appId: document.getElementById('nc-fb-appId').value.trim()
-      };
-      if (!fbCfg.apiKey || !fbCfg.databaseURL || !fbCfg.projectId) {
-        hideLoading();
-        showToast('يرجى تعبئة بيانات Firebase الخاصة بالزبون (apiKey, databaseURL, projectId)', 'error');
-        return;
-      }
-    }
-    const logo = document.getElementById('nc-logo').value || selectedEmoji || '🏭';
-    const companyData = {
-      info: {
-        nameAr, nameEn, logo,
-        industry: document.getElementById('nc-industry').value,
-        plan: planKey, hosting: isShared ? 'shared' : 'dedicated',
-        maxEmployees: 999999,
-        adminPin, expiresAt, status: 'active',
-        adminEmail: document.getElementById('nc-admin-email').value,
-        adminPhone: document.getElementById('nc-admin-phone').value,
-        createdAt: Date.now(),
-        tenantConfig: fbCfg
-      },
-      settings: {
-        checkIn: { from: document.getElementById('nc-ci-from').value, to: document.getElementById('nc-ci-to').value },
-        checkOut: { from: document.getElementById('nc-co-from').value, to: document.getElementById('nc-co-to').value }
-      }
-    };
-    await DB.ref(`companies/${cid}`).set(companyData);
-    // Add warehouses (نسخة المورد للتتبع فقط)
-    for (const whName of defaultWHs) {
-      const whPin = '1234';
-      await DB.ref(`companies/${cid}/warehouses`).push({ name: whName, pin: whPin, active: true });
-    }
-    if (!defaultWHs.length) {
-      await DB.ref(`companies/${cid}/warehouses`).push({ name: 'الفرع الرئيسي', pin: '1234', active: true });
-    }
-    // Add transaction
-    await DB.ref('seller/transactions').push({ companyId: cid, companyName: nameAr, plan: planKey, amount: plan.price, dateStr: localDateStr(new Date()), date: Date.now(), note: `اشتراك ${plan.label}` });
-    // Seller notification
-    await DB.ref('seller/notifications').push({ type: 'new_company', message: `تم إنشاء شركة جديدة: ${nameAr}`, timestamp: new Date().toISOString(), read: false });
-    lastCreatedCID = cid;
-    lastCreatedData = { nameAr, nameEn };
-    showLoading('جاري إنشاء حساب دخول المدير...');
-    const username = genUsername(nameEn, nameAr);
-    const password = genPassword();
-    // ننشئ حساب المدير أولاً — للاستضافة المشتركة نُبقي جلسته مفتوحة
-    // (keepAlive) ونستخدمها فورًا لزرع بيانات الشركة بنفس مشروع الدليل،
-    // لأن قواعد الأمان هناك تتطلب مصادقة حقيقية، بعكس مشروع VIP الخاص.
-    const { uid: managerUid, app: mgrApp } = await withTimeout(createDirectoryAccount({ role: 'manager', username, password, companyId: cid, companyName: nameAr, tenantConfig: fbCfg, keepAlive: true }), 15000);
-    if (isShared) {
-      await seedTenantCompanyDoc(cid, companyData, defaultWHs, mgrApp);
-      await mgrApp.database().ref(`companies/${cid}/info`).update({ managerUsername: username, managerUid });
-      await mgrApp.delete();
-    } else {
-      await mgrApp.delete();
-      // الأهم: زرع نفس البيانات فعليًا بمشروع Firebase الخاص بالزبون
-      // (هذا هو المشروع اللي يتصل فيه تطبيقا المدير والموظف بعد تسجيل الدخول)
-      await seedTenantCompanyDoc(cid, companyData, defaultWHs);
-      await updateTenantManagerInfo(fbCfg, cid, { managerUsername: username, managerUid });
-    }
-    await DB.ref(`companies/${cid}/info`).update({ managerUsername: username, managerPassword: password, managerUid });
-    hideLoading();
-    showToast('تم إنشاء الشركة وحساب المدير بنجاح!', 'success');
-    document.getElementById('nc-admin-username').textContent = username;
-    document.getElementById('nc-admin-password').textContent = password;
-    document.getElementById('nc-success').style.display = 'block';
-    document.getElementById('nc-success').scrollIntoView({ behavior: 'smooth' });
-  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-}
+async function createCompany() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 function copyLink(elId) {
   const text = document.getElementById(elId).textContent;
@@ -1309,7 +849,7 @@ async function loadRevenue() {
     if (!transactions.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text2)">لا توجد معاملات</td></tr>'; }
     transactions.slice(0,20).forEach(t => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${t.companyName||t.companyId||'--'}</td><td>📅 ${t.note && t.note.includes('تجديد') ? 'تجديد سنوي' : 'اشتراك سنوي'}</td><td style="color:var(--green);font-weight:700">$${t.amount||0}</td><td>${t.dateStr||new Date(t.date||0).toLocaleDateString('ar-SA')}</td><td>${t.note||'--'}</td>`;
+      tr.innerHTML = `<td>${t.companyName||t.companyId||'--'}</td><td>${t.plan || 'manual'}</td><td style="color:var(--green);font-weight:700">$${t.amount||0}</td><td>${t.dateStr||new Date(t.date||0).toLocaleDateString('ar-SA')}</td><td>${t.note||'--'}</td>`;
       tbody.appendChild(tr);
     });
     // Populate company select
@@ -1414,18 +954,7 @@ async function loadNotifs() {
 }
 
 // ==================== SETTINGS ====================
-async function changeSellerPin() {
-  const newPin = document.getElementById('new-seller-pin').value.trim();
-  const confirm = document.getElementById('confirm-seller-pin').value.trim();
-  if (!newPin || newPin.length < 4) { showToast('الرمز يجب أن يكون 4 أرقام على الأقل', 'error'); return; }
-  if (newPin !== confirm) { showToast('الرمزان غير متطابقان', 'error'); return; }
-  try {
-    await DB.ref('seller/auth/pin').set(newPin);
-    showToast('تم تغيير الرمز بنجاح', 'success');
-    document.getElementById('new-seller-pin').value = '';
-    document.getElementById('confirm-seller-pin').value = '';
-  } catch(e) { showToast('خطأ', 'error'); }
-}
+async function changeSellerPin() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== NAVIGATION ====================
 const pageLoaders = {
@@ -1442,7 +971,7 @@ function showPage(page) {
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const pageEl = document.getElementById('page-'+page);
   if (pageEl) pageEl.classList.add('active');
-  document.querySelector(`.nav-item[onclick*="${page}"]`)?.classList.add('active');
+  document.querySelector(`.nav-item[data-basma-click*="${page}"]`)?.classList.add('active');
   const titles = { dash:'لوحة التحكم', companies:'الشركات', 'new-company':'شركة جديدة', revenue:'الإيرادات', notifs:'الإشعارات', 'my-settings':'الإعدادات' };
   document.getElementById('page-title').textContent = titles[page] || page;
   currentPage = page;
@@ -1475,5 +1004,6 @@ function showToast(msg, type='info') {
 function showLoading(text='جاري التحميل...') { document.getElementById('lo-text').textContent=text; document.getElementById('loading-overlay').classList.add('active'); }
 function hideLoading() { document.getElementById('loading-overlay').classList.remove('active'); }
 </script>
+<script src="/manager/assets/seller.js"></script>
 </body>
 </html>

@@ -2,6 +2,36 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-f+NMH9jdYQyJCrkW49u7e3lF2ciJOG0A2gkVD5CYmZg=' 'sha256-nNhTtcjYSWacRIsrTD6E4tiX9f1XBG2h63K1szkSsGM=' 'sha256-NaCdbowwwUFozbLuVDjk7Kr237NiNLIV0T62JdKxm3Q='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>تسجيل الحضور</title>
@@ -14,9 +44,16 @@
 <link rel="apple-touch-icon" href="./icon-employee-192.png">
 <link rel="icon" href="./icon-employee-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-auth-compat.js"></script>
+<script src="/manager/assets/config.js"></script>
+<script src="/manager/assets/actions.js"></script>
+<script src="/manager/assets/safe-dom.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.4.0/firebase-app-check-compat.js"></script>
+<script src="/manager/assets/core.js"></script>
+
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -297,14 +334,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
   <div class="splash-title" id="splash-company-name">نظام الحضور</div>
   <div class="spinner" id="splash-spinner"></div>
   <div class="splash-sub" id="splash-status">جاري الاتصال...</div>
-  <button class="action-btn" id="retry-btn" style="display:none;width:160px" onclick="initFirebase()">إعادة المحاولة</button>
-</div>
-
-<!-- SUBSCRIPTION BLOCKED -->
-<div class="screen" id="s-sub-blocked" style="align-items:center;justify-content:center;padding:24px;text-align:center">
-  <div style="font-size:56px" id="sub-blocked-icon">⛔</div>
-  <div style="font-size:20px;font-weight:900;color:var(--red);margin-top:12px" id="sub-blocked-title">الاشتراك متوقف</div>
-  <div style="font-size:14px;color:var(--text2);margin-top:10px;line-height:1.8;max-width:320px" id="sub-blocked-msg">يرجى التواصل مع مديرك أو المورّد.</div>
+  <button class="action-btn" id="retry-btn" style="display:none;width:160px" data-basma-click="initFirebase()">إعادة المحاولة</button>
 </div>
 
 <!-- DIRECTORY LOGIN (يظهر مرة واحدة فقط عند أول استخدام للجهاز) -->
@@ -323,7 +353,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
     <input class="form-input" id="dl-emp-password" type="password" placeholder="الرقم السري">
   </div>
   <div id="dl-emp-error" style="color:var(--red);font-size:13px;text-align:center;display:none;margin-bottom:8px"></div>
-  <button class="submit-btn" id="dl-emp-submit" onclick="directoryEmployeeLogin()">✅ دخول</button>
+  <button class="submit-btn" id="dl-emp-submit" data-basma-click="directoryEmployeeLogin()">✅ دخول</button>
 </div>
 
 <!-- WAREHOUSE SELECTION -->
@@ -334,7 +364,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
     <p style="font-size:13px;color:var(--text2)">اختر موقع عملك للمتابعة</p>
   </div>
   <div class="wh-grid" id="wh-grid"></div>
-  <button class="wh-enter-btn" id="wh-enter-btn" disabled onclick="enterWarehouse()">← الدخول للموقع</button>
+  <button class="wh-enter-btn" id="wh-enter-btn" disabled data-basma-click="enterWarehouse()">← الدخول للموقع</button>
 </div>
 
 <!-- PIN MODAL -->
@@ -346,21 +376,21 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="pin-dot"></div><div class="pin-dot"></div>
     </div>
     <div class="pin-keyboard">
-      <button class="pin-key" onclick="pinKey('1')">1</button>
-      <button class="pin-key" onclick="pinKey('2')">2</button>
-      <button class="pin-key" onclick="pinKey('3')">3</button>
-      <button class="pin-key" onclick="pinKey('4')">4</button>
-      <button class="pin-key" onclick="pinKey('5')">5</button>
-      <button class="pin-key" onclick="pinKey('6')">6</button>
-      <button class="pin-key" onclick="pinKey('7')">7</button>
-      <button class="pin-key" onclick="pinKey('8')">8</button>
-      <button class="pin-key" onclick="pinKey('9')">9</button>
+      <button class="pin-key" data-basma-click="pinKey('1')">1</button>
+      <button class="pin-key" data-basma-click="pinKey('2')">2</button>
+      <button class="pin-key" data-basma-click="pinKey('3')">3</button>
+      <button class="pin-key" data-basma-click="pinKey('4')">4</button>
+      <button class="pin-key" data-basma-click="pinKey('5')">5</button>
+      <button class="pin-key" data-basma-click="pinKey('6')">6</button>
+      <button class="pin-key" data-basma-click="pinKey('7')">7</button>
+      <button class="pin-key" data-basma-click="pinKey('8')">8</button>
+      <button class="pin-key" data-basma-click="pinKey('9')">9</button>
       <button class="pin-key empty"></button>
-      <button class="pin-key" onclick="pinKey('0')">0</button>
-      <button class="pin-key del" onclick="pinDel()">⌫</button>
+      <button class="pin-key" data-basma-click="pinKey('0')">0</button>
+      <button class="pin-key del" data-basma-click="pinDel()">⌫</button>
     </div>
     <div class="pin-error" id="pin-error"></div>
-    <button onclick="closePinModal()" style="margin-top:12px;background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:14px;cursor:pointer;width:100%;padding:8px">إلغاء</button>
+    <button data-basma-click="closePinModal()" style="margin-top:12px;background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:14px;cursor:pointer;width:100%;padding:8px">إلغاء</button>
   </div>
 </div>
 
@@ -372,11 +402,11 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
     <div style="font-size:14px;color:var(--text2)" id="login-emp-name"></div>
   </div>
   <div class="bio-section" style="margin-top:32px">
-    <div class="bio-btn" id="login-bio-btn" onclick="loginWithBio()">🫆</div>
+    <div class="bio-btn" id="login-bio-btn" data-basma-click="loginWithBio()">🫆</div>
     <div class="bio-status" id="login-bio-status">اضغط لتسجيل الدخول ببصمتك</div>
     <div class="bio-lock-note"><span>🔒</span><span>بصمتك محفوظة على جهازك فقط</span></div>
   </div>
-  <button onclick="loadWarehouses()" style="margin-top:28px;background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%;padding:10px">← العودة لاختيار الموقع</button>
+  <button data-basma-click="loadWarehouses()" style="margin-top:28px;background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;width:100%;padding:10px">← العودة لاختيار الموقع</button>
 </div>
 
 <!-- REGISTRATION -->
@@ -388,24 +418,24 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
   </div>
   <div class="form-group">
     <label class="form-label">الاسم الكامل *</label>
-    <input class="form-input" id="reg-name" type="text" placeholder="أدخل اسمك الكامل" oninput="checkRegReady()">
+    <input class="form-input" id="reg-name" type="text" placeholder="أدخل اسمك الكامل" data-basma-input="checkRegReady()">
   </div>
   <div class="form-group">
     <label class="form-label">رقم/كود الموظف *</label>
-    <input class="form-input" id="reg-eid" type="text" placeholder="أدخل رقمك الوظيفي" oninput="checkRegReady()">
+    <input class="form-input" id="reg-eid" type="text" placeholder="أدخل رقمك الوظيفي" data-basma-input="checkRegReady()">
   </div>
   <div class="form-group">
     <label class="form-label">المسمى الوظيفي *</label>
-    <input class="form-input" id="reg-role" type="text" placeholder="مثال: محاسب، مشرف، مهندس..." oninput="checkRegReady()">
+    <input class="form-input" id="reg-role" type="text" placeholder="مثال: محاسب، مشرف، مهندس..." data-basma-input="checkRegReady()">
   </div>
   <div class="bio-section">
-    <div class="bio-btn" id="bio-btn" onclick="registerBio()">🫆</div>
+    <div class="bio-btn" id="bio-btn" data-basma-click="registerBio()">🫆</div>
     <div class="bio-status" id="bio-status">اضغط لتسجيل بصمتك</div>
     <div class="bio-lock-note"><span>🔒</span><span>بصمتك محفوظة على جهازك فقط</span></div>
   </div>
-  <button class="submit-btn" id="reg-submit" disabled onclick="submitRegistration()">✅ إرسال طلب التسجيل</button>
+  <button class="submit-btn" id="reg-submit" disabled data-basma-click="submitRegistration()">✅ إرسال طلب التسجيل</button>
   <div style="text-align:center;margin:16px 0 8px">
-    <button onclick="showScreen('s-recover')" style="background:none;border:none;color:var(--gold);font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;text-decoration:underline">📱 غيّرت موبايلك؟ استرجع حسابك هنا</button>
+    <button data-basma-click="showScreen('s-recover')" style="background:none;border:none;color:var(--gold);font-family:'Cairo',sans-serif;font-size:13px;cursor:pointer;text-decoration:underline">📱 غيّرت موبايلك؟ استرجع حسابك هنا</button>
   </div>
   <div style="height:20px"></div>
 </div>
@@ -421,9 +451,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
     <label class="form-label">الرقم الوظيفي *</label>
     <input class="form-input" id="rec-eid" type="text" placeholder="أدخل رقمك الوظيفي">
   </div>
-  <button class="submit-btn" onclick="searchByEmpId()" style="margin-bottom:16px">🔍 بحث عن حسابي</button>
+  <button class="submit-btn" data-basma-click="searchByEmpId()" style="margin-bottom:16px">🔍 بحث عن حسابي</button>
   <div id="rec-result" style="display:none"></div>
-  <button onclick="showScreen('s-reg')" style="background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:14px;cursor:pointer;width:100%;padding:12px;text-align:center">← العودة</button>
+  <button data-basma-click="showScreen('s-reg')" style="background:none;border:none;color:var(--text2);font-family:'Cairo',sans-serif;font-size:14px;cursor:pointer;width:100%;padding:12px;text-align:center">← العودة</button>
 </div>
 
 <!-- ACTIVATE (admin-managed) -->
@@ -440,10 +470,10 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0"><span style="color:var(--text2);font-size:13px">الموقع</span><span id="act-emp-wh" style="font-size:14px"></span></div>
   </div>
   <div class="bio-section">
-    <div class="bio-btn" id="act-bio-btn" onclick="activateBio()">🫆</div>
+    <div class="bio-btn" id="act-bio-btn" data-basma-click="activateBio()">🫆</div>
     <div class="bio-status" id="act-bio-status">اضغط لتسجيل بصمتك</div>
     <div class="bio-lock-note"><span>🔒</span><span>بصمتك محفوظة على جهازك فقط</span></div>
-    <button id="bypass-req-btn" onclick="requestDeviceBypass()" style="display:none;margin-top:12px;background:none;border:1px solid var(--gold);color:var(--gold);font-family:'Cairo',sans-serif;font-size:13px;padding:10px 20px;border-radius:20px;cursor:pointer">📨 تخطي بإذن المدير</button>
+    <p style="font-size:13px">لتغيير الجهاز، تواصل مع مديرك لإعادة تعيين الحساب والبصمة.</p>
     <div id="bypass-status" style="display:none;font-size:13px;color:var(--text2);margin-top:10px;text-align:center"></div>
   </div>
 </div>
@@ -453,7 +483,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
   <div class="pending-icon">⏳</div>
   <div class="pending-title">في انتظار الموافقة</div>
   <div class="pending-desc">تم إرسال طلب تسجيلك بنجاح.<br>انتظر موافقة المدير للدخول.</div>
-  <button class="logout-btn" onclick="doLogout()">تسجيل الخروج</button>
+  <button class="logout-btn" data-basma-click="doLogout()">تسجيل الخروج</button>
 </div>
 
 <!-- MAIN -->
@@ -471,7 +501,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
         <div class="clock-time" id="main-clock">--:--:--</div>
         <div class="clock-date" id="main-date"></div>
       </div>
-      <div class="notif-bell" id="notif-bell" onclick="showTab('notifs')">
+      <div class="notif-bell" id="notif-bell" data-basma-click="showTab('notifs')">
         <span>🔔</span>
         <div class="notif-badge" id="notif-badge" style="display:none">0</div>
       </div>
@@ -514,7 +544,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="gps-bar" id="gps-bar">
         <div class="gps-dot gps-loading" id="gps-dot"></div>
         <div class="gps-text" id="gps-text">جاري تحديد الموقع...</div>
-        <button class="gps-retry" onclick="getGPS()" title="إعادة المحاولة">↻</button>
+        <button class="gps-retry" data-basma-click="getGPS()" title="إعادة المحاولة">↻</button>
       </div>
 
       <!-- Geo zone alert -->
@@ -556,7 +586,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="fp-card" id="fp-card">
         <div class="re-bio-banner" id="re-bio-banner">
           <p>⚠️ لم يتم التعرف على بصمتك — أعد التسجيل</p>
-          <button class="re-bio-btn" onclick="doReBioReg()">إعادة تسجيل البصمة</button>
+          <button class="re-bio-btn" data-basma-click="doReBioReg()">إعادة تسجيل البصمة</button>
         </div>
         <div class="win-msg" id="win-msg">جاري التحميل...</div>
         <div class="fp-main">
@@ -564,8 +594,8 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
           <div class="fp-hint" id="fp-hint">اضغط أحد الزرين أدناه للتسجيل</div>
         </div>
         <div class="fp-actions">
-          <button class="fp-act-btn btn-checkin" id="btn-checkin" disabled onclick="recBio('in')">☀️ تسجيل الحضور</button>
-          <button class="fp-act-btn btn-checkout" id="btn-checkout" disabled onclick="recBio('out')">🌙 تسجيل الانصراف</button>
+          <button class="fp-act-btn btn-checkin" id="btn-checkin" disabled data-basma-click="recBio('in')">☀️ تسجيل الحضور</button>
+          <button class="fp-act-btn btn-checkout" id="btn-checkout" disabled data-basma-click="recBio('out')">🌙 تسجيل الانصراف</button>
         </div>
       </div>
 
@@ -595,19 +625,19 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 
   <!-- BOTTOM NAV -->
   <div class="bottom-nav">
-    <div class="nav-tab active" id="nav-home" onclick="showTab('home')">
+    <div class="nav-tab active" id="nav-home" data-basma-click="showTab('home')">
       <span class="nav-icon">🏠</span><span class="nav-label">الرئيسية</span>
     </div>
-    <div class="nav-tab" id="nav-hist" onclick="showTab('hist')">
+    <div class="nav-tab" id="nav-hist" data-basma-click="showTab('hist')">
       <span class="nav-icon">📅</span><span class="nav-label">سجلاتي</span>
     </div>
-    <div class="nav-tab" id="nav-excuse" onclick="showTab('excuse')">
+    <div class="nav-tab" id="nav-excuse" data-basma-click="showTab('excuse')">
       <span class="nav-icon">📝</span><span class="nav-label">عذر</span>
     </div>
-    <div class="nav-tab" id="nav-leave" onclick="showTab('leave')">
+    <div class="nav-tab" id="nav-leave" data-basma-click="showTab('leave')">
       <span class="nav-icon">🌴</span><span class="nav-label">إجازة</span>
     </div>
-    <div class="nav-tab" id="nav-notifs" onclick="showTab('notifs')">
+    <div class="nav-tab" id="nav-notifs" data-basma-click="showTab('notifs')">
       <span class="nav-icon">🔔</span><span class="nav-label">إشعارات</span>
       <div class="nav-badge" id="nav-notif-badge" style="display:none">0</div>
     </div>
@@ -615,15 +645,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 </div>
 
 <script>
-// يحوّل أي Date إلى "YYYY-MM-DD" حسب التوقيت المحلي لجهاز المستخدم
-// (بدل UTC) — يمنع تسجيل حضور قريب من منتصف الليل بتوقيت العراق
-// (UTC+3) تحت تاريخ اليوم السابق بالخطأ.
-function localDateStr(d) {
-  d = d || new Date();
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - off).toISOString().split('T')[0];
-}
-
 let DB, COMPANY_ID, COMPANY_INFO = {}, EMP = null, SETTINGS = null;
 let GPS_DATA = { lat: null, lng: null, name: null };
 let CRED_ID = null, SERVER_TIME_OFFSET = 0, SELECTED_WH = null, WAREHOUSE_GEO_ZONE = null, WAREHOUSE_SCHEDULE = null;
@@ -631,22 +652,6 @@ let clockInterval = null, notifListener = null, notifPageListener = null;
 let pendingListener = null, todayChangeListener = null;
 let ACTIVATION_TOKEN = null, ACTIVATION_UID = null, bypassApproved = false;
 let GEO_ZONE_OK = null;
-let isBioPending=false;
-let _bioAbortController=null;
-
-async function checkPlatformAuthAvailable(){
-  try{
-    if(!window.PublicKeyCredential) return false;
-    if(!PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return true;
-    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-  }catch(e){return true;}
-}
-function withTimeout(promise, ms){
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject({ name:'TimeoutError', message:'Timeout '+ms+'ms' }), ms))
-  ]);
-}
 
 function serverNow() { return new Date(Date.now() + SERVER_TIME_OFFSET); }
 
@@ -659,132 +664,15 @@ function getDeviceFingerprint() {
 // ==================== الدليل المركزي (Directory) ====================
 // مشروع Firebase ثابت مشترك: يحوّل اسم مستخدم/رقم سري إلى إعدادات
 // Firebase الخاصة بشركة هذا الموظف + معرّف سجله داخل قاعدة بيانات الشركة.
-const DIRECTORY_CONFIG = {
-  apiKey: "AIzaSyA569Cn0DbbJ-gZIAEtAI4-Y1qOU9Wzfps",
-  authDomain: "signature-7706e.firebaseapp.com",
-  databaseURL: "https://signature-7706e-default-rtdb.firebaseio.com",
-  projectId: "signature-7706e",
-  storageBucket: "signature-7706e.firebasestorage.app",
-  messagingSenderId: "25739438341",
-  appId: "1:25739438341:web:a394b046ed29d96bd36f6c"
-};
+
 const DIRECTORY_EMAIL_DOMAIN = 'basma.app';
 
-function getStoredTenant() {
-  const cfg = localStorage.getItem('emp_tenant_cfg');
-  const cid = localStorage.getItem('emp_tenant_company_id');
-  if (cfg && cid) { try { return { tenantConfig: JSON.parse(cfg), companyId: cid }; } catch(e) {} }
-  return null;
-}
+function getStoredTenant() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== INIT ====================
-async function initFirebase() {
-  document.getElementById('splash-status').textContent = 'جاري الاتصال...';
-  document.getElementById('splash-spinner').style.display = 'block';
-  document.getElementById('retry-btn').style.display = 'none';
+async function initFirebase() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-  const stored = getStoredTenant();
-  if (!stored) {
-    // أول استخدام على هذا الجهاز — نطلب اسم المستخدم والرقم السري
-    document.getElementById('splash-spinner').style.display = 'none';
-    showScreen('s-dirlogin');
-    return;
-  }
-  try {
-    COMPANY_ID = stored.companyId;
-    if (!firebase.apps.length) firebase.initializeApp(stored.tenantConfig);
-    DB = firebase.database();
-    const offSnap = await DB.ref('.info/serverTimeOffset').once('value');
-    SERVER_TIME_OFFSET = offSnap.val() || 0;
-    await loadCompanyInfo();
-    if (checkSubscriptionBlocked()) return;
-    restoreSession();
-  } catch(e) {
-    document.getElementById('splash-status').textContent = 'فشل الاتصال — تحقق من الإنترنت';
-    document.getElementById('splash-spinner').style.display = 'none';
-    document.getElementById('retry-btn').style.display = 'block';
-  }
-}
-
-async function directoryEmployeeLogin() {
-  const username = document.getElementById('dl-emp-username').value.trim();
-  const password = document.getElementById('dl-emp-password').value;
-  const err = document.getElementById('dl-emp-error');
-  err.style.display = 'none';
-  if (!username || !password) {
-    err.textContent = 'يرجى إدخال اسم المستخدم والرقم السري';
-    err.style.display = 'block'; return;
-  }
-  const btn = document.getElementById('dl-emp-submit');
-  btn.disabled = true; btn.textContent = 'جاري التحقق...';
-  try {
-    const dirApp = firebase.apps.find(a => a.name === 'directoryApp') || firebase.initializeApp(DIRECTORY_CONFIG, 'directoryApp');
-    const email = `${username}@${DIRECTORY_EMAIL_DOMAIN}`;
-    const cred = await dirApp.auth().signInWithEmailAndPassword(email, password);
-    const uid = cred.user.uid;
-    const snap = await dirApp.database().ref(`directory/employees/${uid}`).once('value');
-    const record = snap.val();
-    if (!record || record.active === false) {
-      await dirApp.auth().signOut();
-      err.textContent = 'الحساب غير موجود أو معطّل — تواصل مع مديرك';
-      err.style.display = 'block';
-      btn.disabled = false; btn.textContent = '✅ دخول';
-      return;
-    }
-    localStorage.setItem('emp_tenant_cfg', JSON.stringify(record.tenantConfig));
-    localStorage.setItem('emp_tenant_company_id', record.companyId);
-    COMPANY_ID = record.companyId;
-    const tenantApp = firebase.initializeApp(record.tenantConfig, 'tenantApp');
-    DB = tenantApp.database();
-    const offSnap = await DB.ref('.info/serverTimeOffset').once('value');
-    SERVER_TIME_OFFSET = offSnap.val() || 0;
-    await loadCompanyInfo();
-    if (checkSubscriptionBlocked()) { btn.disabled = false; btn.textContent = '✅ دخول'; return; }
-    // مطابق تمامًا لمسار التفعيل القديم، بدون حاجة لرابط أو رمز تفعيل
-    const empSnap = await DB.ref(`companies/${COMPANY_ID}/employees/${record.employeeId}`).once('value');
-    const empData = empSnap.val();
-    if (!empData) {
-      err.textContent = 'لم يُعثر على بيانات الموظف — تواصل مع مديرك';
-      err.style.display = 'block';
-      btn.disabled = false; btn.textContent = '✅ دخول';
-      return;
-    }
-    ACTIVATION_TOKEN = null;
-    ACTIVATION_UID = record.employeeId;
-    localStorage.removeItem('ap_emp'); localStorage.removeItem('ap_wh');
-    Object.keys(localStorage).filter(k => k.startsWith('ap_cred_')).forEach(k => localStorage.removeItem(k));
-    document.getElementById('act-logo').textContent = COMPANY_INFO.logo || '🏭';
-    document.getElementById('act-emp-name').textContent = empData.name || '';
-    document.getElementById('act-emp-id').textContent = empData.empId || '';
-    document.getElementById('act-emp-role').textContent = empData.role || '--';
-    document.getElementById('act-emp-wh').textContent = empData.warehouseName || '--';
-    showScreen('s-activate');
-  } catch(e) {
-    err.textContent = 'اسم المستخدم أو الرقم السري غير صحيح';
-    err.style.display = 'block';
-    btn.disabled = false; btn.textContent = '✅ دخول';
-  }
-}
-
-function checkSubscriptionBlocked() {
-  const now = Date.now();
-  const info = COMPANY_INFO || {};
-  if (info.status === 'suspended') {
-    document.getElementById('sub-blocked-icon').textContent = '⛔';
-    document.getElementById('sub-blocked-title').textContent = 'الاشتراك موقوف مؤقتًا';
-    document.getElementById('sub-blocked-msg').textContent = 'تم إيقاف اشتراك شركتك مؤقتًا. يرجى التواصل مع مديرك.';
-    showScreen('s-sub-blocked');
-    return true;
-  }
-  if (info.expiresAt && info.expiresAt > 0 && info.expiresAt < now) {
-    document.getElementById('sub-blocked-icon').textContent = '⏰';
-    document.getElementById('sub-blocked-title').textContent = 'انتهت صلاحية الاشتراك';
-    document.getElementById('sub-blocked-msg').textContent = 'انتهت مدة اشتراك شركتك. يرجى التواصل مع مديرك للتجديد.';
-    showScreen('s-sub-blocked');
-    return true;
-  }
-  return false;
-}
+async function directoryEmployeeLogin() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 async function loadCompanyInfo() {
   const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
@@ -798,21 +686,7 @@ async function loadCompanyInfo() {
   ['wh-company-name','reg-company-name'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = name; });
 }
 
-async function restoreSession() {
-  const savedEmp = localStorage.getItem('ap_emp');
-  if (!savedEmp) { loadWarehouses(); return; }
-  try {
-    const parsed = JSON.parse(savedEmp);
-    const snap = await DB.ref(`companies/${COMPANY_ID}/employees/${parsed.id}`).once('value');
-    const emp = snap.val();
-    if (!emp || emp.status !== 'approved') { localStorage.removeItem('ap_emp'); loadWarehouses(); return; }
-    EMP = { id: parsed.id, ...emp };
-    CRED_ID = localStorage.getItem('ap_cred_' + parsed.id);
-    if (!CRED_ID) { loadWarehouses(); return; }
-    // Skip login screen — go directly to main
-    await setupMainScreen();
-  } catch(e) { localStorage.removeItem('ap_emp'); loadWarehouses(); }
-}
+async function restoreSession() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 async function loginWithBio() {
   const btn = document.getElementById('login-bio-btn');
@@ -832,36 +706,7 @@ async function loginWithBio() {
 }
 
 // ==================== WAREHOUSES ====================
-async function loadWarehouses() {
-  showScreen('s-wh');
-  const grid = document.getElementById('wh-grid');
-  grid.innerHTML = '<div style="grid-column:span 2;text-align:center;padding:40px;color:var(--text2)"><div class="spinner" style="margin:0 auto"></div></div>';
-  document.getElementById('wh-enter-btn').disabled = true;
-  SELECTED_WH = null;
-  try {
-    const snap = await DB.ref(`companies/${COMPANY_ID}/warehouses`).once('value');
-    const warehouses = snap.val() || {};
-    grid.innerHTML = '';
-    for (const [id, wh] of Object.entries(warehouses)) {
-      if (wh.active === false) continue;
-      const card = document.createElement('div');
-      card.className = 'wh-card';
-      card.dataset.id = id;
-      card.onclick = () => selectWH(card, id, wh);
-      card.innerHTML = `<div class="icon">🏢</div><div class="name">${wh.name}</div>`;
-      grid.appendChild(card);
-    }
-    if (!grid.children.length) grid.innerHTML = '<div style="grid-column:span 2;text-align:center;padding:40px;color:var(--text2)">لا توجد مواقع</div>';
-    const savedEmp = localStorage.getItem('ap_emp');
-    if (!savedEmp) return;
-    const parsed = JSON.parse(savedEmp);
-    const snap2 = await DB.ref(`companies/${COMPANY_ID}/employees/${parsed.id}`).once('value');
-    const emp = snap2.val();
-    if (!emp) return;
-    const matchCard = grid.querySelector(`[data-id="${emp.warehouseId}"]`);
-    if (matchCard) selectWH(matchCard, emp.warehouseId, warehouses[emp.warehouseId]);
-  } catch(e) { grid.innerHTML = '<div style="grid-column:span 2;text-align:center;color:var(--red);padding:20px">خطأ في التحميل</div>'; }
-}
+async function loadWarehouses() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 function selectWH(card, id, wh) {
   document.querySelectorAll('.wh-card').forEach(c => c.classList.remove('selected'));
@@ -914,36 +759,7 @@ async function checkPin() {
 
 // ==================== REGISTRATION ====================
 let bioCredential = null;
-async function registerBio() {
-  const btn = document.getElementById('bio-btn');
-  const status = document.getElementById('bio-status');
-  btn.classList.add('scanning');
-  status.textContent = 'جاري تسجيل البصمة...';
-  try {
-    const challenge = new Uint8Array(32);
-    crypto.getRandomValues(challenge);
-    let userIdBytes;
-    try { userIdBytes = new TextEncoder().encode(crypto.randomUUID()); } catch { userIdBytes = crypto.getRandomValues(new Uint8Array(16)); }
-    const credential = await navigator.credentials.create({
-      publicKey: {
-        challenge,
-        rp: { name: 'نظام الحضور', id: location.hostname },
-        user: { id: userIdBytes, name: 'employee', displayName: 'موظف' },
-        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
-        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', requireResidentKey: false },
-        timeout: 60000
-      }
-    });
-    bioCredential = credential;
-    btn.classList.remove('scanning'); btn.classList.add('success'); btn.innerHTML = '✅';
-    status.textContent = 'تم تسجيل البصمة بنجاح'; status.style.color = 'var(--green)';
-    checkRegReady();
-  } catch(e) {
-    btn.classList.remove('scanning');
-    status.textContent = e.name === 'NotAllowedError' ? 'لم تسمح بالبصمة — حاول مجدداً' : 'فشل تسجيل البصمة';
-    status.style.color = 'var(--red)';
-  }
-}
+async function registerBio() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 function checkRegReady() {
   const name = document.getElementById('reg-name').value.trim();
@@ -952,92 +768,11 @@ function checkRegReady() {
   document.getElementById('reg-submit').disabled = !(name && eid && role && bioCredential);
 }
 
-async function submitRegistration() {
-  const name = document.getElementById('reg-name').value.trim();
-  const eid = document.getElementById('reg-eid').value.trim();
-  const role = document.getElementById('reg-role').value.trim();
-  const wh = JSON.parse(localStorage.getItem('ap_wh') || 'null');
-  if (!name || !eid || !role || !wh || !bioCredential) return;
-  showLoading('جاري التسجيل...');
-  try {
-    const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(bioCredential.rawId)));
-    const newEmp = {
-      name, empId: eid, role,
-      warehouseId: wh.id, warehouseName: wh.name,
-      credId: credIdB64, deviceFingerprint: getDeviceFingerprint(),
-      status: 'pending', createdAt: Date.now() + SERVER_TIME_OFFSET
-    };
-    const ref = DB.ref(`companies/${COMPANY_ID}/employees`).push();
-    await ref.set(newEmp);
-    const uid = ref.key;
-    localStorage.setItem('ap_emp', JSON.stringify({ id: uid }));
-    localStorage.setItem('ap_cred_' + uid, credIdB64);
-    EMP = { id: uid, ...newEmp };
-    CRED_ID = credIdB64;
-    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
-      type: 'new_reg', empId: uid, empName: name,
-      message: `👤 ${name} طلب التسجيل في ${wh.name}`,
-      timestamp: new Date().toISOString(), read: false
-    });
-    hideLoading();
-    showScreen('s-pending');
-    listenPending();
-  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-}
+async function submitRegistration() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function searchByEmpId() {
-  const eid = document.getElementById('rec-eid').value.trim();
-  if (!eid) { showToast('أدخل رقمك الوظيفي', 'error'); return; }
-  showLoading('جاري البحث...');
-  const resultDiv = document.getElementById('rec-result');
-  try {
-    const snap = await DB.ref(`companies/${COMPANY_ID}/employees`).orderByChild('empId').equalTo(eid).once('value');
-    hideLoading();
-    if (!snap.exists()) { resultDiv.innerHTML = '<div style="color:var(--red);text-align:center;padding:16px;background:var(--card);border-radius:12px">❌ لم يُعثر على حساب بهذا الرقم</div>'; resultDiv.style.display = 'block'; return; }
-    let uid, empData;
-    snap.forEach(c => { uid = c.key; empData = c.val(); });
-    if (empData.status === 'pending') { resultDiv.innerHTML = '<div style="color:var(--gold);text-align:center;padding:16px;background:var(--card);border-radius:12px">⏳ حسابك لا يزال في انتظار موافقة المدير</div>'; resultDiv.style.display = 'block'; return; }
-    if (empData.status !== 'approved') { resultDiv.innerHTML = '<div style="color:var(--red);text-align:center;padding:16px;background:var(--card);border-radius:12px">⛔ حسابك غير مفعّل</div>'; resultDiv.style.display = 'block'; return; }
-    resultDiv.innerHTML = `
-      <div style="background:var(--card);border:1px solid var(--gold);border-radius:14px;padding:16px;margin-bottom:16px;text-align:center">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:6px">✅ تم العثور على حسابك</div>
-        <div style="font-size:20px;font-weight:700;margin-bottom:4px">${empData.name}</div>
-        <div style="font-size:13px;color:var(--gold)">${empData.role}</div>
-      </div>
-      <div class="bio-btn" id="rec-bio-btn" onclick="recoverBio('${uid}')" style="margin:0 auto 10px;display:flex">🫆</div>
-      <div id="rec-bio-status" style="text-align:center;font-size:13px;color:var(--text2);margin-bottom:8px">اضغط لتسجيل البصمة على جهازك الجديد</div>`;
-    resultDiv.style.display = 'block';
-  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-}
+async function searchByEmpId() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function recoverBio(uid) {
-  const bioBtn = document.getElementById('rec-bio-btn');
-  const bioStatus = document.getElementById('rec-bio-status');
-  bioBtn.classList.add('scanning');
-  try {
-    const challenge = new Uint8Array(32);
-    crypto.getRandomValues(challenge);
-    const credential = await navigator.credentials.create({
-      publicKey: {
-        challenge, rp: { name: 'نظام الحضور', id: location.hostname },
-        user: { id: new Uint8Array(16), name: 'employee', displayName: 'موظف' },
-        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
-        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
-        timeout: 60000
-      }
-    });
-    const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
-    await DB.ref(`companies/${COMPANY_ID}/employees/${uid}`).update({ credId: credIdB64, deviceFingerprint: getDeviceFingerprint() });
-    localStorage.setItem('ap_emp', JSON.stringify({ id: uid }));
-    localStorage.setItem('ap_cred_' + uid, credIdB64);
-    bioBtn.classList.remove('scanning'); bioBtn.innerHTML = '✅';
-    bioStatus.textContent = 'تم! جاري تحميل حسابك...'; bioStatus.style.color = 'var(--green)';
-    setTimeout(() => location.reload(), 1200);
-  } catch(e) {
-    bioBtn.classList.remove('scanning');
-    bioStatus.textContent = 'فشل تسجيل البصمة — حاول مرة أخرى'; bioStatus.style.color = 'var(--red)';
-  }
-}
+async function recoverBio(uid) { throw new Error('Legacy path disabled; use the secure service.'); }
 
 function listenPending() {
   if (!EMP) return;
@@ -1055,15 +790,6 @@ async function setupMainScreen() {
   updateClock();
   if (clockInterval) clearInterval(clockInterval);
   clockInterval = setInterval(updateClock, 1000);
-  if (!window._empSubCheckInterval) {
-    window._empSubCheckInterval = setInterval(async () => {
-      try {
-        const snap = await DB.ref(`companies/${COMPANY_ID}/info`).once('value');
-        COMPANY_INFO = snap.val() || COMPANY_INFO;
-        checkSubscriptionBlocked();
-      } catch(e) {}
-    }, 300000); // كل 5 دقائق — يقفل التطبيق فورًا لو الشركة انعلّقت أو انتهى اشتراكها أثناء الاستخدام
-  }
   document.getElementById('profile-avatar').textContent = (EMP.name || '?')[0];
   document.getElementById('profile-name').textContent = EMP.name;
   document.getElementById('profile-id').textContent = 'الرقم الوظيفي: ' + EMP.empId;
@@ -1074,11 +800,10 @@ async function setupMainScreen() {
   await loadWinStatus();
   await loadTodayStats();
   await loadMonthlyDelay();
-  loadNotifBadge();
-  checkActiveMissions();
+  // v5: notifications and missions load only when their tabs are opened.
   if (todayChangeListener) DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).off('value', todayChangeListener);
-  todayChangeListener = DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).on('value', () => {
-    loadWinStatus(); loadTodayStats();
+  todayChangeListener = DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).on('value', snapshot => {
+    secureAttendanceWindows.updateToday(snapshot); loadTodayStats(); loadMonthlyDelay();
   });
 }
 
@@ -1124,7 +849,7 @@ function getEmpSchedule() {
 async function loadMonthlyDelay() {
   try {
     const now = serverNow();
-    const todayStr = localDateStr(now);
+    const todayStr = now.toISOString().split('T')[0];
     const snap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
     let d = snap.val() || {};
     if (d.dateKey && d.dateKey !== todayStr) d = {};
@@ -1160,21 +885,14 @@ function checkGeoZone() {
   }
 
   let inside = false;
-  // نضيف "هامش تسامح" لهامش خطأ قياس GPS نفسه (Accuracy) — الجهاز نادرًا
-  // ما يعطي موقعًا دقيقًا ١٠٠٪، خصوصًا داخل المباني. نحدد الهامش بحد
-  // أقصى ١٥٠ متر حتى ما يُستغل لتزوير الموقع.
-  const accuracyBuffer = Math.min(GPS_DATA.accuracy || 0, 150);
 
   if (hasWarehouseGz) {
     // Use warehouse-specific zone (single zone per warehouse)
     const gz = WAREHOUSE_GEO_ZONE;
-    const baseRadius = gz.radius || 300;
-    const dist = getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, gz.lat, gz.lng);
-    inside = dist <= (baseRadius + accuracyBuffer);
+    inside = getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, gz.lat, gz.lng) <= (gz.radius || 300);
     if (!inside) {
       alertEl.style.display = 'flex';
-      const over = Math.round(dist - baseRadius - accuracyBuffer);
-      alertEl.querySelector('.gz-text').textContent = `أنت خارج نطاق ${EMP.warehouseName || 'الفرع'} بمقدار ${over} متر تقريبًا — لا يمكن تسجيل البصمة من هنا`;
+      alertEl.querySelector('.gz-text').textContent = `أنت خارج نطاق ${EMP.warehouseName || 'الفرع'} — لا يمكن تسجيل البصمة من هنا`;
     } else {
       alertEl.style.display = 'none';
     }
@@ -1182,18 +900,13 @@ function checkGeoZone() {
     // Fall back to company-wide zones
     const geoZone = SETTINGS.geoZone;
     const zones = geoZone.zones && geoZone.zones.length ? geoZone.zones : [{ lat: geoZone.lat, lng: geoZone.lng, radius: geoZone.radius || 200 }];
-    let minOver = null;
     for (const z of zones) {
       if (!z.lat || !z.lng) continue;
-      const baseRadius = z.radius || 200;
-      const dist = getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, z.lat, z.lng);
-      if (dist <= (baseRadius + accuracyBuffer)) { inside = true; break; }
-      const over = Math.round(dist - baseRadius - accuracyBuffer);
-      if (minOver === null || over < minOver) minOver = over;
+      if (getDistanceMeters(GPS_DATA.lat, GPS_DATA.lng, z.lat, z.lng) <= (z.radius || 200)) { inside = true; break; }
     }
     if (!inside) {
       alertEl.style.display = 'flex';
-      alertEl.querySelector('.gz-text').textContent = `أنت خارج نطاق الموقع المسموح به بمقدار ${minOver} متر تقريبًا — لا يمكن تسجيل البصمة من هنا`;
+      alertEl.querySelector('.gz-text').textContent = 'أنت خارج نطاق الموقع المسموح به — لا يمكن تسجيل البصمة من هنا';
     } else {
       alertEl.style.display = 'none';
     }
@@ -1227,7 +940,7 @@ async function loadWinStatus() {
     document.getElementById('profile-wh').textContent = empData.warehouseName || EMP.warehouseName || '';
 
     const now = serverNow();
-    const todayStr = localDateStr(now);
+    const todayStr = now.toISOString().split('T')[0];
 
     // Load warehouse-specific geo-zone
     if (EMP.warehouseId) {
@@ -1242,7 +955,7 @@ async function loadWinStatus() {
     }
 
     // Check leave
-    const leaveSnap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const leaveSnap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     let onLeave = false;
     let partialLeaveToday = null; // approved partial leave for today
     leaveSnap.forEach(c => {
@@ -1277,7 +990,7 @@ async function loadWinStatus() {
 
     const todaySnap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
     let todayData = todaySnap.val() || {};
-    if (todayData.dateKey && todayData.dateKey !== todayStr) { await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).remove(); todayData = {}; }
+    if (todayData.dateKey && todayData.dateKey !== todayStr) { todayData = {}; }
 
     const schedule = getEmpSchedule();
     const ci = schedule.checkIn;
@@ -1351,7 +1064,7 @@ async function loadWinStatus() {
 
 function checkHoliday(date, settings) {
   if (date.getDay() === 5) return true;
-  const ds = localDateStr(date);
+  const ds = date.toISOString().split('T')[0];
   if (settings && settings.holidays) {
     for (const h of Object.values(settings.holidays)) { if (h.date === ds && h.active !== false) return true; }
   }
@@ -1359,7 +1072,7 @@ function checkHoliday(date, settings) {
 }
 function getHolidayName(date, settings) {
   if (date.getDay() === 5) return 'الجمعة';
-  const ds = localDateStr(date);
+  const ds = date.toISOString().split('T')[0];
   if (settings && settings.holidays) {
     for (const h of Object.values(settings.holidays)) { if (h.date === ds) return h.name || 'عطلة'; }
   }
@@ -1389,7 +1102,7 @@ async function loadTodayStats() {
   try {
     const snap = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
     let d = snap.val() || {};
-    const todayStr = localDateStr(serverNow());
+    const todayStr = serverNow().toISOString().split('T')[0];
     if (d.dateKey && d.dateKey !== todayStr) d = {};
     document.getElementById('stat-in').textContent = d.checkIn ? format12(d.checkIn) : '--';
     document.getElementById('stat-out').textContent = d.checkOut ? format12(d.checkOut) : '--';
@@ -1419,13 +1132,12 @@ function getGPS() {
   const text = document.getElementById('gps-text');
   dot.className = 'gps-dot gps-loading';
   text.textContent = 'جاري تحديد الموقع...';
-  GPS_DATA = { lat: null, lng: null, name: null, accuracy: null };
+  GPS_DATA = { lat: null, lng: null, name: null };
   GEO_ZONE_OK = null;
   if (!navigator.geolocation) { dot.className = 'gps-dot gps-err'; text.textContent = 'الموقع غير متاح على هذا الجهاز'; GEO_ZONE_OK = true; return; }
   navigator.geolocation.getCurrentPosition(
     async pos => {
       GPS_DATA.lat = pos.coords.latitude; GPS_DATA.lng = pos.coords.longitude;
-      GPS_DATA.accuracy = pos.coords.accuracy || 0;
       dot.className = 'gps-dot gps-ok';
       text.textContent = 'جاري تحديد اسم الموقع...';
       try {
@@ -1442,215 +1154,19 @@ function getGPS() {
 }
 
 // ==================== BIO / RECORD ====================
-async function recBio(type) {
-  const now = serverNow();
-  if (checkHoliday(now, SETTINGS)) { showToast('اليوم عطلة — لا يمكن التسجيل', 'error'); return; }
+async function recBio(type) { throw new Error('Legacy path disabled; use the secure service.'); }
 
-  // FEATURE 4: Geo zone enforcement (يشمل نطاق الفرع الخاص، مو بس النطاق العام للشركة)
-  const hasGzMain = (WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false)
-                  || (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled);
-  if (hasGzMain && GEO_ZONE_OK === false) {
-    showToast('أنت خارج نطاق الموقع المسموح به', 'error'); return;
-  }
-  if (hasGzMain && GEO_ZONE_OK === null) {
-    showToast('جاري تحديد موقعك — انتظر لحظة', 'info'); return;
-  }
-
-  const [sSnap, empSnap, offSnap, todaySnapEarly] = await Promise.all([
-    DB.ref(`companies/${COMPANY_ID}/settings`).once('value'),
-    DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value'),
-    DB.ref('.info/serverTimeOffset').once('value'),
-    DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value')
-  ]);
-  SETTINGS = sSnap.val() || {};
-  const empData = empSnap.val() || {};
-  if (empData.schedule) EMP.schedule = empData.schedule;
-  SERVER_TIME_OFFSET = offSnap.val() || 0;
-  const freshNow = serverNow();
-  const todayKey = localDateStr(freshNow);
-  let todayData = todaySnapEarly.val() || {};
-  if (todayData.dateKey && todayData.dateKey !== todayKey) { await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).remove(); todayData = {}; }
-  const schedule = getEmpSchedule();
-  const ci = schedule.checkIn; const co = schedule.checkOut;
-  const nm = freshNow.getHours() * 60 + freshNow.getMinutes();
-  if (type === 'in' && !(nm >= timeToMins(ci.from) && nm <= timeToMins(ci.to))) { showToast('ليس وقت تسجيل الحضور حالياً', 'error'); return; }
-  if (type === 'out' && !(nm >= timeToMins(co.from) && nm <= timeToMins(co.to))) { showToast('ليس وقت تسجيل الانصراف حالياً', 'error'); return; }
-  const empSnap2 = await DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value');
-  if (!empSnap2.exists() || empSnap2.val().status !== 'approved') { showToast('حسابك غير مفعّل', 'error'); localStorage.removeItem('ap_emp'); location.reload(); return; }
-  if (type === 'in' && todayData.checkIn) { showToast('سجّلت حضورك مسبقاً اليوم', 'error'); return; }
-  if (type === 'out' && !todayData.checkIn && todayData.excuseCheckout !== true) { showToast('يجب تسجيل حضورك أولاً قبل تسجيل الانصراف', 'error'); return; }
-  if (type === 'out' && todayData.checkOut) { showToast('سجّلت انصرافك مسبقاً اليوم', 'error'); return; }
-
-  if(isBioPending){ showToast('يوجد طلب بصمة قيد التنفيذ - انتظر...','info'); return; }
-  const fpIcon = document.getElementById('fp-icon');
-  const fpHint = document.getElementById('fp-hint');
-  const btnIn = document.getElementById('btn-checkin');
-  const btnOut = document.getElementById('btn-checkout');
-  if(btnIn) btnIn.disabled=true;
-  if(btnOut) btnOut.disabled=true;
-  fpIcon.classList.add('scanning');
-  if(fpHint) fpHint.textContent='جاري طلب بصمة الجهاز...';
-  try {
-    await verifyBio();
-    fpIcon.classList.remove('scanning'); fpIcon.innerHTML = '✅';
-    if(fpHint) fpHint.textContent='✅ تم التحقق';
-    if(btnIn) btnIn.disabled=false;
-    if(btnOut) btnOut.disabled=false;
-    setTimeout(() => { fpIcon.innerHTML = '🫆'; if(fpHint) fpHint.textContent='اضغط أحد الزرين أدناه للتسجيل'; }, 2000);
-  } catch(e) {
-    fpIcon.classList.remove('scanning');
-    fpIcon.innerHTML='🫆';
-    if(fpHint) fpHint.textContent='فشل: '+(e.message||e.name);
-    if(btnIn) btnIn.disabled=false;
-    if(btnOut) btnOut.disabled=false;
-    console.error('[recBio] failed', e);
-    if (e.name === 'DeviceReplaced') { showToast('تم استبدال جهازك — يُعاد تحميل التطبيق', 'error'); setTimeout(() => location.reload(), 2500); }
-    else if (e.name === 'CredMismatch') { showToast('معرف البصمة مختلف - اضغط إعادة تسجيل البصمة', 'error'); showReBioBanner(); }
-    else if (e.name === 'NotAllowedError') { showToast(e.message||'لم يتم التعرف على البصمة', 'error'); showReBioBanner(); }
-    else if (e.name === 'TimeoutError') { showToast('انتهت مهلة البصمة - تأكد أن البصمة مفعلة وحاول مجددا', 'error'); }
-    else if (e.name === 'AlreadyPending') { showToast('يوجد طلب معلق - أغلق المتصفح تماما وأعد فتحه', 'error'); }
-    else if (e.name === 'AbortError') { showToast('تم إلغاء الطلب - حاول مجددا', 'info'); }
-    else if (e.name === 'NotSupported' || e.name==='InvalidCredId') { showToast(e.message, 'error'); if(e.name==='InvalidCredId') showReBioBanner(); }
-    else { showToast('فشل التحقق: '+(e.message||e.name), 'error'); showReBioBanner(); }
-    return;
-  }
-
-  showLoading(type === 'in' ? 'جاري تسجيل الحضور...' : 'جاري تسجيل الانصراف...');
-  try {
-    const isoNow = freshNow.toISOString();
-    // FEATURE 2: Calculate delay for check-in
-    let delayMins = 0;
-    if (type === 'in') {
-      const ciFromMins = timeToMins(ci.from);
-      delayMins = Math.max(0, nm - ciFromMins);
-    }
-    await DB.ref(`companies/${COMPANY_ID}/records`).push({
-      empId: EMP.id, empName: EMP.name, type, timestamp: isoNow,
-      lat: GPS_DATA.lat, lng: GPS_DATA.lng, locationName: GPS_DATA.name || '',
-      locStatus: 'pending', warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
-      delayMins
-    });
-    const todayUpdate = { dateKey: todayKey, empId: EMP.id, empName: EMP.name, warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName };
-    if (type === 'in') { todayUpdate.checkIn = isoNow; todayUpdate.locationName = GPS_DATA.name || ''; todayUpdate.delayMins = delayMins; }
-    else { todayUpdate.checkOut = isoNow; }
-    await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).update(todayUpdate);
-    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
-      type: type === 'in' ? 'checkin' : 'checkout', empId: EMP.id, empName: EMP.name,
-      message: `${EMP.name} سجّل ${type === 'in' ? 'حضوره' : 'انصرافه'} الساعة ${format12(isoNow)}${type === 'in' && delayMins > 0 ? ` (تأخير ${delayMins} د)` : ''}`,
-      timestamp: isoNow, read: false
-    });
-    hideLoading();
-    showToast(type === 'in' ? '✅ تم تسجيل الحضور' : '🚪 تم تسجيل الانصراف', 'success');
-    await loadWinStatus(); await loadTodayStats(); await loadMonthlyDelay();
-  } catch(e) { hideLoading(); showToast('خطأ في التسجيل: ' + e.message, 'error'); }
-}
-
-async function verifyBio() {
-  console.log('[verifyBio] START CRED_ID?', !!CRED_ID, 'pending?', isBioPending);
-  if(isBioPending){
-    console.warn('[verifyBio] Already pending, abort previous');
-    if(_bioAbortController){ try{_bioAbortController.abort();}catch(e){} }
-    await new Promise(r=>setTimeout(r,400));
-  }
-  if (!CRED_ID) {
-    throw { name: 'NotAllowedError', message: 'لا يوجد معرف بصمة - اضغط إعادة تسجيل البصمة' };
-  }
-  const platformAvailable = await checkPlatformAuthAvailable();
-  console.log('[verifyBio] platformAvailable', platformAvailable);
-  if(!platformAvailable){
-    throw { name: 'NotSupported', message: 'الجهاز لا يدعم بصمة النظام أو البصمة غير مفعلة' };
-  }
-  let empData=null;
-  try {
-    const empSnap = await withTimeout(DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).once('value'), 8000);
-    empData = empSnap.val();
-  } catch(e) {
-    console.warn('[verifyBio] fetch emp failed', e);
-  }
-  if (empData) {
-    if (empData.credId && empData.credId !== CRED_ID) {
-      throw { name: 'CredMismatch', message: 'معرف البصمة في السيرفر مختلف - أعد التسجيل' };
-    }
-  }
-  const challenge = new Uint8Array(32);
-  crypto.getRandomValues(challenge);
-  let credIdBytes;
-  try {
-    credIdBytes = Uint8Array.from(atob(CRED_ID), c => c.charCodeAt(0));
-  } catch(e) {
-    throw { name: 'InvalidCredId', message: 'معرف البصمة تالف: '+e.message };
-  }
-  if (!window.PublicKeyCredential) {
-    throw { name: 'NotSupported', message: 'المتصفح لا يدعم البصمة - استخدم Chrome' };
-  }
-  if(_bioAbortController){ try{_bioAbortController.abort();}catch(_){} }
-  _bioAbortController = new AbortController();
-  isBioPending = true;
-  try {
-    console.log('[verifyBio] Calling get...');
-    const cred = await withTimeout(
-      navigator.credentials.get({
-        signal: _bioAbortController.signal,
-        publicKey: {
-          challenge,
-          allowCredentials: [{ id: credIdBytes, type: 'public-key', transports: ['internal'] }],
-          userVerification: 'required',
-          timeout: 30000
-        }
-      }),
-      35000
-    );
-    console.log('[verifyBio] SUCCESS');
-    isBioPending = false;
-    _bioAbortController = null;
-    return cred;
-  } catch(e) {
-    isBioPending = false;
-    _bioAbortController = null;
-    console.error('[verifyBio] FAILED', e.name, e.message);
-    if(e.name==='AbortError'){
-      throw { name: 'AbortError', message: 'تم إلغاء طلب البصمة' };
-    }
-    if(e.name==='NotAllowedError' && e.message && e.message.includes('already pending')){
-      throw { name: 'AlreadyPending', message: 'يوجد طلب بصمة معلق - أغلق التطبيق وأعد فتحه' };
-    }
-    if(e.name==='NotAllowedError') throw e;
-    else if(e.name==='TimeoutError') throw { name:'TimeoutError', message:'انتهت مهلة البصمة - تأكد أن البصمة مفعلة' };
-    else if(e.name==='InvalidStateError') throw { name:'NotAllowedError', message:'البصمة غير متاحة - أعد التسجيل' };
-    else if(e.name==='NotSupportedError') throw { name:'NotSupported', message:'الجهاز لا يدعم البصمة' };
-    else throw e;
-  }
-}
+async function verifyBio() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 function showReBioBanner() { document.getElementById('re-bio-banner').style.display = 'block'; }
 
-async function doReBioReg() {
-  try {
-    const challenge = new Uint8Array(32);
-    crypto.getRandomValues(challenge);
-    const credential = await navigator.credentials.create({
-      publicKey: {
-        challenge, rp: { name: 'نظام الحضور', id: location.hostname },
-        user: { id: (()=>{ try{return new TextEncoder().encode(crypto.randomUUID());}catch{return crypto.getRandomValues(new Uint8Array(16));} })(), name: EMP.empId, displayName: EMP.name },
-        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
-        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
-        timeout: 60000
-      }
-    });
-    const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
-    CRED_ID = credIdB64;
-    localStorage.setItem('ap_cred_' + EMP.id, credIdB64);
-    await DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}`).update({ credId: credIdB64 });
-    document.getElementById('re-bio-banner').style.display = 'none';
-    showToast('تم إعادة تسجيل البصمة بنجاح', 'success');
-  } catch(e) { showToast('فشل إعادة التسجيل', 'error'); }
-}
+async function doReBioReg() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== FEATURE 5: MISSIONS (الزمنيات) ====================
 async function checkActiveMissions() {
   try {
-    const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(EMP.id).once('value');
-    const today = localDateStr(serverNow());
+    const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
+    const today = serverNow().toISOString().split('T')[0];
     let activeMission = null;
     snap.forEach(c => {
       const m = c.val();
@@ -1675,13 +1191,13 @@ async function loadMissionsPage() {
   if (!container) return;
   container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text2)"><div class="spinner" style="margin:0 auto"></div></div>';
   try {
-    const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     const missions = [];
     snap.forEach(c => missions.push({ key: c.key, ...c.val() }));
     missions.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     if (!missions.length) { container.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div><p>لا توجد زمنيات مسندة إليك</p></div>'; return; }
     container.innerHTML = '';
-    const today = localDateStr(serverNow());
+    const today = serverNow().toISOString().split('T')[0];
     for (const m of missions) {
       const card = document.createElement('div');
       const isActive = (m.status === 'assigned' || m.status === 'started') && m.date === today;
@@ -1703,67 +1219,16 @@ async function loadMissionsPage() {
         </div>
         ${m.startedAt ? `<div style="font-size:12px;color:var(--green);margin-top:6px">▶️ بدأت: ${format12(m.startedAt)}</div>` : ''}
         ${m.completedAt ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">⏹ انتهت: ${format12(m.completedAt)}</div>` : ''}
-        ${canStart ? `<button class="action-btn" style="margin-top:14px" onclick="startMission('${m.key}')">▶️ بدء الزمنية — تسجيل بالبصمة</button>` : ''}
-        ${canEnd ? `<button class="action-btn" style="margin-top:14px;background:linear-gradient(135deg,var(--purple),#7c3aed)" onclick="endMission('${m.key}')">⏹ إنهاء الزمنية — تسجيل بالبصمة</button>` : ''}`;
+        ${canStart ? `<button class="action-btn" style="margin-top:14px" data-basma-click="startMission('${m.key}')">▶️ بدء الزمنية — تسجيل بالبصمة</button>` : ''}
+        ${canEnd ? `<button class="action-btn" style="margin-top:14px;background:linear-gradient(135deg,var(--purple),#7c3aed)" data-basma-click="endMission('${m.key}')">⏹ إنهاء الزمنية — تسجيل بالبصمة</button>` : ''}`;
       container.appendChild(card);
     }
   } catch(e) { container.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px">خطأ في التحميل</div>'; }
 }
 
-async function startMission(missionKey) {
-  showLoading('جاري التحقق من البصمة...');
-  try {
-    await verifyBio();
-    const now = serverNow().toISOString();
-    await DB.ref(`companies/${COMPANY_ID}/missions/${missionKey}`).update({ status: 'started', startedAt: now });
-    await DB.ref(`companies/${COMPANY_ID}/records`).push({
-      empId: EMP.id, empName: EMP.name, type: 'mission_start', timestamp: now,
-      lat: GPS_DATA.lat, lng: GPS_DATA.lng, locationName: GPS_DATA.name || '',
-      locStatus: 'approved', warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
-      missionKey, delayMins: 0
-    });
-    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
-      type: 'mission_start', empId: EMP.id, empName: EMP.name,
-      message: `📋 ${EMP.name} بدأ الزمنية الساعة ${format12(now)}`,
-      timestamp: now, read: false
-    });
-    hideLoading();
-    showToast('▶️ تم تسجيل بدء الزمنية بالبصمة', 'success');
-    GEO_ZONE_OK = true; // Allow fingerprint from mission location
-    loadMissionsPage(); checkActiveMissions();
-  } catch(e) {
-    hideLoading();
-    if (e.name === 'NotAllowedError') showToast('فشل التحقق من البصمة', 'error');
-    else showToast('خطأ: ' + (e.message||''), 'error');
-  }
-}
+async function startMission(missionKey) { throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function endMission(missionKey) {
-  showLoading('جاري التحقق من البصمة...');
-  try {
-    await verifyBio();
-    const now = serverNow().toISOString();
-    await DB.ref(`companies/${COMPANY_ID}/missions/${missionKey}`).update({ status: 'completed', completedAt: now });
-    await DB.ref(`companies/${COMPANY_ID}/records`).push({
-      empId: EMP.id, empName: EMP.name, type: 'mission_end', timestamp: now,
-      lat: GPS_DATA.lat, lng: GPS_DATA.lng, locationName: GPS_DATA.name || '',
-      locStatus: 'approved', warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
-      missionKey, delayMins: 0
-    });
-    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
-      type: 'mission_end', empId: EMP.id, empName: EMP.name,
-      message: `⏹ ${EMP.name} أنهى الزمنية الساعة ${format12(now)}`,
-      timestamp: now, read: false
-    });
-    hideLoading();
-    showToast('⏹ تم تسجيل إنهاء الزمنية بالبصمة', 'success');
-    loadMissionsPage(); checkActiveMissions();
-  } catch(e) {
-    hideLoading();
-    if (e.name === 'NotAllowedError') showToast('فشل التحقق من البصمة', 'error');
-    else showToast('خطأ: ' + (e.message||''), 'error');
-  }
-}
+async function endMission(missionKey) { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== TABS ====================
 function showTab(tab) {
@@ -1781,11 +1246,6 @@ function showTab(tab) {
       window._partialRecordsRef.off('value', window._partialRecordsListener);
       window._partialRecordsListener = null;
       window._partialRecordsRef = null;
-    }
-    if (window._partialTodayListener && window._partialTodayRef) {
-      window._partialTodayRef.off('value', window._partialTodayListener);
-      window._partialTodayListener = null;
-      window._partialTodayRef = null;
     }
   }
   ['home','hist','excuse','leave','notifs'].forEach(t => {
@@ -1809,7 +1269,7 @@ async function loadHistory() {
   const container = document.getElementById('main-tab-hist');
   container.innerHTML = '<div class="page-header"><h2>📋 سجلاتي</h2></div><div class="hist-list" id="hist-list"><div style="text-align:center;padding:40px;color:var(--text2)"><div class="spinner" style="margin:0 auto"></div></div></div>';
   try {
-    const snap = await DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const snap = await DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     const list = document.getElementById('hist-list');
     const records = [];
     snap.forEach(c => records.push({ key: c.key, ...c.val() }));
@@ -1856,7 +1316,7 @@ async function loadExcusePage() {
         </div>
       </div>
       <div class="form-group"><label class="form-label">سبب العذر</label><textarea class="form-textarea" id="excuse-reason" placeholder="اكتب سبب عذرك هنا..."></textarea></div>
-      <button class="action-btn" onclick="submitExcuse()">📤 إرسال العذر للمدير</button>
+      <button class="action-btn" data-basma-click="submitExcuse()">📤 إرسال العذر للمدير</button>
     </div>
     <div><div class="stats-title" style="padding:8px 0;font-size:14px">الأعذار السابقة</div><div id="prev-excuses-list" class="prev-excuses-list"></div></div>
   </div>`;
@@ -1868,7 +1328,7 @@ async function loadExcusePage() {
     else if (td.checkIn && !td.checkOut) { tsText = 'حضر بدون تسجيل انصراف'; tsColor = 'var(--gold)'; }
     document.getElementById('excuse-ts-val').textContent = tsText;
     document.getElementById('excuse-ts-val').style.color = tsColor;
-    const excSnap = await DB.ref(`companies/${COMPANY_ID}/excuses`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const excSnap = await DB.ref(`companies/${COMPANY_ID}/excuses`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     const excList = document.getElementById('prev-excuses-list');
     const excuses = [];
     excSnap.forEach(c => excuses.push({ key: c.key, ...c.val() }));
@@ -1887,29 +1347,7 @@ async function loadExcusePage() {
   } catch(e) {}
 }
 
-async function submitExcuse() {
-  const type = document.querySelector('input[name="excuse-type"]:checked');
-  const reason = document.getElementById('excuse-reason').value.trim();
-  if (!type) { showToast('اختر نوع العذر', 'error'); return; }
-  if (!reason) { showToast('اكتب سبب العذر', 'error'); return; }
-  showLoading('جاري إرسال العذر...');
-  try {
-    await DB.ref(`companies/${COMPANY_ID}/excuses`).push({
-      empId: EMP.id, empName: EMP.name,
-      warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
-      type: type.value, reason, date: localDateStr(serverNow()),
-      status: 'pending', createdAt: Date.now()
-    });
-    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
-      type: 'excuse_new', empId: EMP.id, empName: EMP.name,
-      message: `📝 ${EMP.name} أرسل عذراً`,
-      timestamp: serverNow().toISOString(), read: false
-    });
-    hideLoading();
-    showToast('تم إرسال العذر بنجاح', 'success');
-    loadExcusePage();
-  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-}
+async function submitExcuse() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== FEATURE 3: LEAVE WITH TYPES ====================
 async function loadLeavePage() {
@@ -1934,11 +1372,11 @@ async function loadLeavePage() {
       <h3>تقديم طلب إجازة</h3>
       <div class="form-group">
         <label class="form-label">تاريخ الإجازة</label>
-        <input class="form-input" type="date" id="leave-date" min="${localDateStr(new Date(Date.now() + SERVER_TIME_OFFSET + 86400000))}">
+        <input class="form-input" type="date" id="leave-date" min="${new Date(Date.parse(secureEmployeeDate()+'T00:00:00Z')+86400000).toISOString().slice(0,10)}">
       </div>
       <div class="form-group">
         <label class="form-label">نوع الإجازة</label>
-        <select class="form-input form-select" id="leave-type" onchange="togglePartialFields()">
+        <select class="form-input form-select" id="leave-type" data-basma-change="togglePartialFields()">
           <option value="paid">💚 إجازة مدفوعة الأجر</option>
           <option value="unpaid">🔴 إجازة غير مدفوعة الأجر</option>
           <option value="sick">🏥 إجازة مرضية</option>
@@ -1964,12 +1402,12 @@ async function loadLeavePage() {
         <label class="form-label">سبب الإجازة</label>
         <textarea class="form-textarea" id="leave-reason" placeholder="اكتب سبب الإجازة..."></textarea>
       </div>
-      <button class="action-btn" onclick="submitLeave()">📤 تقديم طلب الإجازة</button>
+      <button class="action-btn" data-basma-click="submitLeave()">📤 تقديم طلب الإجازة</button>
     </div>
   </div>`;
   // ── local date (not UTC) to match what the user typed in the date picker ──
   const _now = serverNow();
-  const todayStr = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
+  const todayStr = BasmaReports.dateAt(_now, COMPANY_INFO.timeZone || 'UTC');
 
   // ── Two real-time listeners: approval + fingerprint records ──
   if (window._partialLeaveListener) {
@@ -1981,13 +1419,8 @@ async function loadLeavePage() {
     window._partialRecordsListener = null;
     window._partialRecordsRef = null;
   }
-  if (window._partialTodayListener && window._partialTodayRef) {
-    window._partialTodayRef.off('value', window._partialTodayListener);
-    window._partialTodayListener = null;
-    window._partialTodayRef = null;
-  }
 
-  let _approvalData = null, _recordsData = null, _todayCheckedIn = null;
+  let _approvalData = null, _recordsData = null;
 
   function renderPartialCard() {
     const pl  = _approvalData;
@@ -1997,43 +1430,18 @@ async function loadLeavePage() {
     if (!pl || pl.date !== todayStr || pl.status !== 'approved' || !pl.fromTime || !pl.toTime) {
       card.style.display = 'none'; return;
     }
-    if (!_todayCheckedIn) {
-      card.style.display = 'block';
-      card.innerHTML = `
-      <div style="background:var(--card);border:2px solid var(--red);border-radius:var(--radius-card);padding:16px;text-align:center">
-        <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:6px">⏱ إجازة زمنية مُعتمدة اليوم</div>
-        <div style="font-size:13px;color:var(--text2)">🔒 سجّل حضورك اليوم أولاً حتى تقدر تستخدم بصمتي المغادرة والعودة</div>
-      </div>`;
-      return;
-    }
-    const n = serverNow();
-    const nm = n.getHours() * 60 + n.getMinutes();
-    const plFrom = pl.fromTime.split(':').reduce((a,v,i)=>a+(i===0?+v*60:+v),0);
-    const plTo   = pl.toTime.split(':').reduce((a,v,i)=>a+(i===0?+v*60:+v),0);
-    const beforeWin = nm < plFrom, duringWin = nm >= plFrom && nm <= plTo, afterWin = nm > plTo;
+    const stamp = secureAttendanceWindows.now();
+    if (!Number.isFinite(stamp)) { card.style.display = 'none'; return; }
+    const win = BasmaClock.windowState(stamp, COMPANY_INFO.timeZone || 'UTC', {from:pl.fromTime,to:pl.toTime});
+    const duringWin = win.open;
     const hasDep = !!plR.departureAt, hasRet = !!plR.returnAt;
-
-    // Geo zone check (same rules as main attendance)
-    const hasGz = (WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false)
-               || (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled);
-    const geoBlocked = hasGz && GEO_ZONE_OK === false;
-    const geoPending = hasGz && GEO_ZONE_OK === null;
-
+    const geoBlocked = GEO_ZONE_OK === false, geoPending = GEO_ZONE_OK == null;
     let phaseMsg, phaseClass;
-    if (beforeWin) {
-      phaseMsg  = hasDep ? `✅ تم تسجيل مغادرتك — بانتظار انتهاء الإجازة ${pl.toTime}` : `⏳ بصّم مغادرتك قبل الإجازة — تبدأ ${pl.fromTime}`;
-      phaseClass = 'win-msg success';
-    } else if (duringWin) {
-      phaseMsg = `⏱ أنت في إجازتك الزمنية الآن (${pl.fromTime} — ${pl.toTime})`;
-      phaseClass = 'win-msg warning';
-    } else {
-      phaseMsg  = hasRet ? `✅ اكتملت الإجازة الزمنية — تم تسجيل المغادرة والعودة` : `⏳ بصّم عودتك — انتهت الإجازة ${pl.toTime}`;
-      phaseClass = hasRet ? 'win-msg success' : 'win-msg warning';
-    }
-
-    // fp-btn active state
-    const depActive = beforeWin && !hasDep && !geoBlocked && !geoPending;
-    const retActive = afterWin  && !hasRet && !geoBlocked && !geoPending;
+    if (hasRet) { phaseMsg = '✅ اكتملت الإجازة الزمنية'; phaseClass = 'win-msg success'; }
+    else if (duringWin) { phaseMsg = `⏱ نافذة المغادرة والعودة مفتوحة حتى ${pl.toTime}؛ سجّل المغادرة أولًا ثم العودة ضمن الفترة`; phaseClass = 'win-msg warning'; }
+    else { phaseMsg = `التسجيل متاح داخل ${pl.fromTime}–${pl.toTime} فقط؛ ${win.label}`; phaseClass = 'win-msg warning'; }
+    const depActive = duringWin && !hasDep && !geoBlocked && !geoPending;
+    const retActive = duringWin && hasDep && !hasRet && !geoBlocked && !geoPending;
 
     // Geo zone message
     let geoHtml = '';
@@ -2048,7 +1456,7 @@ async function loadLeavePage() {
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
         <div id="${id}"
           style="width:72px;height:72px;border-radius:50%;background:var(--surface);border:2px solid ${done?'var(--green)':active?(type==='departure'?'#22c55e':'var(--red)'):'var(--border)'};font-size:34px;display:flex;align-items:center;justify-content:center;position:relative;cursor:${active?'pointer':'default'};opacity:${active||done?'1':'0.35'};transition:all .3s"
-          ${active ? `onclick="recPartialLeave('${type}')"` : ''}>
+          ${active ? `data-basma-click="recPartialLeave('${type}')"` : ''}>
           ${icon}
         </div>
         <div style="font-size:12px;color:${done?'var(--green)':'var(--text2)'};font-weight:${done?'700':'400'}">${label}</div>
@@ -2068,18 +1476,9 @@ async function loadLeavePage() {
       </div>`;
   }
 
+  window.basmaRenderPartial = renderPartialCard;
   window._partialLeaveListener = DB.ref(`companies/${COMPANY_ID}/todayPartialLeave/${EMP.id}`).on('value', snap => {
     _approvalData = snap.val();
-    renderPartialCard();
-  });
-
-  if (window._partialTodayListener && window._partialTodayRef) {
-    window._partialTodayRef.off('value', window._partialTodayListener);
-  }
-  window._partialTodayRef = DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`);
-  window._partialTodayListener = window._partialTodayRef.on('value', snap => {
-    const td = snap.val() || {};
-    _todayCheckedIn = (!td.dateKey || td.dateKey === todayStr) && !!td.checkIn;
     renderPartialCard();
   });
 
@@ -2091,7 +1490,7 @@ async function loadLeavePage() {
   });
 
   try {
-    const snap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).once('value');
+    const snap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     const list = document.getElementById('my-leaves-list');
     const leaves = [];
     snap.forEach(c => leaves.push({ key: c.key, ...c.val() }));
@@ -2124,133 +1523,18 @@ function toHijri(dateStr) {
 function togglePartialFields() {
   const lt = document.getElementById('leave-type').value;
   document.getElementById('partial-fields').style.display = lt === 'partial' ? 'block' : 'none';
-  const today = localDateStr(new Date(Date.now() + SERVER_TIME_OFFSET));
-  const tomorrow = localDateStr(new Date(Date.now() + SERVER_TIME_OFFSET + 86400000));
+  const today = secureEmployeeDate();
+  const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86400000).toISOString().slice(0,10);
   document.getElementById('leave-date').min = lt === 'partial' ? today : tomorrow;
   if (lt !== 'partial' && document.getElementById('leave-date').value < tomorrow) {
     document.getElementById('leave-date').value = '';
   }
 }
 
-async function submitLeave() {
-  const date = document.getElementById('leave-date').value;
-  const reason = document.getElementById('leave-reason').value.trim();
-  const leaveType = document.getElementById('leave-type').value;
-  if (!date) { showToast('اختر تاريخ الإجازة', 'error'); return; }
-  if (!reason) { showToast('اكتب سبب الإجازة', 'error'); return; }
-
-  const isPartial = leaveType === 'partial';
-  let fromTime = '', toTime = '';
-  if (isPartial) {
-    fromTime = document.getElementById('leave-from-time').value;
-    toTime = document.getElementById('leave-to-time').value;
-    if (!fromTime || !toTime) { showToast('حدد وقت البداية والنهاية للإجازة الزمنية', 'error'); return; }
-    if (fromTime >= toTime) { showToast('وقت البداية يجب أن يكون قبل وقت النهاية', 'error'); return; }
-    // الإجازة الزمنية تفترض إنك أصلاً بالدوام وتبي تطلع لساعات — ما تصلح
-    // إلا لو سجّلت حضورك اليوم فعلاً (وبس لطلب بتاريخ اليوم نفسه).
-    const todayKeyCheck = localDateStr(serverNow());
-    if (date === todayKeyCheck) {
-      const todaySnapCheck = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
-      const todayDataCheck = todaySnapCheck.val() || {};
-      if (!todayDataCheck.checkIn) {
-        showToast('يجب تسجيل حضورك اليوم أولاً قبل طلب إجازة زمنية', 'error');
-        return;
-      }
-    }
-  } else {
-    const snap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).once('value');
-    let dup = false;
-    snap.forEach(c => { if (c.val().date === date && c.val().leaveType !== 'partial') dup = true; });
-    if (dup) { showToast('لديك طلب إجازة بهذا التاريخ مسبقاً', 'error'); return; }
-  }
-
-  try {
-    showLoading('جاري إرسال الطلب...');
-    const leaveTypeLabel = { paid: 'مدفوعة', unpaid: 'غير مدفوعة', sick: 'مرضية', emergency: 'طارئة', partial: 'زمنية' };
-    const record = {
-      empId: EMP.id, empName: EMP.name,
-      warehouseId: EMP.warehouseId, warehouseName: EMP.warehouseName,
-      date, reason, leaveType, status: 'pending',
-      isPartial, createdAt: Date.now() + SERVER_TIME_OFFSET
-    };
-    if (isPartial) {
-      record.fromTime = fromTime;
-      record.toTime = toTime;
-    }
-    await DB.ref(`companies/${COMPANY_ID}/leaves`).push(record);
-    const timeInfo = isPartial ? ` (${fromTime} — ${toTime})` : '';
-    await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).push({
-      type: 'leave_new', empId: EMP.id, empName: EMP.name,
-      message: `🌴 ${EMP.name} طلب إجازة ${leaveTypeLabel[leaveType]||''} بتاريخ ${date}${timeInfo}`,
-      timestamp: serverNow().toISOString(), read: false
-    });
-    hideLoading();
-    showToast('تم تقديم طلب الإجازة', 'success');
-    loadLeavePage();
-  } catch(e) { hideLoading(); showToast('خطأ: ' + e.message, 'error'); }
-}
+async function submitLeave() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== PARTIAL LEAVE FINGERPRINT ====================
-async function recPartialLeave(type) {
-  // لا تُستخدم الإجازة الزمنية إلا بعد تسجيل حضور اليوم فعلياً
-  const todayKeyPl = localDateStr(serverNow());
-  const todaySnapPl = await DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).once('value');
-  const todayDataPl = todaySnapPl.val() || {};
-  if (todayDataPl.dateKey && todayDataPl.dateKey !== todayKeyPl) {
-    showToast('يجب تسجيل حضورك اليوم أولاً قبل استخدام الإجازة الزمنية', 'error');
-    return;
-  }
-  if (!todayDataPl.checkIn) {
-    showToast('يجب تسجيل حضورك اليوم أولاً قبل استخدام الإجازة الزمنية', 'error');
-    return;
-  }
-
-  // Geo zone check — same rules as main attendance
-  const hasGz = (WAREHOUSE_GEO_ZONE && WAREHOUSE_GEO_ZONE.lat && WAREHOUSE_GEO_ZONE.enabled !== false)
-             || (SETTINGS && SETTINGS.geoZone && SETTINGS.geoZone.enabled);
-  if (hasGz && GEO_ZONE_OK === false) { showToast('أنت خارج نطاق موقع العمل', 'error'); return; }
-  if (hasGz && GEO_ZONE_OK === null)  { showToast('جاري تحديد موقعك — انتظر لحظة', 'info'); return; }
-
-  // Scanning animation on the pressed icon
-  const btnId = type === 'departure' ? 'partial-fp-depart' : 'partial-fp-return';
-  const fpBtn = document.getElementById(btnId);
-  if (fpBtn) {
-    fpBtn.style.borderColor = 'var(--gold)';
-    fpBtn.style.boxShadow = '0 0 0 4px rgba(245,166,35,.25)';
-    fpBtn.innerHTML = '🫆';
-  }
-
-  try {
-    await verifyBio();
-    if (fpBtn) {
-      fpBtn.style.borderColor = 'var(--green)';
-      fpBtn.style.boxShadow = '';
-      fpBtn.innerHTML = '✅';
-    }
-  } catch(e) {
-    if (fpBtn) { fpBtn.style.borderColor = 'var(--border)'; fpBtn.style.boxShadow = ''; }
-    if (e.name === 'DeviceReplaced') { showToast('تم استبدال جهازك — يُعاد تحميل التطبيق', 'error'); setTimeout(() => location.reload(), 2500); }
-    else if (e.name === 'NotAllowedError') showReBioBanner();
-    else showToast('فشل التحقق من البصمة', 'error');
-    return;
-  }
-
-  showLoading(type === 'departure' ? 'جاري تسجيل بصمة المغادرة...' : 'جاري تسجيل بصمة العودة...');
-  try {
-    const now = serverNow();
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-    const field = type === 'departure' ? 'departureAt' : 'returnAt';
-    await DB.ref(`companies/${COMPANY_ID}/partialLeaveRecords/${EMP.id}/${dateStr}`).update({
-      [field]: now.toISOString(),
-      empId: EMP.id, empName: EMP.name, date: dateStr
-    });
-    hideLoading();
-    showToast(type === 'departure' ? '✅ تم تسجيل بصمة المغادرة' : '✅ تم تسجيل بصمة العودة', 'success');
-  } catch(e) {
-    hideLoading();
-    showToast('خطأ: ' + e.message, 'error');
-  }
-}
+async function recPartialLeave(type) { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== NOTIFICATIONS ====================
 function loadNotifBadge() {
@@ -2298,132 +1582,13 @@ function loadNotifPage() {
 }
 
 // ==================== LOGOUT ====================
-function doLogout() {
-  if (pendingListener && EMP) DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}/status`).off('value', pendingListener);
-  if (notifListener && EMP) DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).off('value', notifListener);
-  if (notifPageListener && EMP) DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).off('value', notifPageListener);
-  if (todayChangeListener && EMP) DB.ref(`companies/${COMPANY_ID}/today/${EMP.id}`).off('value', todayChangeListener);
-  if (clockInterval) clearInterval(clockInterval);
-  localStorage.removeItem('ap_wh');
-  EMP = null; SETTINGS = null;
-  showToast('تم تسجيل الخروج', 'info');
-  loadWarehouses();
-}
+function doLogout() { throw new Error('Legacy path disabled; use the secure service.'); }
 
 // ==================== ACTIVATION ====================
-async function handleActivation(actToken) {
-  document.getElementById('splash-status').textContent = 'جاري التحقق من رابط التفعيل...';
-  try {
-    const tokenSnap = await DB.ref(`companies/${COMPANY_ID}/activation_tokens/${actToken}`).once('value');
-    const tokenData = tokenSnap.val();
-    if (!tokenData) { document.getElementById('splash-status').textContent = 'رابط التفعيل غير صالح — تواصل مع المدير'; document.getElementById('splash-spinner').style.display = 'none'; return; }
-    if (tokenData.used) {
-      try {
-        const savedEmp = localStorage.getItem('ap_emp');
-        if (savedEmp) {
-          const parsed = JSON.parse(savedEmp);
-          if (parsed.id === tokenData.uid) { window.history.replaceState({}, '', window.location.pathname + `?cid=${COMPANY_ID}`); loadCompanyInfo().then(restoreSession); return; }
-        }
-      } catch(_) {}
-      document.getElementById('splash-status').textContent = 'تم استخدام هذا الرابط مسبقاً — تواصل مع المدير لرابط جديد';
-      document.getElementById('splash-spinner').style.display = 'none'; return;
-    }
-    const empSnap = await DB.ref(`companies/${COMPANY_ID}/employees/${tokenData.uid}`).once('value');
-    const empData = empSnap.val();
-    if (!empData) { document.getElementById('splash-status').textContent = 'لم يُعثر على بيانات الموظف'; document.getElementById('splash-spinner').style.display = 'none'; return; }
-    ACTIVATION_TOKEN = actToken; ACTIVATION_UID = tokenData.uid;
-    localStorage.removeItem('ap_emp'); localStorage.removeItem('ap_wh');
-    Object.keys(localStorage).filter(k => k.startsWith('ap_cred_')).forEach(k => localStorage.removeItem(k));
-    document.getElementById('act-logo').textContent = COMPANY_INFO.logo || '🏭';
-    document.getElementById('act-emp-name').textContent = empData.name || '';
-    document.getElementById('act-emp-id').textContent = empData.empId || '';
-    document.getElementById('act-emp-role').textContent = empData.role || '--';
-    document.getElementById('act-emp-wh').textContent = empData.warehouseName || '--';
-    showScreen('s-activate');
-    // فحص إذا كانت هناك موافقة سابقة من المدير لهذا الجهاز
-    const bypassSnap = await DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${tokenData.uid}`).once('value');
-    const bypassData = bypassSnap.val();
-    if (bypassData && bypassData.status === 'approved') {
-      bypassApproved = true;
-      const statusEl = document.getElementById('bypass-status');
-      statusEl.style.display = 'block';
-      statusEl.style.color = 'var(--green)';
-      statusEl.textContent = '✅ موافقة المدير مُفعّلة — ضع بصمتك الآن';
-    }
-  } catch(e) { document.getElementById('splash-status').textContent = 'خطأ: ' + e.message; document.getElementById('splash-spinner').style.display = 'none'; }
-}
+async function handleActivation(actToken) { throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function activateBio() {
-  const bioBtn = document.getElementById('act-bio-btn');
-  const bioStatus = document.getElementById('act-bio-status');
-  bioBtn.classList.add('scanning'); bioStatus.textContent = 'جاري التحقق...';
-  try {
-    const devFP = getDeviceFingerprint();
-    if (!bypassApproved) {
-      const fpSnap = await DB.ref(`companies/${COMPANY_ID}/employees`).orderByChild('deviceFingerprint').equalTo(devFP).once('value');
-      if (fpSnap.exists()) {
-        const others = Object.keys(fpSnap.val()).filter(k => k !== ACTIVATION_UID);
-        if (others.length > 0) { bioBtn.classList.remove('scanning'); bioStatus.style.color = 'var(--red)'; bioStatus.textContent = 'هذا الجهاز مسجّل بالفعل لموظف آخر'; document.getElementById('bypass-req-btn').style.display = 'inline-block'; return; }
-      }
-    }
-    const challenge = new Uint8Array(32);
-    crypto.getRandomValues(challenge);
-    const excludeCredentials = Object.keys(localStorage).filter(k => k.startsWith('ap_cred_')).map(k => localStorage.getItem(k)).filter(Boolean).map(b64 => ({ id: Uint8Array.from(atob(b64), c => c.charCodeAt(0)), type: 'public-key' }));
-    bioStatus.textContent = 'جاري تسجيل البصمة...';
-    const credential = await navigator.credentials.create({
-      publicKey: {
-        challenge, rp: { name: 'نظام الحضور', id: location.hostname },
-        user: { id: Uint8Array.from(ACTIVATION_UID, c => c.charCodeAt(0)), name: ACTIVATION_UID, displayName: document.getElementById('act-emp-name').textContent },
-        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
-        excludeCredentials,
-        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
-        timeout: 60000
-      }
-    });
-    const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
-    await DB.ref(`companies/${COMPANY_ID}/employees/${ACTIVATION_UID}`).update({ credId: credIdB64, deviceFingerprint: devFP, status: 'approved' });
-    if (ACTIVATION_TOKEN) await DB.ref(`companies/${COMPANY_ID}/activation_tokens/${ACTIVATION_TOKEN}`).update({ used: true });
-    if (bypassApproved) await DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}`).remove();
-    localStorage.setItem('ap_emp', JSON.stringify({ id: ACTIVATION_UID }));
-    localStorage.setItem('ap_cred_' + ACTIVATION_UID, credIdB64);
-    const snap = await DB.ref(`companies/${COMPANY_ID}/employees/${ACTIVATION_UID}`).once('value');
-    EMP = { id: ACTIVATION_UID, ...snap.val() };
-    CRED_ID = credIdB64;
-    window.history.replaceState({}, '', window.location.pathname + `?cid=${COMPANY_ID}`);
-    bioBtn.classList.remove('scanning'); bioBtn.innerHTML = '✅';
-    bioStatus.textContent = '✅ تم التفعيل — جاري التحميل...'; bioStatus.style.color = 'var(--green)';
-    setTimeout(() => setupMainScreen(), 800);
-  } catch(e) {
-    bioBtn.classList.remove('scanning'); bioStatus.style.color = 'var(--red)';
-    bioStatus.textContent = e.name === 'NotAllowedError' ? 'لم تسمح بالبصمة — اضغط مرة أخرى' : 'فشل تسجيل البصمة';
-  }
-}
+async function activateBio() { throw new Error('Legacy path disabled; use the secure service.'); }
 
-async function requestDeviceBypass() {
-  const btn = document.getElementById('bypass-req-btn');
-  const statusEl = document.getElementById('bypass-status');
-  btn.style.display = 'none';
-  statusEl.style.display = 'block';
-  statusEl.textContent = '⏳ جاري إرسال الطلب للمدير...';
-  const empName = document.getElementById('act-emp-name').textContent;
-  await DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}`).set({ status: 'pending', name: empName, uid: ACTIVATION_UID, timestamp: Date.now() });
-  statusEl.textContent = '📨 تم إرسال الطلب — انتظر موافقة المدير...';
-  DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}/status`).on('value', async snap => {
-    const status = snap.val();
-    if (status === 'approved') {
-      DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}/status`).off();
-      statusEl.textContent = '✅ وافق المدير — ضع بصمتك الآن';
-      statusEl.style.color = 'var(--green)';
-      document.getElementById('bypass-req-btn').style.display = 'none';
-      bypassApproved = true;
-      document.getElementById('act-bio-btn').click();
-    } else if (status === 'rejected') {
-      DB.ref(`companies/${COMPANY_ID}/deviceBypassRequests/${ACTIVATION_UID}/status`).off();
-      statusEl.textContent = '❌ رفض المدير الطلب — تواصل مع مديرك';
-      statusEl.style.color = 'var(--red)';
-    }
-  });
-}
 
 // ==================== HELPERS ====================
 function showScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
@@ -2438,14 +1603,12 @@ function showLoading(text = 'جاري التحميل...') { document.getElementB
 function hideLoading() { document.getElementById('loading-overlay').classList.remove('active'); }
 
 // Boot
-window.addEventListener('DOMContentLoaded', initFirebase);
+// Startup handled by assets/employee.js after secure adapters load.
 </script>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
-  });
-}
-</script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3e827f80bc27a93',t:'MTc4OTk4NDEyNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+
+<script src="/manager/assets/report-model.js"></script>
+<script src="/manager/assets/employee.js"></script>
+<script src="/manager/assets/attendance-clock.js"></script>
+<script src="/manager/assets/employee-views.js"></script>
+</body>
 </html>
