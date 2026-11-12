@@ -12,11 +12,16 @@ async function secureEmployeeOpen(profile) {
     for (const [id, value] of [['act-emp-name', employee.name], ['act-emp-id', employee.empId], ['act-emp-role', employee.role], ['act-emp-wh', employee.warehouseName]]) document.getElementById(id).textContent = value || '';
     showScreen('s-activate');
   }
-  DB.ref(`companies/${COMPANY_ID}/info/status`).on('value', snap => { if (snap.val() !== 'active') Basma.logout(); }, () => Basma.logout());
+  // Exactly one company-status listener, even when this function runs again after activation.
+  if (employeeStatusListener) { try { employeeStatusListener.ref.off('value', employeeStatusListener.handler); } catch {} }
+  const statusRef = DB.ref(`companies/${COMPANY_ID}/info/status`);
+  const statusHandler = statusRef.on('value', snap => { if (snap.val() !== 'active') Basma.logout(); }, () => Basma.logout());
+  employeeStatusListener = { ref: statusRef, handler: statusHandler };
 }
+let employeeStatusListener = null;
 initFirebase = async function() {
   try { const profile = await Basma.session('employee'); if (profile) await secureEmployeeOpen(profile); else showScreen('s-dirlogin'); }
-  catch (error) { showScreen('s-dirlogin'); Basma.banner(error.message); }
+  catch (error) { showScreen('s-dirlogin'); Basma.banner(window.BasmaErrors?.message(error) ?? error.message); }
 };
 directoryEmployeeLogin = async function() {
   const button = document.getElementById('dl-emp-submit'); button.disabled = true;
@@ -24,16 +29,33 @@ directoryEmployeeLogin = async function() {
   catch (error) { const node = document.getElementById('dl-emp-error'); node.textContent = 'تعذر الدخول. تحقق من بيانات الحساب وحالة الشركة.'; node.style.display = 'block'; }
   finally { button.disabled = false; }
 };
+// Fingerprint activation: one request at a time, button locked while it runs, plain-Arabic result.
+// Basma.biometric itself retries begin/finish on 'aborted' (server lock) up to 3 times, 2 s apart.
+let activationRunning = false;
+function setActivationBusy(busy) {
+  const button = document.getElementById('act-bio-btn'); if (!button) return;
+  button.style.pointerEvents = busy ? 'none' : '';
+  button.style.opacity = busy ? '0.6' : '';
+  button.setAttribute?.('aria-disabled', busy ? 'true' : 'false');
+}
 activateBio = async function() {
-  const node = document.getElementById('act-bio-status'); node.textContent = 'جاري تسجيل البصمة...';
-  try { const result = await Basma.biometric('register'); CRED_ID = result.credentialId; await secureEmployeeOpen(Basma.profile); }
-  catch (error) { node.textContent = error.message || 'تعذر تسجيل البصمة'; }
+  if (activationRunning) return;
+  activationRunning = true; setActivationBusy(true);
+  const node = document.getElementById('act-bio-status'); node.textContent = 'جارٍ التحقق...';
+  try {
+    const result = await Basma.biometric('register');
+    CRED_ID = result.credentialId; node.textContent = 'تم تسجيل البصمة ✅';
+    await secureEmployeeOpen(Basma.profile);
+  } catch (error) {
+    if (window.BasmaErrors) window.BasmaErrors.render(node, error, 'تعذر تسجيل البصمة. حاول مرة أخرى.');
+    else node.textContent = 'تعذر تسجيل البصمة. حاول مرة أخرى.';
+  } finally { activationRunning = false; setActivationBusy(false); }
 };
 verifyBio = async () => Basma.biometric('authenticate', 'login');
 async function secureRecord(type, missionKey) {
   showLoading('جاري التحقق والتسجيل...');
   try { await Basma.attendance(type, GPS_DATA, missionKey); showToast('تم التسجيل بتوقيت الخادم', 'success'); await loadTodayStats(); if (missionKey) { loadMissionsPage(); checkActiveMissions(); } }
-  catch (error) { if(error.details?.reason==='attendance-window'){let synced=false;try{await secureAttendanceWindows.sync();synced=true;}catch{}showToast(synced?'التسجيل خارج النافذة حسب وقت الخادم. أُعيدت مزامنة الوقت؛ حاول داخل النافذة المعروضة.':'التسجيل خارج النافذة حسب الخادم؛ تعذرت إعادة المزامنة. تحقق من الاتصال وحاول مجددًا.','error');}else showToast(error.message || 'تعذر التحقق', 'error'); }
+  catch (error) { if(error.details?.reason==='attendance-window'){let synced=false;try{await secureAttendanceWindows.sync();synced=true;}catch{}showToast(synced?'التسجيل خارج النافذة حسب وقت الخادم. أُعيدت مزامنة الوقت؛ حاول داخل النافذة المعروضة.':'التسجيل خارج النافذة حسب الخادم؛ تعذرت إعادة المزامنة. تحقق من الاتصال وحاول مجددًا.','error');}else showToast(window.BasmaErrors?.message(error, 'تعذر التحقق') ?? error.message, 'error'); }
   finally { secureAttendanceWindows.evaluate();hideLoading(); }
 }
 recBio = type => secureRecord(type);
@@ -48,10 +70,10 @@ loadWarehouses = () => showScreen('s-dirlogin');
 submitLeave = async function() {
   const get = id => document.getElementById(id)?.value;
   try { await Basma.call('submitRequest', { kind: 'leave', date: get('leave-date'), reason: get('leave-reason'), leaveType: get('leave-type'), fromTime: get('leave-from-time'), toTime: get('leave-to-time') }); showToast('تم إرسال الطلب', 'success'); loadLeavePage(); }
-  catch (error) { showToast(error.message, 'error'); }
+  catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
 };
 submitExcuse = async function() {
   try { await Basma.call('submitRequest', { kind: 'excuse', reason: document.getElementById('excuse-reason').value, type: document.querySelector('input[name="excuse-type"]:checked')?.value }); showToast('تم إرسال الطلب', 'success'); loadExcusePage(); }
-  catch (error) { showToast(error.message, 'error'); }
+  catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
 };
 window.onload = () => initFirebase();

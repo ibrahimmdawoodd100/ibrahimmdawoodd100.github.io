@@ -16,7 +16,7 @@ window.onload = async () => {
   panel.innerHTML = '<div style="max-width:420px;padding:30px;direction:rtl"><h2>دخول المورّد</h2><input id="seller-email" type="email" placeholder="البريد الإلكتروني" autocomplete="username"><input id="seller-password" type="password" placeholder="كلمة المرور" autocomplete="current-password"><button id="seller-login">دخول</button><p id="seller-error"></p></div>';
   document.getElementById('seller-login').addEventListener('click', secureSellerLogin);
   try { const profile = await Basma.session('seller'); if (profile) await secureSellerOpen(profile); else panel.style.display = 'flex'; }
-  catch (error) { panel.style.display = 'flex'; Basma.banner(error.message); }
+  catch (error) { panel.style.display = 'flex'; Basma.banner(window.BasmaErrors?.message(error) ?? error.message); }
 };
 lockSeller = resetSellerFirebase = () => Basma.logout();
 changeSellerPin = () => Basma.changePassword ? Basma.changePassword() : showToast('استخدم زر تغيير كلمة المرور أسفل الصفحة', 'info');
@@ -45,14 +45,22 @@ async function secureCompanyStatus(cid, status) {
 }
 suspendCompany = cid => secureCompanyStatus(cid, 'suspended');
 activateCompany = cid => secureCompanyStatus(cid, 'active');
+// Reset manager: plain-Arabic confirm, one request at a time (buttons locked), new login shown once in the box.
+const resetInFlight = new Set();
+function setResetButtonsDisabled(disabled) {
+  const buttons = document.querySelectorAll?.('[data-basma-click^="resetManagerCredentials"],[data-basma-click^="doResetManagerCredentials"]') || [];
+  for (const b of buttons) b.disabled = disabled;
+}
 resetManagerCredentials = doResetManagerCredentials = async function(cid) {
-  const ok = await sellerConfirm('إعادة تعيين بيانات المدير', 'ستُنشأ كلمة مرور جديدة للمدير وتُلغى جميع جلساته القديمة. هل تريد المتابعة؟', 'إعادة التعيين');
-  if (!ok) return;
+  if (resetInFlight.has(cid)) return;
+  const ok = await sellerConfirm('إعادة تعيين كلمة مرور المدير', 'سيتم إنشاء كلمة مرور جديدة للمدير وتسجيل خروجه من أجهزته القديمة. لن تُحذف أي بيانات.', 'إعادة التعيين');
+  if (!ok || resetInFlight.has(cid)) return;
+  resetInFlight.add(cid); setResetButtonsDisabled(true);
   showLoading('جاري إعادة التعيين...');
   let result;
   try { result = await callWithTimeout('resetManager', { companyId: cid }); }
   catch (error) { diagNote('resetManager', error); showToast(friendlyError(error), 'error'); return; }
-  finally { hideLoading(); }
+  finally { hideLoading(); resetInFlight.delete(cid); setResetButtonsDisabled(false); }
   await sellerShowCredentials('بيانات دخول المدير الجديدة', result.username, result.password);
 };
 confirmDeleteCompany = async cid => { if (await sellerConfirm('تعليق الشركة', 'ستُعلَّق الشركة مع الاحتفاظ بجميع سجلاتها. هل تريد المتابعة؟', 'تعليق')) return suspendCompany(cid); };
@@ -130,9 +138,7 @@ function newRequestId() {
 }
 function friendlyError(error) {
   if (error?.code === 'basma/timeout') return `لم يرد الخادم خلال ${error.seconds} ثانية. تحقق من الاتصال، أو افتح صفحة التشخيص: /manager/diagnostics.html`;
-  if (error?.code === 'functions/unauthenticated') return 'انتهت الجلسة أو تعذر التحقق من التطبيق. سجّل الدخول من جديد، أو افتح صفحة التشخيص.';
-  if (error?.code === 'functions/permission-denied') return error.message || 'لا تملك صلاحية هذه العملية.';
-  return error?.message || 'تعذر تنفيذ العملية';
+  return window.BasmaErrors?.message(error, 'تعذر تنفيذ العملية') ?? (error?.message || 'تعذر تنفيذ العملية');
 }
 // A small local log for /manager/diagnostics.html: operation name, error code and time only. Never data or credentials.
 function diagNote(operation, error) {

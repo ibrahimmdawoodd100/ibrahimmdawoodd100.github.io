@@ -46,7 +46,7 @@
       const call = /^([A-Za-z_$][\w$]*)\((.*)\)$/.exec(statement.trim());
       if (!call || !window.BASMA_ALLOWED_ACTIONS.includes(call[1]) || typeof window[call[1]] !== 'function') return;
       const args = call[2].trim() ? call[2].split(',').map(x => argument(x.trim(), element, event)) : [];
-      Promise.resolve(window[call[1]](...args)).catch(error => { if (window.showToast) window.showToast(error.message || 'تعذرت العملية', 'error'); });
+      Promise.resolve(window[call[1]](...args)).catch(error => { if (window.showToast) window.showToast(window.BasmaErrors?.message(error, 'تعذرت العملية') ?? (error.message || 'تعذرت العملية'), 'error'); });
     }
   }
   for (const eventType of ['click', 'change', 'input', 'keydown', 'submit']) {

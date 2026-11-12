@@ -35,9 +35,13 @@ addEmployee = async function() {
 };
 createEmployeeDirectoryAccount = (eid) => Basma.call('employeeAccount', { employeeId: eid });
 resetEmployeeBio = async function(eid) {
-  if (!confirm('إلغاء البصمة والجلسات القديمة وإنشاء كلمة مرور جديدة؟')) return;
-  try { const account = await Basma.call('employeeAccount', { employeeId: eid, resetBio: true }); showActLinkModal('إعادة تعيين الحساب', 'أُلغيت الجلسات والبصمة القديمة.', account.username, account.password, ALL_EMPLOYEES[eid]?.name || ''); }
-  catch (error) { showToast(error.message, 'error'); }
+  if (!await BasmaDialogs.confirm('إعادة تعيين حساب الموظف', 'ستُلغى البصمة والجلسات القديمة وتُنشأ كلمة مرور جديدة. هل تريد المتابعة؟', 'إعادة التعيين')) return;
+  showLoading('جاري إعادة التعيين...');
+  let account;
+  try { account = await Basma.call('employeeAccount', { employeeId: eid, resetBio: true }); }
+  catch (error) { showToast(error.message, 'error'); return; }
+  finally { hideLoading(); }
+  await showActLinkModal('إعادة تعيين الحساب', 'أُلغيت الجلسات والبصمة القديمة.', account.username, account.password, ALL_EMPLOYEES[eid]?.name || '');
 };
 confirmDeleteEmp = function(eid) { showConfirm('تعطيل الموظف', 'سيُمنع دخول الموظف مع الاحتفاظ بسجلاته للمراجعة.', () => doDeleteEmp(eid)); };
 doDeleteEmp = async function(eid) {
@@ -45,7 +49,8 @@ doDeleteEmp = async function(eid) {
   catch (error) { showToast(error.message, 'error'); }
 };
 overrideAttendance = async function(eid, status) {
-  const reason = prompt('سبب تعديل الحضور (يُحفظ في سجل التدقيق):'); if (!reason) return;
+  const answer = await BasmaDialogs.form('تعديل الحضور يدويًا', [{ id: 'reason', label: 'سبب التعديل (يُحفظ في سجل التدقيق)' }]);
+  const reason = answer?.reason; if (!reason) return;
   try { await Basma.call('manualAttendance', { employeeId: eid, status, reason }); showToast('حُفظ التعديل منفصلًا عن إثبات البصمة', 'success'); closeEmpModal(); }
   catch (error) { showToast(error.message, 'error'); }
 };
@@ -83,3 +88,33 @@ for (const name of ['approveEmp','rejectEmp']) {
   const original = window[name];
   window[name] = id => original(id, ALL_EMPLOYEES[id]?.name || 'الموظف');
 }
+// ==================== In-page dialogs (no window.alert/confirm/prompt) ====================
+// Employee credentials are shown once in the shared in-page box and cleared on close.
+// They are never written to the old modal, the URL (no WhatsApp text with a password), storage, or logs.
+showActLinkModal = function(title, desc, username, password) {
+  for (const id of ['act-link-username', 'act-link-password']) { const el = document.getElementById(id); if (el) el.textContent = ''; }
+  return BasmaDialogs.credentials(title, { username, password, note: `${desc || ''} انسخ البيانات الآن وسلّمها للموظف عبر قناة خاصة. لن تظهر مرة أخرى.`.trim() });
+};
+clearAdminNotifs = async function() {
+  if (!await BasmaDialogs.confirm('حذف الإشعارات', 'هل تريد حذف جميع الإشعارات؟', 'حذف')) return;
+  try { await DB.ref(`companies/${COMPANY_ID}/notifications/admin`).remove(); adminNotifCount = 0; showToast('تم مسح الإشعارات', 'success'); }
+  catch (e) { showToast('خطأ: ' + e.message, 'error'); }
+};
+clearEmpSchedule = async function() {
+  const eid = document.getElementById('sched-emp-sel').value;
+  if (!eid) return;
+  if (!await BasmaDialogs.confirm('إزالة الجدول الخاص', 'هل تريد إزالة الجدول الخاص وإعادة الموظف للمواعيد الافتراضية؟', 'إزالة')) return;
+  try {
+    await DB.ref(`companies/${COMPANY_ID}/employees/${eid}/schedule`).remove();
+    if (ALL_EMPLOYEES[eid]) delete ALL_EMPLOYEES[eid].schedule;
+    for (const id of ['sched-ci-from', 'sched-ci-to', 'sched-co-from', 'sched-co-to']) document.getElementById(id).value = '';
+    showToast('تم إزالة الجدول الخاص', 'info');
+  } catch (e) { showToast('خطأ: ' + e.message, 'error'); }
+};
+editWH = async function(id, name) {
+  const answer = await BasmaDialogs.form('تعديل اسم الفرع', [{ id: 'name', label: 'اسم الفرع', value: name || '' }]);
+  const newName = answer?.name; if (!newName) return;
+  try { await DB.ref(`companies/${COMPANY_ID}/warehouses/${id}`).update({ name: newName }); showToast('تم التعديل', 'success'); loadWarehouses(); }
+  catch (e) { showToast('خطأ', 'error'); }
+};
+fallbackCopy = function(text) { return BasmaDialogs.notice('نسخ', 'تعذر النسخ التلقائي. اضغط مطولًا على النص لنسخه.', text); };

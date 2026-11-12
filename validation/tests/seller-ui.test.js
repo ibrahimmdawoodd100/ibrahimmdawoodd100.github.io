@@ -146,7 +146,7 @@ test('suspend from the delete button asks in-page, then suspends and reports suc
 test('suspend/activate errors are shown, not silent', async () => {
   const h = harness({ calls: { companyStatus: async () => { throw Object.assign(new Error('الشركة غير موجودة'), { code: 'functions/not-found' }); } } });
   await h.ctx.activateCompany('c1');
-  assert.ok(h.log.toasts.some(t => t.type === 'error' && t.msg === 'الشركة غير موجودة'));
+  assert.ok(h.log.toasts.some(t => t.type === 'error' && t.msg === 'الشركة غير موجودة (رمز: functions/not-found)'), JSON.stringify(h.log.toasts));
   assert.ok(h.log.hidden >= 1);
 });
 

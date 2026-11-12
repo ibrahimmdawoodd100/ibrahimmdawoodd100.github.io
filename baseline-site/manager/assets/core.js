@@ -103,11 +103,19 @@ window.Basma = (() => {
     } while(count===1000);
     return snapshot(Object.keys(result).length ? result : null);
   }
+  // In-page form (window.BasmaDialogs): phones may block window.prompt/alert silently.
   async function changePassword() {
-    const password = prompt('كلمة المرور الجديدة: 14 حرفًا على الأقل');
-    if (!password) return;
-    await call('changePassword', { password });
-    alert('تم التغيير وإلغاء الجلسات القديمة. سجّل الدخول بالكلمة الجديدة.');
+    const dialogs = window.BasmaDialogs;
+    if (!dialogs) { banner('تعذر فتح نافذة تغيير كلمة المرور. أعد تحميل الصفحة.'); return; }
+    const answer = await dialogs.form('تغيير كلمة المرور', [
+      { id: 'password', label: 'كلمة المرور الجديدة (14 حرفًا على الأقل)', type: 'password' },
+      { id: 'again', label: 'أعد كتابة كلمة المرور', type: 'password' }
+    ]);
+    if (!answer || !answer.password) return;
+    if (answer.password !== answer.again) { await dialogs.notice('تغيير كلمة المرور', 'كلمتا المرور غير متطابقتين. لم يتغير شيء.'); return; }
+    try { await call('changePassword', { password: answer.password }); }
+    catch (error) { await dialogs.notice('تغيير كلمة المرور', error.message || 'تعذر تغيير كلمة المرور.'); return; }
+    await dialogs.notice('تم تغيير كلمة المرور', 'أُلغيت الجلسات القديمة. سجّل الدخول بالكلمة الجديدة.');
     await logout();
   }
   function banner(message) {

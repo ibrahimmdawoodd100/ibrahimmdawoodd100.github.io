@@ -15,7 +15,7 @@ async function secureManagerOpen(profile) {
 }
 window.onload = async () => {
   try { const profile = await Basma.session('manager'); if (profile) await secureManagerOpen(profile); else document.getElementById('setup-screen').style.display = 'flex'; }
-  catch (error) { Basma.banner(error.message); document.getElementById('setup-screen').style.display = 'flex'; }
+  catch (error) { Basma.banner(window.BasmaErrors?.message(error) ?? error.message); document.getElementById('setup-screen').style.display = 'flex'; }
 };
 directoryLogin = async function() {
   const btn = document.getElementById('dl-submit-btn'); btn.disabled = true;
@@ -31,7 +31,7 @@ addEmployee = async function() {
     const account = await Basma.call('addEmployee', { name: value('ae-name'), empId: value('ae-empid'), role: value('ae-role'), warehouseId: value('ae-wh'), salary: Number(value('ae-salary')), deductionPercent: value('ae-deduction') === '' ? 100 : Number(value('ae-deduction')) });
     toggleAddEmpPanel(); await loadEmployees();
     showActLinkModal('تم إضافة الموظف', 'سلّم بيانات الدخول عبر قناة خاصة.', account.username, account.password, value('ae-name'));
-  } catch (error) { showToast(error.message, 'error'); } finally { hideLoading(); }
+  } catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); } finally { hideLoading(); }
 };
 createEmployeeDirectoryAccount = (eid) => Basma.call('employeeAccount', { employeeId: eid });
 resetEmployeeBio = async function(eid) {
@@ -39,28 +39,28 @@ resetEmployeeBio = async function(eid) {
   showLoading('جاري إعادة التعيين...');
   let account;
   try { account = await Basma.call('employeeAccount', { employeeId: eid, resetBio: true }); }
-  catch (error) { showToast(error.message, 'error'); return; }
+  catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); return; }
   finally { hideLoading(); }
   await showActLinkModal('إعادة تعيين الحساب', 'أُلغيت الجلسات والبصمة القديمة.', account.username, account.password, ALL_EMPLOYEES[eid]?.name || '');
 };
 confirmDeleteEmp = function(eid) { showConfirm('تعطيل الموظف', 'سيُمنع دخول الموظف مع الاحتفاظ بسجلاته للمراجعة.', () => doDeleteEmp(eid)); };
 doDeleteEmp = async function(eid) {
   try { await Basma.call('disableEmployee', { employeeId: eid }); closeConfirm(); closeEmpModal(); await loadAllData(); showToast('تم تعطيل الحساب', 'success'); }
-  catch (error) { showToast(error.message, 'error'); }
+  catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
 };
 overrideAttendance = async function(eid, status) {
   const answer = await BasmaDialogs.form('تعديل الحضور يدويًا', [{ id: 'reason', label: 'سبب التعديل (يُحفظ في سجل التدقيق)' }]);
   const reason = answer?.reason; if (!reason) return;
   try { await Basma.call('manualAttendance', { employeeId: eid, status, reason }); showToast('حُفظ التعديل منفصلًا عن إثبات البصمة', 'success'); closeEmpModal(); }
-  catch (error) { showToast(error.message, 'error'); }
+  catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
 };
 for (const [name, collection, status] of [['approveExcuse', 'excuses', 'approved'], ['rejectExcuse', 'excuses', 'rejected'], ['approveLeave', 'leaves', 'approved'], ['rejectLeave', 'leaves', 'rejected']]) {
-  window[name] = async id => { try { await Basma.call('reviewRequest', { id, collection, status }); if (collection === 'leaves') loadLeaves(); else loadExcuses(); loadBadges(); showToast('تم تحديث الطلب', 'success'); } catch (error) { showToast(error.message, 'error'); } };
+  window[name] = async id => { try { await Basma.call('reviewRequest', { id, collection, status }); if (collection === 'leaves') loadLeaves(); else loadExcuses(); loadBadges(); showToast('تم تحديث الطلب', 'success'); } catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); } };
 }
 rejectPartialLeave = () => Promise.resolve();
 rejectLocation = async function(key, empId, type) {
   try { await DB.ref(`companies/${COMPANY_ID}/records/${key}`).update({ locStatus: 'rejected' }); showToast('تم رفض الموقع مع حفظ السجل الأصلي', 'info'); loadLocReview(); loadBadges(); }
-  catch (error) { showToast(error.message, 'error'); }
+  catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
 };
 function securePrint(title, headers, rows) {
   const win = window.open('', '_blank');
