@@ -91,6 +91,7 @@ async function secureEditPlan(cid) {
 const secureSellerPanel=openPanel;
 openPanel=async function(cid){
   await secureSellerPanel(cid);
+  fillManagerUsername(cid);
   const button=document.createElement('button');button.className='action-btn-full';button.textContent='تجديد الاشتراك';
   button.addEventListener('click',async()=>{
     const answer=await sellerForm('تجديد الاشتراك',[{id:'days',label:'عدد أيام التجديد (1 إلى 3660)',value:'30',numeric:true}]);if(!answer)return;
@@ -227,3 +228,13 @@ shareWhatsapp = function() {
   const msg = `🎉 مرحباً!\n\nتم تفعيل نظام الحضور الذكي لشركة *${name}*\n\n📲 حمّل تطبيق "المدير" من متجر التطبيقات.\n🔐 سأرسل لك اسم المستخدم والرقم السري بشكل منفصل وآمن.`;
   window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
 };
+
+// Seller panel row «اسم المستخدم»: the manager USERNAME from listCompanies (not secret). Never a password.
+function fillManagerUsername(cid) {
+  const panel = document.getElementById('panel-content'); if (!panel?.querySelectorAll) return;
+  const name = typeof allCompanies[cid]?.managerUsername === 'string' ? allCompanies[cid].managerUsername : '';
+  for (const row of panel.querySelectorAll('.info-row')) {
+    const label = row.querySelector?.('.info-label'), value = row.querySelector?.('.info-value');
+    if (label && value && label.textContent.trim() === 'اسم المستخدم') value.textContent = name || '--';
+  }
+}

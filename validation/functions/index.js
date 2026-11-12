@@ -67,6 +67,16 @@ exports.listCompanies = endpoint(['seller'], async ({ data }) => {
     cursor = id;
     companies[id] = { id, info, status: info.status === 'suspended' ? 'suspended' : info.expiresAt <= Date.now() ? 'expired' : 'active', expiresAt: info.expiresAt, empCount: await read(`employeeIndex/${id}/count`) || 0 };
   }
+  // Manager USERNAME for the seller panel (not secret). It lives only in the linked Auth account's email;
+  // passwords are never stored or returned. Read-only; a missing link or Auth error leaves the field out.
+  await Promise.all(Object.keys(companies).map(async id => {
+    const managerUid = await read(`accountLinks/${id}/manager`);
+    if (typeof managerUid !== 'string' || !managerUid) return;
+    try {
+      const email = String((await auth.getUser(managerUid))?.email || '');
+      if (email.endsWith('@basma.app')) companies[id].managerUsername = email.slice(0, -'@basma.app'.length);
+    } catch {}
+  }));
   return { companies, cursor: snapshot.numChildren() === 100 ? cursor : null };
 });
 exports.projectCompanyDirectory = onValueWritten({ ref:'/companies/{cid}/info', region, retry:true }, async event => {

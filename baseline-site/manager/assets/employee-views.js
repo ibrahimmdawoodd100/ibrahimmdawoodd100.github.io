@@ -19,7 +19,7 @@ checkGeoZone=function(){secureZoneCheck();return secureAttendanceWindows.evaluat
 getGPS=async function(){
   const dot=document.getElementById('gps-dot'),label=document.getElementById('gps-text');dot.className='gps-dot gps-loading';label.textContent='جاري تحديد الموقع...';
   try{GPS_DATA={...await Basma.getGPS(),name:'موقع الجهاز'};dot.className='gps-dot gps-ok';label.textContent=`الموقع محدد؛ دقة GPS نحو ${Math.round(GPS_DATA.accuracy)} متر`;}
-  catch(error){GPS_DATA={lat:null,lng:null,accuracy:null,name:null};dot.className='gps-dot gps-err';label.textContent=error.message;}
+  catch(error){GPS_DATA={lat:null,lng:null,accuracy:null,name:null};dot.className='gps-dot gps-err';label.textContent=window.BasmaErrors?.message(error)??error.message;}
   secureZoneCheck();secureAttendanceWindows.evaluate();
 };
 checkHoliday=function(date,settings){const day=BasmaReports.dateAt(date,COMPANY_INFO.timeZone||'UTC');return Object.values(settings?.weekendDays??[5]).includes(new Date(`${day}T12:00:00Z`).getUTCDay())||Object.values(settings?.holidays||{}).some(h=>h.date===day&&h.active!==false);};
@@ -69,7 +69,7 @@ const secureAttendanceWindows=(()=>{
     window.basmaRenderPartial?.();
     return Math.min(incoming.nextMs,outgoing.nextMs);
   }
-  function get(){if(!view)view=BasmaClock.controller({now,load,render,onError:error=>{document.getElementById('btn-checkin').disabled=true;document.getElementById('btn-checkout').disabled=true;document.getElementById('win-msg').textContent=error.message;}});return view;}
+  function get(){if(!view)view=BasmaClock.controller({now,load,render,onError:error=>{document.getElementById('btn-checkin').disabled=true;document.getElementById('btn-checkout').disabled=true;document.getElementById('win-msg').textContent=window.BasmaErrors?.message(error)??error.message;}});return view;}
   function foreground(){if(EMP?.id&&view)get().foreground();}
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')foreground();});
   for(const event of ['focus','pageshow','basma-attendance-settled'])window.addEventListener(event,foreground);
@@ -85,7 +85,7 @@ loadTodayStats=async function(){
   document.getElementById('stat-delay').textContent=day.delayMins?`${day.delayMins} دقيقة`:'—';document.getElementById('stat-loc').textContent=day.locationName||'—';
 };
 submitExcuse=async function(){
-  try{await Basma.call('submitRequest',{kind:'excuse',reason:document.getElementById('excuse-reason').value,type:document.querySelector('input[name="excuse-type"]:checked')?.value});showToast('أُرسل العذر بتاريخ الخادم','success');loadExcusePage();}catch(error){showToast(error.message,'error');}
+  try{await Basma.call('submitRequest',{kind:'excuse',reason:document.getElementById('excuse-reason').value,type:document.querySelector('input[name="excuse-type"]:checked')?.value});showToast('أُرسل العذر بتاريخ الخادم','success');loadExcusePage();}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
 loadHistory=async function(){
   const container=document.getElementById('main-tab-hist');container.replaceChildren();
@@ -100,7 +100,7 @@ loadHistory=async function(){
       card.textContent=`${record.dateKey||BasmaReports.dateAt(record.timestamp,COMPANY_INFO.timeZone||'UTC')} — ${label} ${stamp}`;container.appendChild(card);
     }
     if(!records.length){const empty=document.createElement('p');empty.textContent='لا توجد سجلات بعد';container.appendChild(empty);}
-  }catch(error){showToast(error.message,'error');}
+  }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
 
 serverNow=()=>{const value=secureAttendanceWindows.now();return new Date(Number.isFinite(value)?value:Date.now()+SERVER_TIME_OFFSET);};

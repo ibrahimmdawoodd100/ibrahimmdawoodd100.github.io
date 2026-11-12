@@ -64,8 +64,25 @@ window.Basma = (() => {
   function db() { if (!profile) throw new Error('الجلسة غير متحققة'); return app.database(); }
   function decode(value) { return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')), x => x.charCodeAt(0)); }
   function encode(value) { return btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  // The server's per-user lock answers 'aborted' while another request for the same account is running.
+  // Begin/finish are safe to repeat on 'aborted' (the lock refuses before the challenge is consumed).
+  async function callRetryingAborted(name, data) {
+    const delay = Number(typeof window === 'object' && window.BASMA_RETRY_DELAY_MS) || 2000;
+    for (let attempt = 0; ; attempt++) {
+      try { return await call(name, data); }
+      catch (error) { if (error?.code !== 'functions/aborted' || attempt >= 3) throw error; await new Promise(resolve => setTimeout(resolve, delay)); }
+    }
+  }
+  // Only one fingerprint operation at a time: a double tap must never start a second begin/finish.
+  let biometricRunning = false;
   async function biometric(mode, intent = 'login', missionKey) {
-    const start = await call('beginWebAuthn', { mode, intent, ...(missionKey ? { missionKey } : {}) });
+    if (biometricRunning) throw Object.assign(new Error('عملية بصمة جارية بالفعل'), { code: 'basma/busy' });
+    biometricRunning = true;
+    try { return await biometricOnce(mode, intent, missionKey); }
+    finally { biometricRunning = false; }
+  }
+  async function biometricOnce(mode, intent, missionKey) {
+    const start = await callRetryingAborted('beginWebAuthn', { mode, intent, ...(missionKey ? { missionKey } : {}) });
     const options = start.options;
     options.challenge = decode(options.challenge);
     for (const list of ['allowCredentials', 'excludeCredentials']) if (options[list]) options[list] = options[list].map(x => ({ ...x, id: decode(x.id) }));
@@ -75,7 +92,7 @@ window.Basma = (() => {
     const response = { id: credential.id, rawId: encode(credential.rawId), type: credential.type, clientExtensionResults: credential.getClientExtensionResults(), response: { clientDataJSON: encode(credential.response.clientDataJSON) } };
     if (mode === 'register') Object.assign(response.response, { attestationObject: encode(credential.response.attestationObject), transports: credential.response.getTransports ? credential.response.getTransports() : [] });
     else Object.assign(response.response, { authenticatorData: encode(credential.response.authenticatorData), signature: encode(credential.response.signature), userHandle: credential.response.userHandle ? encode(credential.response.userHandle) : null });
-    return call('finishWebAuthn', { challengeId: start.challengeId, response });
+    return callRetryingAborted('finishWebAuthn', { challengeId: start.challengeId, response });
   }
   async function attendance(type, locationData, missionKey) {
     const point = await getGPS();
@@ -127,7 +144,7 @@ window.Basma = (() => {
     document.getElementById('basma-controls')?.remove();
     const bar = document.createElement('div'); bar.id = 'basma-controls'; bar.style.cssText = 'position:fixed;bottom:10px;left:10px;z-index:1000;display:flex;gap:8px';
     for (const [text, handler] of [['تغيير كلمة المرور', changePassword], ['خروج', logout]]) {
-      const button = document.createElement('button'); button.textContent = text; button.style.cssText = 'padding:8px;border-radius:8px;cursor:pointer'; button.addEventListener('click', () => Promise.resolve(handler()).catch(error => banner(error.message))); bar.appendChild(button);
+      const button = document.createElement('button'); button.textContent = text; button.style.cssText = 'padding:8px;border-radius:8px;cursor:pointer'; button.addEventListener('click', () => Promise.resolve(handler()).catch(error => banner(window.BasmaErrors?.message(error) ?? error.message))); bar.appendChild(button);
     }
     document.body.appendChild(bar);
   }

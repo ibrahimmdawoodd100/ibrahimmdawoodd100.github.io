@@ -92,3 +92,69 @@ window.BasmaDialogs = (() => {
   }
   return Object.freeze({ form, confirm, notice, credentials, copy, toLatinDigits });
 })();
+
+// Plain-Arabic error messages for every page. The original code stays visible in small text.
+// Server messages that are already clear are kept; confusing ones are rewritten here (frontend only).
+window.BasmaErrors = (() => {
+  const REWRITE = {
+    'توجد عملية أخرى على الحساب؛ أعد المحاولة': 'الحساب مشغول بعملية أخرى الآن. انتظر لحظات ثم حاول مرة أخرى.',
+    'تعارض التحقق، أعد المحاولة': 'حدث تداخل أثناء التحقق. حاول مرة أخرى.',
+    'تحدي منتهي أو مستخدم': 'انتهت مهلة طلب البصمة. اضغط زر البصمة مرة أخرى.',
+    'إثبات البصمة غير صالح أو مستخدم': 'لم تُقبل البصمة. اضغط زر البصمة وحاول مرة أخرى.',
+    'فشل التحقق': 'لم يتم التحقق من البصمة. حاول مرة أخرى.',
+    'لم يعد التفعيل مسموحًا': 'لا يمكن تفعيل البصمة لهذا الحساب الآن. اطلب من المدير إعادة تعيين الحساب.',
+    'البصمة مسجلة مسبقًا': 'البصمة مسجلة لهذا الحساب من قبل. إذا غيّرت جوالك فاطلب من المدير إعادة تعيين البصمة.',
+    'البصمة غير مسجلة': 'لم تُسجَّل بصمة لهذا الحساب بعد. سجّلها من شاشة التفعيل.',
+    'سجّل البصمة أولًا': 'لم تُسجَّل بصمة لهذا الحساب بعد. سجّلها من شاشة التفعيل.',
+    'إعدادات نطاق البصمة غير صحيحة': 'إعدادات البصمة في الخادم غير مكتملة. أبلغ المورّد.',
+    'ربط غير صالح': 'بيانات الحساب غير مرتبطة بشكل صحيح. أبلغ المورّد.',
+    'ربط حساب غير صالح': 'تعذر العثور على حساب مدير هذه الشركة. أبلغ المورّد.',
+    'تغيّرت الجلسة. سجّل الدخول مجددًا': 'تغيّرت بيانات الدخول. سجّل الدخول من جديد.',
+    'سجّل الدخول': 'انتهت الجلسة. سجّل الدخول من جديد.',
+    'سجّل الدخول مجددًا قبل تغيير كلمة المرور': 'لأمانك: سجّل الخروج ثم الدخول من جديد، ثم غيّر كلمة المرور خلال 5 دقائق.',
+    'العذر القديم يحتاج إلى إعادة تقديم من النسخة الآمنة': 'هذا العذر من النسخة القديمة. أرسله من جديد من فضلك.',
+    'الطلب محسوم؛ تعديل القرار يتطلب إجراء تصحيح مستقل': 'تم البت في هذا الطلب من قبل. لتغيير النتيجة استخدم «تعديل الحضور يدويًا».',
+    'نوع غير صالح': 'البيانات المرسلة غير صحيحة. حدّث الصفحة وحاول مرة أخرى.',
+    'حالة غير صالحة': 'البيانات المرسلة غير صحيحة. حدّث الصفحة وحاول مرة أخرى.',
+    'عملية غير صالحة': 'البيانات المرسلة غير صحيحة. حدّث الصفحة وحاول مرة أخرى.',
+    'طلب غير صالح': 'البيانات المرسلة غير صحيحة. حدّث الصفحة وحاول مرة أخرى.',
+    'فترة غير صالحة': 'الفترة المختارة غير صحيحة. اختر تاريخ بداية قبل تاريخ النهاية.',
+    'بلغت حد الموظفين أو رقم الموظف مستخدم': 'وصلت إلى الحد الأقصى للموظفين، أو رقم الموظف مستخدم من قبل.',
+    'المهمة غير متاحة': 'هذه المهمة لم تعد متاحة. حدّث الصفحة.',
+    'الفرع غير متاح': 'هذا الفرع غير متاح أو معطّل.'
+  };
+  const BY_CODE = {
+    'functions/aborted': 'الحساب مشغول بعملية أخرى الآن. انتظر لحظات ثم حاول مرة أخرى.',
+    'functions/unauthenticated': 'انتهت الجلسة أو تعذر التحقق من التطبيق. سجّل الدخول من جديد.',
+    'functions/internal': 'حدث خطأ في الخادم. حاول بعد قليل.',
+    'functions/unavailable': 'تعذر الاتصال بالخادم. تحقق من الإنترنت ثم حاول مرة أخرى.',
+    'functions/deadline-exceeded': 'استغرق الخادم وقتًا طويلًا. حاول مرة أخرى.',
+    'functions/resource-exhausted': 'طلبات كثيرة. انتظر دقيقة ثم حاول مرة أخرى.',
+    'basma/busy': 'عملية بصمة جارية بالفعل. انتظر حتى تنتهي.',
+    NotAllowedError: 'أُلغي التحقق أو انتهت مهلته. اضغط زر البصمة مرة أخرى.',
+    AbortError: 'أُلغي التحقق. اضغط زر البصمة مرة أخرى.',
+    InvalidStateError: 'هذا الجوال مسجّل لهذا الحساب من قبل.',
+    NotSupportedError: 'هذا المتصفح لا يدعم البصمة لهذا الموقع. استخدم Chrome المحدّث.',
+    SecurityError: 'المتصفح منع البصمة لهذا الموقع. افتح الموقع من Chrome مباشرة.'
+  };
+  const looksArabic = text => /[؀-ۿ]/.test(text);
+  function codeOf(error) { return String(error?.code || (error?.name && error.name !== 'Error' ? error.name : '') || ''); }
+  function describe(error, fallback = 'تعذرت العملية. حاول مرة أخرى.') {
+    const raw = String(error?.message || '').trim(), code = codeOf(error);
+    let text = REWRITE[raw];
+    if (!text && code === 'functions/aborted') text = BY_CODE[code];
+    if (!text && raw && looksArabic(raw)) text = raw;
+    if (!text) text = BY_CODE[code] || fallback;
+    return { text, code };
+  }
+  function message(error, fallback) { const d = describe(error, fallback); return d.code ? `${d.text} (رمز: ${d.code})` : d.text; }
+  function render(node, error, fallback) {
+    if (!node) return;
+    const d = describe(error, fallback);
+    node.replaceChildren?.();
+    if (!node.replaceChildren) { node.textContent = message(error, fallback); return; }
+    const main = document.createElement('div'); main.textContent = d.text; node.appendChild(main);
+    if (d.code) { const small = document.createElement('small'); small.style.cssText = 'display:block;opacity:.7;font-size:11px;direction:ltr'; small.textContent = d.code; node.appendChild(small); }
+  }
+  return Object.freeze({ describe, message, render, codeOf });
+})();

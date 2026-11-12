@@ -60,7 +60,7 @@ loadDashboard=async function(){
     document.getElementById('ds-absent').textContent=count('absent');document.getElementById('ds-leave').textContent=count('leave');
     secureManagerView.table('dash-tbody',rows,r=>[r.name,r.role,r.warehouseName,r.statusLabel,secureManagerView.time(r.checkIn),secureManagerView.time(r.checkOut),r.locationName||'—'],r=>showEmpModal(r.employeeId));
     secureManagerView.filters();
-  }catch(error){showToast(error.message,'error');}
+  }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
 loadAttendance=async function(){
   const ticket=++attendanceTicket;
@@ -70,7 +70,7 @@ loadAttendance=async function(){
     if(ticket!==attendanceTicket||date!==document.getElementById('att-date').value)return;
     if(attStatusFilter!=='all')rows=rows.filter(r=>attStatusFilter==='present'?['present','excused'].includes(r.classification):attStatusFilter==='excused_out'?r.attendanceStatus==='excused_out':r.classification===attStatusFilter);
     secureManagerView.table('att-tbody',rows,r=>[r.name,r.role,r.warehouseName,r.statusLabel,secureManagerView.time(r.checkIn),secureManagerView.time(r.checkOut),r.delayMins],r=>secureManagerView.details([r],`${r.name} — ${date}`));
-  }catch(error){showToast(error.message,'error');}
+  }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
 generateReport=async function(){
   const ticket=++reportTicket;
@@ -84,7 +84,7 @@ generateReport=async function(){
     const stats=document.getElementById('rep-stats');stats.replaceChildren();
     for(const [label,value]of [['السجلات',rows.length],['حضور',rows.filter(r=>r.classification==='present').length],['بعذر',rows.filter(r=>r.classification==='excused').length],['غياب',rows.filter(r=>r.classification==='absent').length]])stats.appendChild(secureManagerView.text('div',`${label}: ${value}`));
     document.getElementById('report-output').style.display='block';
-  }catch(error){showToast(error.message,'error');}finally{hideLoading();}
+  }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();}
 };
 calculatePayroll=async function(){
   const ticket=++payrollTicket;
@@ -106,7 +106,7 @@ calculatePayroll=async function(){
     const stats=document.getElementById('pr-stats');stats.replaceChildren();
     for(const [label,key]of [['إجمالي الرواتب','salary'],['الاستقطاع','deduction'],['الصافي','net']])stats.appendChild(secureManagerView.text('div',`${label}: ${rows.reduce((sum,r)=>sum+r[key],0).toLocaleString()}`));
     document.getElementById('payroll-output').style.display='block';
-  }catch(error){showToast(error.message,'error');}finally{hideLoading();}
+  }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();}
 };
 
 const secureOriginalModal=showEmpModal;
@@ -117,15 +117,15 @@ showEmpModal=async function(eid){
   const select=document.createElement('select');select.className='form-input';
   for(const [id,wh]of Object.entries(ALL_WAREHOUSES).filter(([,wh])=>wh.active)){const option=secureManagerView.text('option',wh.name);option.value=id;select.appendChild(option);}select.value=ALL_EMPLOYEES[eid].warehouseId;
   const button=secureManagerView.text('button','حفظ نقل الفرع');button.className='action-btn-full';button.addEventListener('click',async()=>{
-    button.disabled=true;try{await Basma.call('transferEmployee',{employeeId:eid,warehouseId:select.value});closeEmpModal();await loadAllData();showToast('تم نقل الفرع مع حفظ السجلات السابقة','success');}catch(error){showToast(error.message,'error');}finally{button.disabled=false;}
+    button.disabled=true;try{await Basma.call('transferEmployee',{employeeId:eid,warehouseId:select.value});closeEmpModal();await loadAllData();showToast('تم نقل الفرع مع حفظ السجلات السابقة','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{button.disabled=false;}
   });section.append(select,button);parent.appendChild(section);
   const salary=document.getElementById('emp-salary-input'),deduction=document.getElementById('emp-deduction-input');salary.value='';deduction.value='';
   salary.disabled=deduction.disabled=true;
-  try{const financial=await secureManagerView.financial(eid);salary.value=financial.salary;deduction.value=financial.deductionPercent;}catch(error){showToast(error.message,'info');}finally{salary.disabled=deduction.disabled=false;}
+  try{const financial=await secureManagerView.financial(eid);salary.value=financial.salary;deduction.value=financial.deductionPercent;}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'info');}finally{salary.disabled=deduction.disabled=false;}
 };
 saveEmpSalary=async function(eid){
   if(document.getElementById('emp-salary-input').disabled||document.getElementById('emp-salary-input').value.trim()===''||document.getElementById('emp-deduction-input').value.trim()===''){showToast('أكمل قيم الراتب والاستقطاع أولًا','error');return;}
-  try{await Basma.call('setEmployeePayroll',{employeeId:eid,salary:Number(document.getElementById('emp-salary-input').value),deductionPercent:Number(document.getElementById('emp-deduction-input').value)});showToast('حُفظ الراتب في السجل المالي المحمي','success');}catch(error){showToast(error.message,'error');}
+  try{await Basma.call('setEmployeePayroll',{employeeId:eid,salary:Number(document.getElementById('emp-salary-input').value),deductionPercent:Number(document.getElementById('emp-deduction-input').value)});showToast('حُفظ الراتب في السجل المالي المحمي','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
 loadLocReview=()=>{};
 approveLocation=rejectLocation=answerBypass=()=>showToast('اعتماد الموقع يتم على الخادم؛ تغيير الجهاز عبر إعادة التعيين من ملف الموظف','info');
@@ -170,7 +170,7 @@ async function loadManagerRequests(collection){
         for(const line of [row.empName,row.warehouseName,row.date,type,row.isPartial||row.leaveType==='partial'?`${row.fromTime||''} – ${row.toTime||''}`:'',row.reason,({approved:'مقبول',rejected:'مرفوض',pending:'معلق'}[row.status]||row.status)])if(line)card.appendChild(secureManagerView.text('div',line));
         if(row.status==='pending')for(const [label,status]of [['قبول','approved'],['رفض','rejected']]){
           const button=secureManagerView.text('button',label);button.className='modal-btn';button.addEventListener('click',async()=>{
-            button.disabled=true;try{token.check();await Basma.call('reviewRequest',{collection,id:row.key,status});managerData.invalidate();await loadManagerRequests(collection);loadBadges();showToast('تم تحديث الطلب','success');}catch(error){showToast(error.message,'error');}finally{button.disabled=false;}
+            button.disabled=true;try{token.check();await Basma.call('reviewRequest',{collection,id:row.key,status});managerData.invalidate();await loadManagerRequests(collection);loadBadges();showToast('تم تحديث الطلب','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{button.disabled=false;}
           });card.appendChild(button);
         }list.appendChild(card);
       }
@@ -179,14 +179,14 @@ async function loadManagerRequests(collection){
       back.disabled=page===0;next.disabled=(page+1)*size>=items.length;back.addEventListener('click',()=>{page--;draw();});next.addEventListener('click',()=>{page++;draw();});
       pager.append(back,secureManagerView.text('span',`${items.length?page*size+1:0}–${Math.min((page+1)*size,items.length)} من ${items.length}`),next);list.appendChild(pager);
     };draw();
-  }catch(error){if(ticket!==requestTickets[collection])return;list.replaceChildren(secureManagerView.text('p','تعذر إكمال التحميل؛ لم تُعرض قائمة جزئية. أعد المحاولة.'));showToast(error.message,'error');}
+  }catch(error){if(ticket!==requestTickets[collection])return;list.replaceChildren(secureManagerView.text('p','تعذر إكمال التحميل؛ لم تُعرض قائمة جزئية. أعد المحاولة.'));showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 }
 loadLeaves=()=>loadManagerRequests('leaves');loadExcuses=()=>loadManagerRequests('excuses');
 function refreshManagerRequests(collection){managerData.invalidate();return loadManagerRequests(collection);}
 loadBadges=function(){
   for(const [query,handler]of managerSubscriptions)query.off('value',handler);managerSubscriptions=[];
   const token=managerData.capture(false);
-  function watch(query,render){let initial=true;const handler=query.on('value',snapshot=>{try{token.check();render(snapshot);if(!initial){managerData.invalidate();if(currentPage==='leaves')loadLeaves();else if(currentPage==='excuses')loadExcuses();else if(currentPage==='dash')loadDashboard();}initial=false;}catch(error){if(error.code!=='stale-manager-scope')showToast(error.message,'error');}});managerSubscriptions.push([query,handler]);}
+  function watch(query,render){let initial=true;const handler=query.on('value',snapshot=>{try{token.check();render(snapshot);if(!initial){managerData.invalidate();if(currentPage==='leaves')loadLeaves();else if(currentPage==='excuses')loadExcuses();else if(currentPage==='dash')loadDashboard();}initial=false;}catch(error){if(error.code!=='stale-manager-scope')showToast(window.BasmaErrors?.message(error)??error.message,'error');}});managerSubscriptions.push([query,handler]);}
   for(const [collection,badgeId]of [['leaves','leaves-badge'],['excuses','excuse-badge']])watch(DB.ref(`companies/${COMPANY_ID}/${collection}`).orderByChild('status').equalTo('pending'),snapshot=>{const badge=document.getElementById(badgeId),count=snapshot.numChildren();badge.textContent=count;badge.style.display=count?'inline':'none';});
   const active={assigned:0,started:0};for(const status of ['assigned','started'])watch(DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('status').equalTo(status),snapshot=>{active[status]=snapshot.numChildren();const badge=document.getElementById('missions-badge');if(!badge)return;badge.textContent=active.assigned+active.started;badge.style.display=active.assigned+active.started?'inline':'none';});
   // Location review UI is retired; do not download its historical record badge.
@@ -205,7 +205,7 @@ async function refreshVisibleManager(){
     if(currentPage==='reports'){if(reportData.length)await generateReport();return;}
     if(currentPage==='payroll'){if(payrollData.rows)await calculatePayroll();return;}
     const run=typeof pageLoaders!=='undefined'?pageLoaders[currentPage]:null;await run?.();
-  }catch(error){if(error.code!=='stale-manager-scope')showToast(error.message,'error');}
+  }catch(error){if(error.code!=='stale-manager-scope')showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 }
 refreshCurrentPage=()=>refreshVisibleManager();
 window.addEventListener?.('focus',refreshVisibleManager);window.addEventListener?.('pageshow',refreshVisibleManager);

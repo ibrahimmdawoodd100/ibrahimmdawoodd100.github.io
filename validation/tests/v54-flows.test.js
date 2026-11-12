@@ -200,3 +200,16 @@ test('a failed reset shows the plain message and unlocks the buttons', async () 
   assert.ok(h.log.toasts.some(t => t.t === 'error' && t.m === 'تعذر العثور على حساب مدير هذه الشركة. أبلغ المورّد. (رمز: functions/failed-precondition)'), JSON.stringify(h.log.toasts));
   assert.ok(h.resetButtons.every(b => !b.disabled));
 });
+
+test('seller panel shows the manager username from listCompanies, or "--" when the server has none', async () => {
+  const h = sellerHarness({});
+  const mkRow = (labelText, valueText) => { const label = { textContent: labelText }, value = { textContent: valueText }; return { querySelector: sel => (sel === '.info-label' ? label : sel === '.info-value' ? value : null), value }; };
+  const userRow = mkRow('اسم المستخدم', '--'), otherRow = mkRow('الحالة', 'نشطة');
+  const panel = h.dom.document.createElement('div'); panel.id = 'panel-content'; panel.querySelectorAll = () => [userRow, otherRow]; h.dom.byId.set('panel-content', panel);
+  h.ctx.allCompanies = { c1: { id: 'c1', managerUsername: 'manager_abc123', info: {} }, c2: { id: 'c2', info: {} } };
+  await h.ctx.openPanel('c1');
+  assert.equal(userRow.value.textContent, 'manager_abc123');
+  assert.equal(otherRow.value.textContent, 'نشطة', 'other rows untouched');
+  await h.ctx.openPanel('c2');
+  assert.equal(userRow.value.textContent, '--', 'old backend without the field: still "--", no invented value');
+});

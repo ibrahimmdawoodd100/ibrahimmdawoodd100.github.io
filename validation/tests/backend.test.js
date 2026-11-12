@@ -12,7 +12,7 @@ function harness({rpID='basma.example.org',origins='https://basma.example.org',n
   const snap = value => ({ val: () => clone(value), exists: () => value !== null, numChildren: () => Object.keys(value || {}).length });
   function ref(path = '') {
     const filters={};
-    return { key: path.split('/').at(-1), orderByChild(field){filters.field=field;return this;},equalTo(value){filters.equal=value;return this;},limitToLast(value){filters.limit=value;return this;},async get() { readPaths.push(path); const value=get(path);return snap(filters.field&&value?Object.fromEntries(Object.entries(value).filter(([,v])=>v[filters.field]===filters.equal).slice(-(filters.limit||200))):value); }, async set(value) { set(path, value); }, async remove() { set(path, null); }, async update(updates) { for (const [key,value] of Object.entries(updates)) set(`${path}/${key}`,value); },
+    return { key: path.split('/').at(-1), orderByChild(field){filters.field=field;return this;},orderByKey(){filters.byKey=true;return this;},limitToFirst(value){filters.first=value;return this;},startAfter(value){filters.after=value;return this;},equalTo(value){filters.equal=value;return this;},limitToLast(value){filters.limit=value;return this;},async get() { readPaths.push(path); const value=get(path);if(filters.byKey&&value&&typeof value==='object')return snap(Object.fromEntries(Object.entries(value).sort(([x],[y])=>x<y?-1:x>y?1:0).filter(([k])=>filters.after==null||k>filters.after).slice(0,filters.first||Infinity)));return snap(filters.field&&value?Object.fromEntries(Object.entries(value).filter(([,v])=>v[filters.field]===filters.equal).slice(-(filters.limit||200))):value); }, async set(value) { set(path, value); }, async remove() { set(path, null); }, async update(updates) { for (const [key,value] of Object.entries(updates)) set(`${path}/${key}`,value); },
       async transaction(fn) { const next = fn(clone(get(path))); if (next === undefined) return { committed:false, snapshot:snap(get(path)) }; set(path,next); return { committed:true,snapshot:snap(next) }; },
       push(value) { const child=ref(`${path}/k${++serial}`); if(value!==undefined) { child.set(value); return Promise.resolve(child); } return child; }
     };
@@ -241,4 +241,28 @@ test('home never consults leave history and does not infer approval from unproje
  assert.equal((await h.invoke('employeeHome','employee')).onLeave,true);
  assert.equal(h.readPaths.some(path=>path.includes('/leaves')),false);
  assert.equal(h.readPaths.filter(path=>path==='fullDayLeaveIndex/c1/e1/2026-10-24').length,2);
+});
+
+test('listCompanies returns the manager username for the seller panel, never a password', async () => {
+  const h = harness();
+  const created = await h.invoke('createCompany', 'seller', { nameAr: 'شركة', nameEn: 'Co', maxEmployees: 5, expiresAt: Date.now() + 86400000, timeZone: 'UTC', settings: { checkIn: { from: '08:00', to: '09:00' }, checkOut: { from: '16:00', to: '17:00' } } });
+  assert.match(created.username, /^manager_[0-9a-f]{20}$/);
+  h.set(`companyDirectory/${created.companyId}`, h.get(`companies/${created.companyId}/info`));
+  h.set('companyDirectory/noLink', { nameAr: 'بلا مدير', status: 'active', expiresAt: Date.now() + 86400000 });
+  const page = await h.invoke('listCompanies', 'seller', {});
+  assert.equal(page.companies[created.companyId].managerUsername, created.username);
+  assert.equal('managerUsername' in page.companies.noLink, false, 'no link: field left out, no guess');
+  const text = JSON.stringify(page);
+  assert.equal(text.includes(created.password), false, 'the password never appears');
+  assert.equal(/password/i.test(text), false);
+});
+
+test('listCompanies username lookup survives a broken link and stays seller-only', async () => {
+  const h = harness();
+  h.set('companyDirectory/cBroken', { nameAr: 'x', status: 'active', expiresAt: Date.now() + 86400000 });
+  h.set('accountLinks/cBroken/manager', 'uidThatDoesNotExist');
+  const page = await h.invoke('listCompanies', 'seller', {});
+  assert.equal('managerUsername' in page.companies.cBroken, false);
+  await assert.rejects(h.invoke('listCompanies', 'manager', {}));
+  await assert.rejects(h.invoke('listCompanies', 'employee', {}));
 });
