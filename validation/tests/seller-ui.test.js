@@ -21,7 +21,7 @@ function harness({ calls = {}, timeoutMs, dbTimeoutMs, sessionThrows = false } =
     focus() {} select() {} setAttribute() {}
   }
   const body = new Node('body');
-  for (const id of ['nc-admin-username', 'nc-admin-password', 'nc-success', 'panel-content', 'ds-mrr', 'ds-active', 'ds-expired', 'ds-emps', 'dash-alerts', 'dash-companies-mini', 'trans-date', 'seller-notifs-list']) { const n = new Node(); n.id = id; byId.set(id, n); }
+  for (const id of ['nc-admin-username', 'nc-admin-password', 'nc-success', 'panel-content', 'ds-mrr', 'ds-active', 'ds-expired', 'ds-emps', 'dash-alerts', 'dash-companies-mini', 'trans-date', 'seller-notifs-list', 'trans-tbody', 'rev-total', 'rev-month', 'rev-avg', 'trans-company', 'trans-amount', 'trans-note']) { const n = new Node(); n.id = id; byId.set(id, n); }
   const log = { calls: [], toasts: [], loading: 0, hidden: 0, clipboard: [], storage: {}, console: [], opened: [] };
   const Basma = { call: (name, data) => { log.calls.push({ name, data }); const fn = calls[name]; return fn ? fn(data) : Promise.resolve({ ok: true }); }, db: () => ({}) };
   const storage = { getItem: k => (k in log.storage ? log.storage[k] : null), setItem: (k, v) => { log.storage[k] = String(v); }, removeItem: k => { delete log.storage[k]; } };
@@ -39,7 +39,7 @@ function harness({ calls = {}, timeoutMs, dbTimeoutMs, sessionThrows = false } =
     openPanel: async () => {}, loadDashboard: async () => 'legacy',
     alert: () => { throw Error('alert() must not be used'); }, confirm: () => { throw Error('confirm() must not be used'); }, prompt: () => { throw Error('prompt() must not be used'); }
   };
-  for (const name of ['lockSeller', 'resetSellerFirebase', 'changeSellerPin', 'createCompany', 'suspendCompany', 'activateCompany', 'resetManagerCredentials', 'doResetManagerCredentials', 'confirmDeleteCompany', 'resetAdminPin', 'refreshLiveEmployeeCounts', 'loadAllCompanies', 'shareWhatsapp', 'loadNotifs']) ctx[name] = () => {};
+  for (const name of ['lockSeller', 'resetSellerFirebase', 'changeSellerPin', 'createCompany', 'suspendCompany', 'activateCompany', 'resetManagerCredentials', 'doResetManagerCredentials', 'confirmDeleteCompany', 'resetAdminPin', 'refreshLiveEmployeeCounts', 'loadAllCompanies', 'shareWhatsapp', 'loadNotifs', 'loadRevenue', 'addTransaction']) ctx[name] = () => {};
   ctx.copyLink = id => { log.legacyCopy = (log.legacyCopy || []).concat(id); };
   vm.runInNewContext(dialogsSource, ctx); ctx.BasmaDialogs = ctx.window.BasmaDialogs;
   vm.runInNewContext(source, ctx);
@@ -262,4 +262,57 @@ test('notifications: if marking as read fails, the list stays visible and no err
   await h.ctx.pageLoaders.notifs(); await settle();
   assert.equal(h.byId.get('seller-notifs-list').children.length, 1);
   assert.doesNotMatch(listText(h), /تعذر تحميل/);
+});
+
+const rows = h => h.byId.get('trans-tbody').children;
+const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-05`; };
+test('revenue: ALL transactions are counted and listed (newest first), as text only', async () => {
+  const companies = { a: { id: 'a', status: 'active', info: { nameAr: 'أ' } }, b: { id: 'b', status: 'active', info: { nameAr: 'ب' } } };
+  const h = harness({ calls: { listCompanies: async () => ({ companies, cursor: null }) } }); let chart;
+  h.ctx.drawRevenueChart = data => { chart = data; };
+  const day = thisMonth(), at = Date.parse(day);
+  const data = { t1: { companyName: 'أ', amount: 10, dateStr: day, date: at }, t2: { companyName: '<b>x</b>', amount: '20', dateStr: day, date: at + 2000 }, t3: { companyName: 'ج', amount: 30, dateStr: day, date: at + 1000, note: 'n' } };
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ once: async () => fakeSnap(data) }) });
+  await h.ctx.pageLoaders.revenue(); await settle();
+  assert.equal(rows(h).length, 3, 'all three transactions, not only the first');
+  assert.deepEqual(plain(rows(h).map(r => r.children[0].textContent)), ['<b>x</b>', 'ج', 'أ']);
+  assert.equal(h.byId.get('rev-month').textContent, '$60', 'amount stored as text "20" is added as a number');
+  assert.equal(h.byId.get('rev-total').textContent, '$60');
+  assert.equal(h.byId.get('rev-avg').textContent, '$30');
+  assert.equal(Object.values(chart).reduce((s, v) => s + v, 0), 60);
+  assert.equal(h.byId.get('trans-company').children.length, 2);
+  assert.ok(h.log.hidden >= 1, 'loading closed');
+});
+test('revenue: a failed read shows a clear Arabic error with retry, closes loading, and retry works', async () => {
+  const h = harness({ dbTimeoutMs: 30 }); h.ctx.drawRevenueChart = () => {};
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ once: () => new Promise(() => {}) }) });
+  await h.ctx.pageLoaders.revenue(); await sleep(60); await settle();
+  const text = h.all(h.byId.get('trans-tbody')).map(n => n.textContent).join('\n');
+  assert.match(text, /تعذر تحميل الإيرادات/); assert.match(text, /لم يرد الخادم خلال/);
+  assert.equal(h.byId.get('rev-total').textContent, '—');
+  assert.ok(h.log.hidden >= 1, 'loading closed');
+  assert.equal(JSON.parse(h.log.storage.basma_diag_events).at(-1).operation, 'revenue');
+  const retry = h.all(h.byId.get('trans-tbody')).find(n => n.tag === 'button' && n.textContent === 'إعادة المحاولة');
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ once: async () => fakeSnap({}) }) });
+  retry.listeners.click(); await settle();
+  assert.equal(rows(h)[0].children[0].children[0].textContent, 'لا توجد معاملات');
+  assert.equal(h.byId.get('rev-total').textContent, '$0');
+});
+test('revenue: adding a transaction saves once and reloads; a failure shows a clear message', async () => {
+  const companies = { a: { id: 'a', status: 'active', info: { nameAr: 'أ', plan: 'pro' } } };
+  const h = harness({ calls: { listCompanies: async () => ({ companies, cursor: null }) } }); h.ctx.drawRevenueChart = () => {}; const pushed = [];
+  h.ctx.allCompanies = companies;
+  Object.assign(h.byId.get('trans-company'), { value: 'a' }); Object.assign(h.byId.get('trans-amount'), { value: '15' }); Object.assign(h.byId.get('trans-date'), { value: '2026-11-12' }); Object.assign(h.byId.get('trans-note'), { value: ' ok ' });
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ push: async v => { pushed.push(v); }, once: async () => fakeSnap({}) }) });
+  await h.ctx.addTransaction(); await settle();
+  assert.equal(pushed.length, 1);
+  assert.deepEqual(plain({ ...pushed[0], createdAt: 0 }), { companyId: 'a', companyName: 'أ', plan: 'pro', amount: 15, dateStr: '2026-11-12', date: Date.parse('2026-11-12'), note: 'ok', createdAt: 0 });
+  assert.equal(h.byId.get('trans-amount').value, '');
+  assert.equal(h.log.toasts.at(-1).msg, 'تم تسجيل المعاملة');
+  h.byId.get('trans-amount').value = '0'; await h.ctx.addTransaction();
+  assert.equal(pushed.length, 1, 'zero amount is refused without saving');
+  h.byId.get('trans-amount').value = '5';
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ push: async () => { throw Object.assign(Error('denied'), { code: 'PERMISSION_DENIED' }); } }) });
+  await h.ctx.addTransaction();
+  assert.match(h.log.toasts.at(-1).msg, /^تعذر تسجيل المعاملة/);
 });
