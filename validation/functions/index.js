@@ -134,17 +134,26 @@ exports.updatePlan = endpoint(['seller'], async ({ uid, data }) => {
   await audit(uid, 'company.plan', cid, { maxEmployees: value.maxEmployees, expiresAt: value.expiresAt, plan: value.plan });
   return { ok: true };
 });
+// RTDB transactions run their handler first with the LOCAL cache, which is empty (null) on a cold instance. A handler
+// that returns undefined for null then aborts at once and never sees the server value. serverTransaction() keeps a
+// 'value' listener open while the transaction runs, so the cache already holds the server value and the FIRST call sees
+// the real data (Firebase's documented approach). Handlers keep their original meaning: null really means "no data".
+async function serverTransaction(ref, update) {
+  let callback;
+  await new Promise((resolve, reject) => { callback = ref.on('value', () => resolve(), reject); });
+  try { return await ref.transaction(update); } finally { ref.off('value', callback); }
+}
 async function withLock(id, handler) {
   const owner = randomUUID(), lock = db.ref(`operationLocks/${p.key(id)}`);
   const acquired = await lock.transaction(value => !value || value.expiresAt <= Date.now() ? { owner, expiresAt: Date.now() + 60000 } : undefined);
   if (!acquired.committed) p.fail('توجد عملية أخرى على الحساب؛ أعد المحاولة', 'aborted');
-  try { return await handler(); } finally { await lock.transaction(value => value?.owner === owner ? null : undefined); }
+  try { return await handler(); } finally { await serverTransaction(lock, value => value?.owner === owner ? null : undefined); }
 }
 async function rotateAccount(uid, member) {
   return withLock(uid, async () => {
   // Disable live authorization BEFORE changing credentials. Old ID tokens fail immediately.
   const password = p.password();
-  const update = await db.ref(`access/${uid}`).transaction(current => current ? { ...current, enabled: false, version: current.version + 1 } : undefined);
+  const update = await serverTransaction(db.ref(`access/${uid}`), current => current ? { ...current, enabled: false, version: current.version + 1 } : undefined);
   if (!update.committed) p.fail('الحساب غير موجود', 'not-found');
   const nextVersion = update.snapshot.val().version;
   await auth.revokeRefreshTokens(uid);
@@ -249,7 +258,7 @@ exports.renewSubscription = endpoint(['seller'], async ({ uid, data }) => {
   const cid = p.key(data.companyId), requestId = p.key(data.requestId);
   if (!Number.isInteger(data.days) || data.days < 1 || data.days > 3660) p.fail('مدة التجديد بين يوم و3660 يومًا', 'invalid-argument');
   let conflict;
-  const result = await db.ref(`companies/${cid}/info`).transaction(info => {
+  const result = await serverTransaction(db.ref(`companies/${cid}/info`), info => {
     if (!info) { conflict='الشركة غير موجودة'; return; }
     const previous = info.renewalMarkers?.[requestId];
     if (previous) {
@@ -297,7 +306,7 @@ exports.finishWebAuthn = endpoint(['employee'], async ({ uid, member, data }) =>
   await employeeContext(uid, member);
   const challengeId = p.key(data.challengeId), ref = db.ref(`challenges/${uid}/${challengeId}`), now = Date.now();
   let challenge;
-  const consumed = await ref.transaction(value => {
+  const consumed = await serverTransaction(ref, value => {
     if (!value || value.used || value.expiresAt <= now || value.version !== member.version) return;
     challenge = value; return { ...value, used: true };
   });
@@ -309,7 +318,7 @@ exports.finishWebAuthn = endpoint(['employee'], async ({ uid, member, data }) =>
     const credential = result.registrationInfo.credential;
     const saved = await db.ref(`credentials/${uid}`).transaction(old => old ? undefined : { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64'), counter: credential.counter, transports: credential.transports || [], deviceType: result.registrationInfo.credentialDeviceType, backedUp: result.registrationInfo.credentialBackedUp });
     if (!saved.committed) p.fail('البصمة مسجلة مسبقًا');
-    const activated = await db.ref(`companies/${member.companyId}/employees/${member.employeeId}`).transaction(current => {
+    const activated = await serverTransaction(db.ref(`companies/${member.companyId}/employees/${member.employeeId}`), current => {
       if (!current || current.status !== 'pending_activation') return;
       return { ...current, status: 'approved', credId: credential.id };
     });
@@ -321,7 +330,7 @@ exports.finishWebAuthn = endpoint(['employee'], async ({ uid, member, data }) =>
   if (!stored) p.fail('البصمة غير مسجلة');
   const result = await webauthn.verifyAuthenticationResponse({ response: data.response, expectedChallenge: challenge.challenge, expectedOrigin: rp.origins, expectedRPID: rp.id, requireUserVerification: true, credential: { id: stored.id, publicKey: Buffer.from(stored.publicKey, 'base64'), counter: stored.counter, transports: stored.transports || [] } });
   if (!result.verified) p.fail('فشل التحقق', 'permission-denied');
-  const advanced = await db.ref(`credentials/${uid}`).transaction(current => {
+  const advanced = await serverTransaction(db.ref(`credentials/${uid}`), current => {
     if (!current || current.id !== stored.id || current.counter !== stored.counter) return;
     return { ...current, counter: result.authenticationInfo.newCounter };
   });
@@ -362,7 +371,7 @@ exports.recordAttendance = endpoint(['employee'], async ({ uid, member, info, da
   // Missions do not implicitly bypass a geofence. Configure their approved coordinates explicitly.
   const coords = p.location(data.location, mission?.geoZone || zone);
   const proofRef = db.ref(`proofs/${uid}/${p.key(data.proof)}`);
-  const used = await proofRef.transaction(proof => {
+  const used = await serverTransaction(proofRef, proof => {
     if (!proof || proof.used || proof.expiresAt <= Date.now() || proof.version !== member.version || proof.intent !== type || (proof.missionKey || null) !== missionKey) return;
     return { ...proof, used: true };
   });
@@ -370,7 +379,7 @@ exports.recordAttendance = endpoint(['employee'], async ({ uid, member, info, da
   const eventId = type.startsWith('mission_') ? `${type}_${missionKey}` : type;
   const event = { empId: eid, empName: employee.name, warehouseId: employee.warehouseId, warehouseName: wh.name, type, timestamp: stamp, dateKey: clock.date, ...coords, delayMins, locStatus: 'approved', locationValidation:'server_geofence', actor: uid, ...(missionKey ? { missionKey } : {}) };
   let conflict;
-  const ledger = await db.ref(`attendanceLedger/${cid}/${eid}/${clock.date}`).transaction(state => {
+  const ledger = await serverTransaction(db.ref(`attendanceLedger/${cid}/${eid}/${clock.date}`), state => {
     if (state?.events?.[eventId]) { conflict = new p.PolicyError('already-exists', 'العملية مسجلة مسبقًا'); return; }
     try { if (!type.startsWith('mission_')) p.transition(state, type); } catch (error) { conflict = error; return; }
     if (Object.keys(state?.events || {}).length >= 64) return;
@@ -395,7 +404,7 @@ exports.projectAttendance = onValueWritten({ ref: '/attendanceLedger/{cid}/{eid}
     if (value.type === 'out') today.checkOut = value.timestamp;
     if (['departure', 'return'].includes(value.type)) updates[`companies/${cid}/partialLeaveRecords/${eid}/${date}/${value.type === 'departure' ? 'departureAt' : 'returnAt'}`] = value.timestamp;
     if (value.missionKey) {
-      await db.ref(`companies/${cid}/missions/${value.missionKey}`).transaction(mission => {
+      await serverTransaction(db.ref(`companies/${cid}/missions/${value.missionKey}`), mission => {
         if (!mission || (mission.status === 'completed' && value.type === 'mission_start')) return;
         return { ...mission, status:value.type === 'mission_start' ? 'started' : 'completed', [value.type === 'mission_start' ? 'startedAt' : 'completedAt']:value.timestamp };
       });
@@ -437,7 +446,7 @@ exports.changePassword = endpoint(allRoles, async ({ uid, token, member, data })
   return withLock(uid, async () => {
   if (!Number.isFinite(token.auth_time) || Date.now() / 1000 - token.auth_time > 300) p.fail('سجّل الدخول مجددًا قبل تغيير كلمة المرور', 'unauthenticated');
   if (typeof data.password !== 'string' || data.password.length < 14 || data.password.length > 128) p.fail('كلمة المرور 14 حرفًا على الأقل', 'invalid-argument');
-  const advanced = await db.ref(`access/${uid}`).transaction(current => current?.enabled === true && current.version === member.version ? { ...current, enabled:false, version:current.version + 1 } : undefined);
+  const advanced = await serverTransaction(db.ref(`access/${uid}`), current => current?.enabled === true && current.version === member.version ? { ...current, enabled:false, version:current.version + 1 } : undefined);
   if (!advanced.committed) p.fail('تغيّرت الجلسة. سجّل الدخول مجددًا', 'unauthenticated');
   await auth.updateUser(uid, { password: data.password });
   await auth.revokeRefreshTokens(uid);
@@ -461,7 +470,7 @@ exports.reviewRequest = endpoint(['manager'], async ({ uid, member, data }) => {
     if (!employee) p.fail('الموظف غير موجود', 'not-found');
     const now = new Date().toISOString();
     let denial;
-    const approved = await db.ref(`attendanceLedger/${cid}/${eid}/${date}`).transaction(state => {
+    const approved = await serverTransaction(db.ref(`attendanceLedger/${cid}/${eid}/${date}`), state => {
       if (state?.events?.excused) { denial='يوجد عذر معتمد لهذا اليوم'; return state.events.excused.requestId === id ? state : undefined; }
       if (state?.events?.in && ['no_checkin','no_both'].includes(request.type)) { denial='الحضور الفعلي مسجل؛ نوع العذر لا يطابق السجل'; return; }
       if (state?.events?.out && ['no_checkout','no_both'].includes(request.type)) { denial='الانصراف الفعلي مسجل؛ نوع العذر لا يطابق السجل'; return; }

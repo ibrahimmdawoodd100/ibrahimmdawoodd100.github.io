@@ -162,7 +162,7 @@ function sellerHarness(calls) {
     showToast: (m, t) => log.toasts.push({ m, t }), showLoading() {}, hideLoading() {}, filterCompanies() {}, initEmojiGrid() {}, allCompanies: {}, DB: null, pageLoaders: {}, openPanel: async () => {}, loadDashboard: async () => {},
     alert: forbidden, confirm: forbidden, prompt: forbidden
   };
-  for (const n of ['lockSeller', 'resetSellerFirebase', 'changeSellerPin', 'createCompany', 'suspendCompany', 'activateCompany', 'resetManagerCredentials', 'doResetManagerCredentials', 'confirmDeleteCompany', 'resetAdminPin', 'refreshLiveEmployeeCounts', 'loadAllCompanies', 'shareWhatsapp']) ctx[n] = () => {};
+  for (const n of ['lockSeller', 'resetSellerFirebase', 'changeSellerPin', 'createCompany', 'suspendCompany', 'activateCompany', 'resetManagerCredentials', 'doResetManagerCredentials', 'confirmDeleteCompany', 'resetAdminPin', 'refreshLiveEmployeeCounts', 'loadAllCompanies', 'shareWhatsapp', 'copyLink']) ctx[n] = () => {};
   vm.runInNewContext(read('public/assets/seller.js'), ctx);
   return { ctx, dom, log, resetButtons };
 }
@@ -174,7 +174,7 @@ test('reset manager uses the exact plain-Arabic text and shows the new login onc
   h.dom.button('إعادة التعيين').listeners.click(); await settle();
   assert.deepEqual(h.dom.inputs().map(i => i.value), ['manager_u', 'New-Pass-9']);
   assert.equal(h.dom.button('نسخ كلمة المرور') ? true : false, true);
-  h.dom.button('حفظتها، أغلق').listeners.click(); await done;
+  h.dom.button('تم، حفظتها').listeners.click(); await done;
   assert.equal(h.dom.inputs().length, 0);
 });
 
@@ -190,7 +190,7 @@ test('reset manager cannot be pressed twice: buttons disabled and only one serve
   release(); await settle();
   assert.equal(h.log.calls.filter(c => c === 'resetManager').length, 1);
   assert.ok(h.resetButtons.every(b => !b.disabled), 'buttons unlocked after the call');
-  h.dom.button('حفظتها، أغلق').listeners.click(); await first;
+  h.dom.button('تم، حفظتها').listeners.click(); await first;
 });
 
 test('a failed reset shows the plain message and unlocks the buttons', async () => {

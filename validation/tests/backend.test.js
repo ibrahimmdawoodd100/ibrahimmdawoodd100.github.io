@@ -10,10 +10,15 @@ function harness({rpID='basma.example.org',origins='https://basma.example.org',n
   function get(path) { return path.split('/').filter(Boolean).reduce((value, key) => value?.[key], state) ?? null; }
   function set(path, value) { const keys = path.split('/').filter(Boolean); let at = state; for (const key of keys.slice(0, -1)) at = at[key] ||= {}; if (value == null) delete at[keys.at(-1)]; else at[keys.at(-1)] = clone(value); }
   const snap = value => ({ val: () => clone(value), exists: () => value !== null, numChildren: () => Object.keys(value || {}).length });
+  const watched = new Map();
   function ref(path = '') {
     const filters={};
     return { key: path.split('/').at(-1), orderByChild(field){filters.field=field;return this;},orderByKey(){filters.byKey=true;return this;},limitToFirst(value){filters.first=value;return this;},startAfter(value){filters.after=value;return this;},equalTo(value){filters.equal=value;return this;},limitToLast(value){filters.limit=value;return this;},async get() { readPaths.push(path); const value=get(path);if(filters.byKey&&value&&typeof value==='object')return snap(Object.fromEntries(Object.entries(value).sort(([x],[y])=>x<y?-1:x>y?1:0).filter(([k])=>filters.after==null||k>filters.after).slice(0,filters.first||Infinity)));return snap(filters.field&&value?Object.fromEntries(Object.entries(value).filter(([,v])=>v[filters.field]===filters.equal).slice(-(filters.limit||200))):value); }, async set(value) { set(path, value); }, async remove() { set(path, null); }, async update(updates) { for (const [key,value] of Object.entries(updates)) set(`${path}/${key}`,value); },
-      async transaction(fn) { const next = fn(clone(get(path))); if (next === undefined) return { committed:false, snapshot:snap(get(path)) }; set(path,next); return { committed:true,snapshot:snap(next) }; },
+      // Like the real RTDB SDK: the first call gets the local cache (null on a cold instance). undefined aborts at once;
+      // a value is sent with the hash of what was seen, and the server makes the SDK retry if its real value differs.
+      on(event, cb) { watched.set(path, (watched.get(path) || 0) + 1); queueMicrotask(() => cb(snap(get(path)))); return cb; },
+      off() { const n = (watched.get(path) || 1) - 1; if (n) watched.set(path, n); else watched.delete(path); },
+      async transaction(fn) { let seen = watched.has(path) ? clone(get(path)) : null; for (let i = 0; i < 25; i++) { const next = fn(clone(seen)); if (next === undefined) return { committed:false, snapshot:snap(get(path)) }; const actual = get(path); if (JSON.stringify(actual) !== JSON.stringify(seen)) { seen = clone(actual); continue; } set(path,next); return { committed:true,snapshot:snap(get(path)) }; } throw Error('transaction retry limit'); },
       push(value) { const child=ref(`${path}/k${++serial}`); if(value!==undefined) { child.set(value); return Promise.resolve(child); } return child; }
     };
   }

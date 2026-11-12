@@ -68,26 +68,35 @@ window.BasmaDialogs = (() => {
       toast('تعذر النسخ التلقائي. النص محدد الآن؛ اضغط عليه مطولًا واختر «نسخ».', 'info'); return false;
     }
   }
-  // Shows a username/password pair exactly once. Closing removes the box and clears both fields.
+  // Shows a username/password pair until the user presses «تم، حفظتها» (never closes by itself).
+  // The password is masked with an eye toggle; copy buttons copy the REAL values. Values live only in this box
+  // (memory + the two fields) and are cleared when it closes. Nothing is logged, stored, or put in a URL.
   function credentials(title, { username, password, note } = {}) {
     return new Promise(resolve => {
-      const m = modal(title), fields = [];
+      const m = modal(title), secret = { username: String(username ?? ''), password: String(password ?? '') };
       m.box.appendChild(paragraph(note || 'انسخ البيانات الآن واحفظها في مكان آمن. لن تظهر مرة أخرى ولا تُحفظ في قاعدة البيانات.', 'margin:0;font-size:13px;color:var(--gold,#c9a227);line-height:1.6'));
-      const row = (labelText, value) => {
+      const fieldRow = (labelText, key, masked) => {
         const label = document.createElement('label'); label.textContent = labelText; label.style.cssText = 'display:grid;gap:4px;font-size:13px';
-        const field = document.createElement('input'); field.type = 'text'; field.readOnly = true; field.value = String(value ?? ''); field.className = 'form-input';
-        field.autocomplete = 'off'; field.style.cssText = 'direction:ltr;text-align:left;font-family:monospace;user-select:all';
-        const copyButton = button('نسخ ' + labelText, 'btn-gold'); copyButton.addEventListener('click', () => copy(field.value, field));
-        label.append(field, copyButton); m.box.appendChild(label); fields.push(field); return field;
+        const line = document.createElement('div'); line.style.cssText = 'display:flex;gap:6px;align-items:center';
+        const field = document.createElement('input'); field.type = masked ? 'password' : 'text'; field.readOnly = true; field.value = secret[key]; field.className = 'form-input';
+        field.autocomplete = 'off'; field.style.cssText = 'direction:ltr;text-align:left;font-family:monospace;flex:1;min-width:0';
+        line.appendChild(field);
+        if (masked) {
+          const eye = button('👁 إظهار'); eye.setAttribute?.('aria-label', 'إظهار كلمة المرور');
+          eye.addEventListener('click', () => { const show = field.type === 'password'; field.type = show ? 'text' : 'password'; eye.textContent = show ? '🙈 إخفاء' : '👁 إظهار'; });
+          line.appendChild(eye);
+        }
+        const copyButton = button('نسخ ' + labelText, 'btn-gold'); copyButton.addEventListener('click', () => copy(secret[key], field));
+        label.append(line, copyButton); m.box.appendChild(label); return field;
       };
-      const userField = row('اسم المستخدم', username);
-      const passField = row('كلمة المرور', password);
+      const userField = fieldRow('اسم المستخدم', 'username', false);
+      const passField = fieldRow('كلمة المرور', 'password', true);
       const actions = document.createElement('div'); actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
       const both = button('نسخ الاثنين معًا', 'btn-gold');
-      both.addEventListener('click', () => copy(`اسم المستخدم: ${userField.value}\nكلمة المرور: ${passField.value}`, userField));
-      const close = button('حفظتها، أغلق');
-      close.addEventListener('click', () => { for (const f of fields) f.value = ''; m.close(); resolve(); });
-      actions.append(both, close); m.box.appendChild(actions);
+      both.addEventListener('click', () => copy(`اسم المستخدم: ${secret.username}\nكلمة المرور: ${secret.password}`, userField));
+      const done = button('تم، حفظتها', 'btn-green');
+      done.addEventListener('click', () => { userField.value = ''; passField.value = ''; secret.username = ''; secret.password = ''; m.close(); resolve(); });
+      actions.append(both, done); m.box.appendChild(actions);
     });
   }
   return Object.freeze({ form, confirm, notice, credentials, copy, toLatinDigits });

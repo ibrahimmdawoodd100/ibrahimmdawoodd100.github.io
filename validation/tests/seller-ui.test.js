@@ -40,6 +40,7 @@ function harness({ calls = {}, timeoutMs, dbTimeoutMs, sessionThrows = false } =
     alert: () => { throw Error('alert() must not be used'); }, confirm: () => { throw Error('confirm() must not be used'); }, prompt: () => { throw Error('prompt() must not be used'); }
   };
   for (const name of ['lockSeller', 'resetSellerFirebase', 'changeSellerPin', 'createCompany', 'suspendCompany', 'activateCompany', 'resetManagerCredentials', 'doResetManagerCredentials', 'confirmDeleteCompany', 'resetAdminPin', 'refreshLiveEmployeeCounts', 'loadAllCompanies', 'shareWhatsapp']) ctx[name] = () => {};
+  ctx.copyLink = id => { log.legacyCopy = (log.legacyCopy || []).concat(id); };
   vm.runInNewContext(dialogsSource, ctx); ctx.BasmaDialogs = ctx.window.BasmaDialogs;
   vm.runInNewContext(source, ctx);
   const all = (node = body, out = []) => { out.push(node); node.children.forEach(c => all(c, out)); return out; };
@@ -122,7 +123,7 @@ test('reset manager uses an in-page confirm and a copy box, never alert()', asyn
   assert.deepEqual(h.log.clipboard, ['Secret-123']);
   await h.click('نسخ الاثنين معًا');
   assert.ok(h.log.clipboard.at(-1).includes('manager_abc') && h.log.clipboard.at(-1).includes('Secret-123'));
-  await h.click('حفظتها، أغلق'); await done;
+  await h.click('تم، حفظتها'); await done;
   assert.equal(h.inputs().length, 0);
   assert.equal(JSON.stringify(h.log.storage).includes('Secret-123'), false, 'the password is never stored');
 });
@@ -185,23 +186,34 @@ test('a failed company list keeps the previous list instead of emptying it', asy
   assert.deepEqual(Object.keys(h.ctx.allCompanies), ['keep']);
 });
 
-test('a new company shows the manager login once in the box, never on the page, in the URL, storage or console', async () => {
+test('a new company: real login in the box and on the card (password masked) until «تم، حفظتها», never in URL, storage or console', async () => {
   const h = harness({ calls: { createCompany: async () => ({ companyId: 'c9', username: 'manager_new', password: 'Pw-Secret-987' }) } });
   const done = h.ctx.createCompany(); await settle();
-  assert.deepEqual(h.inputs().map(i => i.value), ['manager_new', 'Pw-Secret-987']);
-  for (const id of ['nc-admin-username', 'nc-admin-password']) assert.equal(h.byId.get(id).textContent.includes('Pw-Secret-987') || h.byId.get(id).textContent.includes('manager_new'), false);
+  const [userField, passField] = h.inputs();
+  assert.equal(userField.value, 'manager_new'); assert.equal(passField.value, 'Pw-Secret-987');
+  assert.equal(passField.type, 'password', 'password masked by default');
+  await h.click('👁 إظهار'); assert.equal(passField.type, 'text', 'eye shows it');
+  await h.click('🙈 إخفاء'); assert.equal(passField.type, 'password', 'eye hides it again');
+  assert.equal(h.byId.get('nc-admin-username').textContent, 'manager_new', 'card shows the real username');
+  assert.equal(h.byId.get('nc-admin-password').textContent, '••••••••', 'card masks the password');
   assert.equal(h.byId.get('nc-success').style.display, 'block');
-  await h.click('نسخ اسم المستخدم'); assert.deepEqual(h.log.clipboard, ['manager_new']);
-  const fields = h.inputs();
-  await h.click('حفظتها، أغلق'); await done;
+  await h.click('نسخ اسم المستخدم'); await h.click('نسخ كلمة المرور');
+  await h.ctx.copyLink('nc-admin-password'); await h.ctx.copyLink('nc-admin-username'); await settle();
+  assert.deepEqual(h.log.clipboard, ['manager_new', 'Pw-Secret-987', 'Pw-Secret-987', 'manager_new'], 'box and card copy buttons copy the REAL values');
+  await new Promise(r => setTimeout(r, 50)); await settle();
+  assert.equal(h.inputs().length, 2, 'never closes by itself');
+  await h.click('تم، حفظتها'); await done;
   assert.equal(h.inputs().length, 0, 'the box is gone');
-  assert.ok(fields.every(f => f.value === ''), 'the closed box no longer holds the login');
+  assert.equal(userField.value, ''); assert.equal(passField.value, '');
+  assert.equal(h.byId.get('nc-admin-username').textContent, '—'); assert.equal(h.byId.get('nc-admin-password').textContent, '—');
+  const copiesBefore = h.log.clipboard.length; await h.ctx.copyLink('nc-admin-password'); await settle();
+  assert.equal(h.log.clipboard.length, copiesBefore, 'after «تم، حفظتها» nothing is left to copy');
+  assert.ok(h.log.toasts.some(t => t.type === 'info'));
   h.ctx.lastCreatedData = { nameAr: 'شركة' }; h.ctx.shareWhatsapp();
-  assert.equal(h.log.opened.length, 1);
   const url = decodeURIComponent(h.log.opened[0]);
   assert.equal(url.includes('Pw-Secret-987') || url.includes('manager_new'), false, 'WhatsApp text has no login details');
   const everywhere = JSON.stringify([h.log.storage, h.log.console, h.log.calls.map(c => c.data), h.texts()]);
-  assert.equal(everywhere.includes('Pw-Secret-987'), false);
+  assert.equal(everywhere.includes('Pw-Secret-987'), false, 'password nowhere after closing');
 });
 
 test('reset manager clears the password from the box when closed and never logs it', async () => {
@@ -209,7 +221,7 @@ test('reset manager clears the password from the box when closed and never logs 
   const done = h.ctx.resetManagerCredentials('c1'); await settle();
   await h.click('إعادة التعيين'); await settle();
   const fields = h.inputs();
-  await h.click('حفظتها، أغلق'); await done;
+  await h.click('تم، حفظتها'); await done;
   assert.ok(fields.every(f => f.value === ''));
   assert.equal(JSON.stringify([h.log.storage, h.log.console, h.texts()]).includes('Reset-Pass-55'), false);
 });

@@ -29,10 +29,11 @@ createCompany = async function() {
     lastCreatedCID = result.companyId; lastCreatedData = { nameAr: get('nc-name-ar') };
   } catch (error) { diagNote('createCompany', error); showToast(friendlyError(error), 'error'); return; }
   finally { hideLoading(); }
-  for (const id of ['nc-admin-username', 'nc-admin-password']) { const el = document.getElementById(id); if (el) el.textContent = SELLER_CREDENTIALS_SHOWN; }
+  showCardLogin(result.username, result.password);
   const card = document.getElementById('nc-success'); if (card) card.style.display = 'block';
   showToast('تم إنشاء الشركة. بيانات الدخول تظهر مرة واحدة فقط.', 'success');
   await sellerShowCredentials('بيانات دخول مدير الشركة الجديدة', result.username, result.password);
+  clearCardLogin();
 };
 async function secureCompanyStatus(cid, status) {
   showLoading(status === 'suspended' ? 'جاري تعليق الشركة...' : 'جاري تفعيل الشركة...');
@@ -222,7 +223,23 @@ function sellerShowCredentials(title, username, password) { return BasmaDialogs.
 
 // New-company success card: the manager's login is shown once, only inside the in-page box.
 // The card on the page and the WhatsApp message never contain the username or password.
-const SELLER_CREDENTIALS_SHOWN = 'عُرضت مرة واحدة في المربع وأُغلقت';
+// New-company card: the real username and a masked password stay visible (and copyable) until «تم، حفظتها».
+// The values live only in this variable in memory, never in storage, the console or a URL.
+let cardLogin = null;
+function showCardLogin(username, password) {
+  cardLogin = { username: String(username ?? ''), password: String(password ?? '') };
+  setText('nc-admin-username', cardLogin.username);
+  setText('nc-admin-password', '••••••••');
+}
+function clearCardLogin() { cardLogin = null; setText('nc-admin-username', '—'); setText('nc-admin-password', '—'); }
+const legacyCopyLink = copyLink;
+copyLink = function(elementId) {
+  if (elementId === 'nc-admin-username' || elementId === 'nc-admin-password') {
+    if (!cardLogin) { showToast('أُغلقت بيانات الدخول بعد حفظها. استخدم «إعادة تعيين» من صفحة الشركة للحصول على كلمة مرور جديدة.', 'info'); return; }
+    return BasmaDialogs.copy(elementId === 'nc-admin-username' ? cardLogin.username : cardLogin.password);
+  }
+  return legacyCopyLink(elementId);
+};
 shareWhatsapp = function() {
   const name = lastCreatedData?.nameAr || 'الشركة';
   const msg = `🎉 مرحباً!\n\nتم تفعيل نظام الحضور الذكي لشركة *${name}*\n\n📲 حمّل تطبيق "المدير" من متجر التطبيقات.\n🔐 سأرسل لك اسم المستخدم والرقم السري بشكل منفصل وآمن.`;

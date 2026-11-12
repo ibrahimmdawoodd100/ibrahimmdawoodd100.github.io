@@ -35,7 +35,7 @@ test('new employee credentials appear once in the in-page box, not in the old mo
   assert.equal(h.byId.get('act-link-password').textContent, '');
   assert.equal(h.byId.get('act-link-username').textContent, '');
   const fields = h.inputs();
-  await h.click('حفظتها، أغلق'); await done;
+  await h.click('تم، حفظتها'); await done;
   assert.ok(fields.every(f => f.value === ''));
   assert.equal(h.log.opened.length, 0, 'no WhatsApp URL with a password');
   assert.equal(JSON.stringify([h.log.console, h.texts()]).includes('Emp-Pass-42'), false);
@@ -54,7 +54,7 @@ test('reset employee account confirmed: calls the server once, then shows the ne
   await h.click('إعادة التعيين'); await settle();
   assert.deepEqual(plain(h.log.calls), [{ name: 'employeeAccount', data: { employeeId: 'e1', resetBio: true } }]);
   assert.deepEqual(h.inputs().map(i => i.value), ['emp_1', 'New-Pass-1']);
-  await h.click('حفظتها، أغلق'); await done;
+  await h.click('تم، حفظتها'); await done;
 });
 
 test('manual attendance reason uses the in-page form', async () => {

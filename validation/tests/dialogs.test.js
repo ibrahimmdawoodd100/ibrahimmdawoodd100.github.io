@@ -45,7 +45,7 @@ test('credentials box copies, then removes and clears both values on close', asy
   assert.deepEqual(fields.map(f => f.value), ['u_1', 'P-1']);
   assert.ok(fields.every(f => f.readOnly));
   await click(d, 'نسخ كلمة المرور'); assert.deepEqual(d.log.clipboard, ['P-1']);
-  await click(d, 'حفظتها، أغلق'); await done;
+  await click(d, 'تم، حفظتها'); await done;
   assert.ok(fields.every(f => f.value === ''));
   assert.equal(d.inputs().length, 0);
 });
@@ -115,4 +115,19 @@ test('the diagnostics page exists wherever it is linked, and has no inline scrip
   const page = read('public/manager/diagnostics.html');
   for (const m of page.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)) { assert.match(m[1], /src=/); assert.equal(m[2].trim(), ''); }
   for (const m of page.matchAll(/(?:src|href)="(\/manager\/assets\/[^"]+)"/g)) assert.ok(fs.existsSync(path.join(root, 'public/assets', m[1].slice(16))), m[1]);
+});
+
+test('credentials box: password masked with an eye toggle, copy buttons copy the REAL values, never closes by itself', async () => {
+  const d = loadDialogs();
+  const done = d.D.credentials('t', { username: 'u_real', password: 'P-real-1' });
+  const [user, pass] = d.inputs();
+  assert.equal(user.type, 'text'); assert.equal(pass.type, 'password');
+  await click(d, '👁 إظهار'); assert.equal(pass.type, 'text');
+  await click(d, '🙈 إخفاء'); assert.equal(pass.type, 'password');
+  await click(d, 'نسخ اسم المستخدم'); await click(d, 'نسخ كلمة المرور'); await click(d, 'نسخ الاثنين معًا');
+  assert.deepEqual(plain(d.log.clipboard), ['u_real', 'P-real-1', 'اسم المستخدم: u_real\nكلمة المرور: P-real-1']);
+  await new Promise(r => setTimeout(r, 30));
+  assert.equal(d.inputs().length, 2, 'still open: only «تم، حفظتها» closes it');
+  await click(d, 'تم، حفظتها'); await done;
+  assert.equal(user.value, ''); assert.equal(pass.value, ''); assert.equal(d.inputs().length, 0);
 });
