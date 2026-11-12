@@ -21,7 +21,7 @@ function harness({ calls = {}, timeoutMs, dbTimeoutMs, sessionThrows = false } =
     focus() {} select() {} setAttribute() {}
   }
   const body = new Node('body');
-  for (const id of ['nc-admin-username', 'nc-admin-password', 'nc-success', 'panel-content', 'ds-mrr', 'ds-active', 'ds-expired', 'ds-emps', 'dash-alerts', 'dash-companies-mini', 'trans-date']) { const n = new Node(); n.id = id; byId.set(id, n); }
+  for (const id of ['nc-admin-username', 'nc-admin-password', 'nc-success', 'panel-content', 'ds-mrr', 'ds-active', 'ds-expired', 'ds-emps', 'dash-alerts', 'dash-companies-mini', 'trans-date', 'seller-notifs-list']) { const n = new Node(); n.id = id; byId.set(id, n); }
   const log = { calls: [], toasts: [], loading: 0, hidden: 0, clipboard: [], storage: {}, console: [], opened: [] };
   const Basma = { call: (name, data) => { log.calls.push({ name, data }); const fn = calls[name]; return fn ? fn(data) : Promise.resolve({ ok: true }); }, db: () => ({}) };
   const storage = { getItem: k => (k in log.storage ? log.storage[k] : null), setItem: (k, v) => { log.storage[k] = String(v); }, removeItem: k => { delete log.storage[k]; } };
@@ -39,7 +39,7 @@ function harness({ calls = {}, timeoutMs, dbTimeoutMs, sessionThrows = false } =
     openPanel: async () => {}, loadDashboard: async () => 'legacy',
     alert: () => { throw Error('alert() must not be used'); }, confirm: () => { throw Error('confirm() must not be used'); }, prompt: () => { throw Error('prompt() must not be used'); }
   };
-  for (const name of ['lockSeller', 'resetSellerFirebase', 'changeSellerPin', 'createCompany', 'suspendCompany', 'activateCompany', 'resetManagerCredentials', 'doResetManagerCredentials', 'confirmDeleteCompany', 'resetAdminPin', 'refreshLiveEmployeeCounts', 'loadAllCompanies', 'shareWhatsapp']) ctx[name] = () => {};
+  for (const name of ['lockSeller', 'resetSellerFirebase', 'changeSellerPin', 'createCompany', 'suspendCompany', 'activateCompany', 'resetManagerCredentials', 'doResetManagerCredentials', 'confirmDeleteCompany', 'resetAdminPin', 'refreshLiveEmployeeCounts', 'loadAllCompanies', 'shareWhatsapp', 'loadNotifs']) ctx[name] = () => {};
   ctx.copyLink = id => { log.legacyCopy = (log.legacyCopy || []).concat(id); };
   vm.runInNewContext(dialogsSource, ctx); ctx.BasmaDialogs = ctx.window.BasmaDialogs;
   vm.runInNewContext(source, ctx);
@@ -224,4 +224,42 @@ test('reset manager clears the password from the box when closed and never logs 
   await h.click('تم، حفظتها'); await done;
   assert.ok(fields.every(f => f.value === ''));
   assert.equal(JSON.stringify([h.log.storage, h.log.console, h.texts()]).includes('Reset-Pass-55'), false);
+});
+
+// A snapshot that behaves like Firebase: forEach STOPS when the callback returns a truthy value.
+const listText = h => h.all(h.byId.get('seller-notifs-list')).map(n => n.textContent).join('\n');
+const plain = v => JSON.parse(JSON.stringify(v));
+const fakeSnap = obj => ({ forEach(action) { for (const [key, value] of Object.entries(obj)) if (action({ key, val: () => value })) return true; return false; } });
+test('notifications: a failed read shows a clear Arabic error and a retry button, not an endless spinner', async () => {
+  const h = harness({ dbTimeoutMs: 30 });
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ once: () => new Promise(() => {}) }) });
+  await h.ctx.pageLoaders.notifs(); await sleep(60); await settle();
+  assert.match(listText(h), /تعذر تحميل الإشعارات/);
+  assert.match(listText(h), /لم يرد الخادم خلال/);
+  assert.ok(!h.all(h.byId.get('seller-notifs-list')).some(n => n.className === 'spinner-sm'), 'spinner removed');
+  const retry = h.all(h.byId.get('seller-notifs-list')).find(n => n.tag === 'button' && n.textContent === 'إعادة المحاولة');
+  assert.ok(retry, 'retry button shown');
+  assert.equal(JSON.parse(h.log.storage.basma_diag_events).at(-1).operation, 'notifications');
+  // Retry now succeeds.
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ once: async () => fakeSnap({}), update: async () => {} }) });
+  retry.listeners.click(); await settle();
+  assert.match(listText(h), /لا توجد إشعارات/);
+});
+test('notifications: ALL items are shown (newest first), as text only, and unread ones are marked read', async () => {
+  const h = harness(); const updates = [];
+  const data = { n1: { type: 'new_company', message: 'أول', read: false, timestamp: '2026-11-10T10:00:00Z' }, n2: { type: 'expiry', message: '<img src=x onerror=alert(1)>', read: true, timestamp: '2026-11-12T10:00:00Z' }, n3: { message: 'ثالث', read: false, timestamp: '2026-11-11T10:00:00Z' } };
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ once: async () => fakeSnap(data), update: async u => { updates.push(u); } }) });
+  await h.ctx.pageLoaders.notifs(); await settle();
+  const items = h.byId.get('seller-notifs-list').children;
+  assert.equal(items.length, 3, 'all three notifications, not only the first');
+  assert.deepEqual(plain(items.map(i => i.children[1].textContent)), ['<img src=x onerror=alert(1)>', 'ثالث', 'أول']);
+  assert.deepEqual(plain(items.map(i => i.className)), ['notif-item', 'notif-item unread', 'notif-item unread']);
+  assert.deepEqual(plain(updates), [{ 'n1/read': true, 'n3/read': true }]);
+});
+test('notifications: if marking as read fails, the list stays visible and no error box replaces it', async () => {
+  const h = harness();
+  h.ctx.DB = h.ctx.guardDb({ ref: () => ({ once: async () => fakeSnap({ n1: { message: 'م', read: false } }), update: async () => { throw Object.assign(Error('denied'), { code: 'PERMISSION_DENIED' }); } }) });
+  await h.ctx.pageLoaders.notifs(); await settle();
+  assert.equal(h.byId.get('seller-notifs-list').children.length, 1);
+  assert.doesNotMatch(listText(h), /تعذر تحميل/);
 });

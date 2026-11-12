@@ -95,3 +95,22 @@ test('v5.2 indexed unread notification badge excludes read history and preserves
  require('node:assert/strict').deepEqual(Object.keys(result.val()),['a']);
  await assertFails(get(query(ref(db('manager',2),'companies/c2/notifications/admin'),orderByChild('read'),equalTo(false))));
 });
+test('seller revenue and notifications pages: seller may read and write their own paths; others and stale tokens are denied',async()=>{
+  const seller=db('seller',1);
+  // Revenue page: read transactions, add one (same shape as addTransaction()).
+  await assertSucceeds(get(ref(seller,'seller/transactions')));
+  await assertSucceeds(set(ref(seller,'seller/transactions/t1'),{companyId:'c1',companyName:'شركة',plan:'starter',amount:50,dateStr:'2026-11-12',date:Date.parse('2026-11-12'),note:'',createdAt:Date.now()}));
+  // Notifications page: read the list, mark read with a multi-path update.
+  await env.withSecurityRulesDisabled(async context=>set(ref(context.database(),'seller/notifications/n1'),{type:'new_company',message:'m',read:false,timestamp:'2026-11-12T10:00:00Z'}));
+  await assertSucceeds(get(ref(seller,'seller/notifications')));
+  await assertSucceeds(update(ref(seller,'seller/notifications'),{'n1/read':true}));
+  // Nothing else under seller/ is writable, even by the seller.
+  await assertFails(set(ref(seller,'seller/other'),{x:1}));
+  // Manager, employee, anonymous and a stale-version seller token are all denied.
+  for(const database of [db('manager',2),db('employee',1),env.unauthenticatedContext().database(),db('seller',2)]){
+    await assertFails(get(ref(database,'seller/transactions')));
+    await assertFails(get(ref(database,'seller/notifications')));
+    await assertFails(set(ref(database,'seller/transactions/x'),{amount:1}));
+    await assertFails(set(ref(database,'seller/notifications/x'),{read:true}));
+  }
+});

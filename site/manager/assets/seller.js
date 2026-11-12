@@ -255,3 +255,47 @@ function fillManagerUsername(cid) {
     if (label && value && label.textContent.trim() === 'اسم المستخدم') value.textContent = name || '--';
   }
 }
+
+// ==================== NOTIFICATIONS (plain DOM, clear error, every item) ====================
+// The old loader used snap.forEach(c => items.push(...)); push returns a number, which makes
+// Firebase stop after the FIRST child. It also hid errors behind an endless spinner.
+function sellerEmptyNote(icon, text) {
+  const box = document.createElement('div'); box.className = 'empty-state';
+  const i = document.createElement('div'); i.className = 'es-icon'; i.textContent = icon;
+  const p = document.createElement('p'); p.textContent = text;
+  box.append(i, p); return box;
+}
+loadNotifs = async function() {
+  const list = document.getElementById('seller-notifs-list'); if (!list) return;
+  const wrap = document.createElement('div'); wrap.style.textAlign = 'center'; wrap.style.padding = '20px';
+  const spin = document.createElement('div'); spin.className = 'spinner-sm'; wrap.appendChild(spin);
+  list.replaceChildren(wrap);
+  const items = [];
+  try {
+    const snap = await DB.ref('seller/notifications').once('value');
+    snap.forEach(c => { items.push({ key: c.key, ...(c.val() || {}) }); });
+  } catch (error) {
+    diagNote('notifications', error);
+    const retry = document.createElement('button'); retry.className = 'action-btn-full'; retry.textContent = 'إعادة المحاولة';
+    retry.addEventListener('click', () => loadNotifs());
+    list.replaceChildren(sellerEmptyNote('⚠️', 'تعذر تحميل الإشعارات. ' + friendlyError(error)), retry);
+    return;
+  }
+  items.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+  if (!items.length) { list.replaceChildren(sellerEmptyNote('🔕', 'لا توجد إشعارات')); return; }
+  list.replaceChildren(...items.map(n => {
+    const el = document.createElement('div'); el.className = 'notif-item' + (!n.read ? ' unread' : '');
+    const head = document.createElement('div'); head.className = 'notif-head';
+    const icon = document.createElement('span'); icon.textContent = n.type === 'new_company' ? '🏢' : n.type === 'expiry' ? '⏰' : '🔔'; icon.style.fontSize = '20px';
+    const time = document.createElement('span'); time.textContent = n.timestamp ? new Date(n.timestamp).toLocaleString('ar-SA') : ''; time.style.fontSize = '11px'; time.style.color = 'var(--text2)';
+    const msg = document.createElement('div'); msg.className = 'notif-msg'; msg.textContent = String(n.message || '');
+    head.append(icon, time); el.append(head, msg); return el;
+  }));
+  const updates = {};
+  for (const n of items) if (!n.read) updates[`${n.key}/read`] = true;
+  if (Object.keys(updates).length) {
+    try { await DB.ref('seller/notifications').update(updates); }
+    catch (error) { diagNote('notifications-read', error); }
+  }
+};
+if (typeof pageLoaders === 'object' && pageLoaders) pageLoaders.notifs = () => loadNotifs();

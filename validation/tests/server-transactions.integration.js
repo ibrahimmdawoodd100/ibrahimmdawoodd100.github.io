@@ -42,7 +42,7 @@ function loadServer(file) {
   };
   const context = { exports: {}, require: name => { if (!modules[name]) throw Error('unexpected module ' + name); return modules[name]; }, Buffer, console: { error() {}, log() {} }, Date, URL, setTimeout, clearTimeout, structuredClone };
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
-  return { invoke: (name, uid, data = {}, version = 1) => context.exports[name]({ auth: { uid, token: { version, auth_time: Date.now() / 1000 } }, app: { alreadyConsumed: false }, data }) };
+  return { exports: context.exports, invoke: (name, uid, data = {}, version = 1) => context.exports[name]({ auth: { uid, token: { version, auth_time: Date.now() / 1000 } }, app: { alreadyConsumed: false }, data }) };
 }
 let seed, auth;
 const get = async p => (await seed.ref(p).get()).val();
@@ -144,6 +144,51 @@ for (const [name, run] of Object.entries(scenarios)) {
   });
   test(`FIXED PASSES — ${name}`, async () => { await run(CURRENT, `f${id}`); });
 }
+
+// Full flow on the current code: no_checkin excuse → manager approves → employee checks out → «انصرف (بعذر)».
+test('EXCUSED CHECKOUT — no_checkin excuse approved, then check-out is recorded as «انصرف (بعذر)»', async () => {
+  const cid = 'cExcOut', emp = 'emp_exc_out', mgr = 'mgr_exc_out';
+  await seedCompany(cid);
+  await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
+  await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+  await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+  const proof = (id, intent) => seed.ref(`proofs/${emp}/${id}`).set({ intent, version: 1, expiresAt: Date.now() + 60000 });
+  const out = id => loadServer(CURRENT).invoke('recordAttendance', emp, { type: 'out', proof: id, location: { lat: 0, lng: 0 } });
+  // 1) Before any excuse, check-out without check-in is refused.
+  await proof('x0', 'out');
+  await assert.rejects(out('x0'), e => /سجّل الحضور أو احصل على موافقة العذر/.test(e.message));
+  // 2) Employee sends the excuse; the manager approves it (each on a cold instance).
+  assert.equal((await loadServer(CURRENT).invoke('submitRequest', emp, { kind: 'excuse', type: 'no_checkin', reason: 'نسيت تسجيل الحضور' })).ok, true);
+  const [excuseId, excuse] = Object.entries(await get(`companies/${cid}/excuses`))[0];
+  assert.equal(excuse.status, 'pending');
+  assert.equal((await loadServer(CURRENT).invoke('reviewRequest', mgr, { collection: 'excuses', id: excuseId, status: 'approved' })).ok, true);
+  assert.equal(await get(`companies/${cid}/excuses/${excuseId}/status`), 'approved');
+  const date = excuse.date, ledgerPath = `attendanceLedger/${cid}/e1/${date}`;
+  assert.equal((await get(ledgerPath)).events.excused.excuseType, 'no_checkin');
+  // 3) The real projection trigger writes what the employee page reads: «حاضر (بعذر)».
+  const project = () => loadServer(CURRENT).exports.projectAttendance({ params: { cid, eid: 'e1', date } });
+  await project();
+  const before = await get(`companies/${cid}/today/e1`);
+  assert.equal(before.checkInExcused, true);
+  assert.equal(before.statusLabel, 'حاضر (بعذر)');
+  // 4) Employee checks out with a valid fingerprint proof.
+  await proof('x1', 'out');
+  const result = await out('x1');
+  assert.equal(result.ok, true);
+  const events = (await get(ledgerPath)).events;
+  assert.deepEqual(Object.keys(events).sort(), ['excused', 'out']);
+  // 5) A second check-out is refused.
+  await proof('x2', 'out');
+  await assert.rejects(out('x2'), e => e.code === 'already-exists');
+  // 6) The status shown to the employee (today projection) and in the manager report.
+  await project();
+  const after = await get(`companies/${cid}/today/e1`);
+  assert.equal(after.attendanceStatus, 'excused_out');
+  assert.equal(after.statusLabel, 'انصرف (بعذر)');
+  assert.ok(after.checkOut);
+  const report = require('../public/assets/report-model.js').summary(events);
+  assert.equal(report.statusLabel, 'انصرف (بعذر)');
+});
 
 test('FIXED — a link to an account without access is refused before rotation, no lock left', async () => {
   await seedCompany('cGhost');
