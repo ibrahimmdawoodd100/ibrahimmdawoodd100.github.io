@@ -208,3 +208,60 @@ test('FIXED — two concurrent check-ins with two valid proofs: exactly one reco
   const date = results.find(r => r.status === 'fulfilled').value.date;
   assert.deepEqual(Object.keys((await get(`attendanceLedger/cAttC/e2/${date}`)).events), ['in']);
 });
+
+// ---- Notifications written by the server (the rules forbid clients from writing notification text) ----
+async function notifyCompany(cid) {
+  await seedCompany(cid);
+  await seed.ref(`companies/${cid}/employees`).set({ e1: { status: 'approved', name: 'E1' }, e2: { status: 'approved', name: 'E2' }, e3: { status: 'disabled', name: 'Off' } });
+  await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+  await seed.ref(`access/emp_${cid}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+  return { mgr: `mgr_${cid}`, emp: `emp_${cid}` };
+}
+const notes = async (cid, eid) => Object.values((await get(`companies/${cid}/notifications/${eid}`)) || {});
+test('sendNotification: private message reaches one employee and is listed in sent messages', async () => {
+  const cid = 'cNoteP', { mgr } = await notifyCompany(cid);
+  const r = await loadServer(CURRENT).invoke('sendNotification', mgr, { kind: 'private_msg', employeeId: 'e1', message: 'سطر أول\r\nسطر ثانٍ' });
+  assert.deepEqual({ ...r }, { ok: true, count: 1 });
+  const [n] = await notes(cid, 'e1');
+  assert.deepEqual({ type: n.type, message: n.message, read: n.read }, { type: 'private_msg', message: 'سطر أول\nسطر ثانٍ', read: false });
+  assert.equal((await notes(cid, 'e2')).length, 0);
+  const sent = Object.values(await get(`companies/${cid}/private_messages`));
+  assert.equal(sent.length, 1); assert.equal(sent[0].empName, 'E1');
+});
+test('sendNotification: broadcast reaches every APPROVED employee only', async () => {
+  const cid = 'cNoteB', { mgr } = await notifyCompany(cid);
+  const r = await loadServer(CURRENT).invoke('sendNotification', mgr, { kind: 'broadcast', message: 'تعميم' });
+  assert.equal(r.count, 2);
+  assert.equal((await notes(cid, 'e1'))[0].type, 'broadcast');
+  assert.equal((await notes(cid, 'e2')).length, 1);
+  assert.equal((await notes(cid, 'e3')).length, 0, 'disabled employee is skipped');
+  assert.equal(await get(`companies/${cid}/private_messages`), null);
+});
+test('sendNotification: refuses employees, unknown/disabled targets, other companies and unsafe text', async () => {
+  const cid = 'cNoteX', { mgr, emp } = await notifyCompany(cid);
+  const call = (uid, data) => loadServer(CURRENT).invoke('sendNotification', uid, data);
+  await assert.rejects(call(emp, { kind: 'broadcast', message: 'x' }), e => e.code === 'permission-denied');
+  await assert.rejects(call(mgr, { kind: 'mission', employeeId: 'e3', message: 'x' }), e => e.code === 'not-found');
+  await assert.rejects(call(mgr, { kind: 'mission', employeeId: 'nobody', message: 'x' }), e => e.code === 'not-found');
+  await assert.rejects(call(mgr, { kind: 'private_msg', employeeId: 'e1', message: '<script>' }), e => e.code === 'invalid-argument');
+  await assert.rejects(call(mgr, { kind: 'private_msg', employeeId: 'e1', message: 'x'.repeat(1001) }), e => e.code === 'invalid-argument');
+  await assert.rejects(call(mgr, { kind: 'admin', message: 'x' }), e => e.code === 'invalid-argument');
+  const other = await notifyCompany('cNoteY');
+  await assert.rejects(call(other.mgr, { kind: 'mission', employeeId: 'e9', message: 'x' }), e => e.code === 'not-found');
+  assert.equal((await notes(cid, 'e1')).length, 0, 'nothing was written');
+});
+test('seller notifications: a new company and an upcoming expiry each create exactly one note', async () => {
+  await seed.ref('seller/notifications').remove();
+  const created = await newCompany(CURRENT, 'note');
+  let list = Object.values(await get('seller/notifications'));
+  assert.equal(list.length, 1); assert.equal(list[0].type, 'new_company'); assert.match(list[0].message, /شركة note/);
+  await seed.ref('seller/notifications').remove();
+  const soon = Date.now() + 3 * 86400000, far = Date.now() + 30 * 86400000;
+  await seed.ref('companyDirectory').set({ cSoon: { nameAr: 'قريبة', status: 'active', expiresAt: soon }, cFar: { nameAr: 'بعيدة', status: 'active', expiresAt: far }, cOff: { nameAr: 'معلقة', status: 'suspended', expiresAt: soon }, cOld: { nameAr: 'منتهية', status: 'active', expiresAt: Date.now() - 1000 } });
+  await loadServer(CURRENT).exports.cleanupSecurityState();
+  await loadServer(CURRENT).exports.cleanupSecurityState(); // a second daily run must not duplicate
+  list = Object.entries(await get('seller/notifications'));
+  assert.deepEqual(list.map(([k]) => k), [`expiry_cSoon_${soon}`]);
+  assert.equal(list[0][1].type, 'expiry'); assert.match(list[0][1].message, /قريبة/);
+  void created;
+});

@@ -2,8 +2,10 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-PEjdkEuQ6EWVHvzJPZtp53bfO+DQwoW9caLW0UcJtYo=' 'sha256-a/IzCMNXGQu0kUO97r2RQoD/nvkekn3kX7/HnK/z5Jc=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-2bgKr2PCrrv9gvJBopuYz4aFEIC9N525SDucyrRjNXM=' 'sha256-a/IzCMNXGQu0kUO97r2RQoD/nvkekn3kX7/HnK/z5Jc=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+
+
 
 
 
@@ -1164,12 +1166,11 @@ async function sendPrivateMsg(){
   if(!body){showToast('اكتب نص الرسالة','error');return;}
   try {
     const empName=ALL_EMPLOYEES[empId]?.name||'';
-    await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'private_msg',message:body,timestamp:new Date().toISOString(),read:false});
-    await DB.ref(`companies/${COMPANY_ID}/private_messages`).push({empId,empName,message:body,createdAt:Date.now(),read:false});
+    await Basma.call('sendNotification',{kind:'private_msg',employeeId:empId,message:body});
     showToast('تم إرسال الرسالة لـ '+empName,'success');
     document.getElementById('msg-body').value='';
     loadMessages();
-  } catch(e){showToast('خطأ: '+e.message,'error');}
+  } catch(e){showToast(window.BasmaErrors?.message(e,'تعذر إرسال الرسالة')||'تعذر إرسال الرسالة','error');}
 }
 
 // ==================== LOC REVIEW ====================
@@ -1384,15 +1385,10 @@ async function sendBroadcast(){
   const msg=document.getElementById('broadcast-msg').value.trim();
   if(!msg){showToast('اكتب الرسالة','error');return;}
   try{
-    const freshSnap=await DB.ref(`companies/${COMPANY_ID}/employees`).once('value');
-    ALL_EMPLOYEES=freshSnap.val()||{};
-    const approved=Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved');
-    if(!approved.length){showToast('لا يوجد موظفون','error');return;}
-    const ts=new Date().toISOString();
-    for(const[id]of approved) await DB.ref(`companies/${COMPANY_ID}/notifications/${id}`).push({type:'broadcast',message:msg,timestamp:ts,read:false});
-    showToast(`تم الإرسال لـ ${approved.length} موظف`,'success');
+    const result=await Basma.call('sendNotification',{kind:'broadcast',message:msg});
+    showToast(`تم الإرسال لـ ${result.count} موظف`,'success');
     document.getElementById('broadcast-msg').value='';
-  }catch(e){showToast('خطأ: '+e.message,'error');}
+  }catch(e){showToast(window.BasmaErrors?.message(e,'تعذر إرسال التعميم')||'تعذر إرسال التعميم','error');}
 }
 
 // ==================== ④ GEO-ZONE MAP (Leaflet) ====================
@@ -1669,12 +1665,9 @@ async function saveMission() {
       showToast('تم تعديل المهمة ✅', 'success');
     } else {
       await DB.ref(`companies/${COMPANY_ID}/missions`).push(missionData);
-      // Notify employee
-      await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({
-        type:'mission', message:`📋 مهمة جديدة: ${location} — بتاريخ ${date}`,
-        timestamp:new Date().toISOString(), read:false
-      });
-      showToast('تم إسناد المهمة ✅', 'success');
+      // Notify employee (server-written). The mission is already saved even if this fails.
+      try { await Basma.call('sendNotification',{kind:'mission',employeeId:empId,message:`📋 مهمة جديدة: ${location} — بتاريخ ${date}`.replace(/[<>]/g,'')}); showToast('تم إسناد المهمة ✅', 'success'); }
+      catch(e) { showToast('تم إسناد المهمة، لكن تعذر إشعار الموظف. '+(window.BasmaErrors?.message(e,'')||''), 'info'); }
     }
     closeMissionModal();
     loadMissions();
@@ -1735,7 +1728,7 @@ async function loadMissions() {
 async function completeMission(key, empId) {
   try {
     await DB.ref(`companies/${COMPANY_ID}/missions/${key}`).update({status:'completed', completedAt:new Date().toISOString()});
-    if(empId) await DB.ref(`companies/${COMPANY_ID}/notifications/${empId}`).push({type:'mission',message:'✅ تم تسجيل إتمام المهمة من قِبل المدير',timestamp:new Date().toISOString(),read:false});
+    if(empId) await Basma.call('sendNotification',{kind:'mission',employeeId:empId,message:'✅ تم تسجيل إتمام المهمة من قِبل المدير'}).catch(()=>showToast('تعذر إشعار الموظف بإتمام المهمة','info'));
     showToast('تم تسجيل إتمام المهمة','success');
     loadMissions();
   } catch(e) { showToast('خطأ: '+e.message,'error'); }

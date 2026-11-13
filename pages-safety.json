@@ -37,7 +37,7 @@
   "expectedOwnedHashes": {
     "employee/icon-employee-192.png": "315df644e081776fcbc523f4e50eee41cb34fde8721a6aab7b84257693c5bb86",
     "employee/icon-employee-512.png": "6ce95559c4db3701774eb7939291820f3c7824927e20f5c5fbba94f176557c7e",
-    "employee/index.html": "c99a2fc44eccf14f99a22ac8f3bc3cc57e2487a23f7357df66ca71b16a7c1868",
+    "employee/index.html": "714fceb92209acd7ba934dcdd00a428f851e3d9a13ef034599bc0c70707b4af4",
     "employee/manifest.json": "48143bdece322c349f27336da0394f18193195f85b6f5c035890277af7e7706e",
     "employee/sw.js": "5492c6c7dcc85976d163b7d9a73a5ad94e15beb5f44cf5692d979978dc1cb54e",
     "manager/assets/actions.js": "2ee09ee897fc2e9b2af49f9c23100b03c87df93d15bc9a0ed082be1c30963335",
@@ -55,13 +55,13 @@
     "manager/assets/report-model.js": "3944e4125a5f4972754d897ec7a8750ee113de28c67b21abff97dde5816d4abc",
     "manager/assets/safe-dom.js": "a9347101b27d111e21ac579e19e676c3faff52988e51c496d39ac0aa78fadb66",
     "manager/assets/seller.js": "27fc1127a2706b5dfca17d9498d371b7c0bfe9fcb0b4ce138037bde5c2ca5e29",
-    "manager/diagnostics.html": "5fb3d612e69a2c6537ee6e0d9df6b603780980bf09e0878b0ff03de12bdf14b5",
+    "manager/diagnostics.html": "8bcb43589ebf6e1bb406a61a99da251a94ed9d7143c04f48dd4897003921aba8",
     "manager/icon-manager-192.png": "432358d6f141dc65f46b5fda510f01aacb41235afd213fa261876502c60e78ad",
     "manager/icon-manager-512.png": "92c5f11bb6dd49761fd8b40b2bbded4823b28d601d2fd1ad70fbbff5b7eee22a",
-    "manager/index.html": "8f05221588c7f510b2d0787973149c423177ce4d3c96c46162f22f3cd7927e5a",
+    "manager/index.html": "7480f0c1fd50ee432428c2cb83b7fa11ebe660da8f389204fc867d14e397ff1f",
     "manager/manifest.json": "432c2c3d035a405772782c947c413ba0ac607c514c37431a19f85c76fa737f98",
     "manager/sw.js": "5492c6c7dcc85976d163b7d9a73a5ad94e15beb5f44cf5692d979978dc1cb54e",
-    "seller.html": "c7de62c8fb96c730a01bc5473e4ff6851a119e0b014fc7597206e28816a94074"
+    "seller.html": "5615d929d5fcb946da8f65a08a1560d66e34674ce97ffbc2ec4dfa11acc26c7e"
   },
   "assetlinksHash": "9c91f947dd7bd94e34ca708e2db7a23e25981af8fbbb3fbbef7345668bb086f4"
 }

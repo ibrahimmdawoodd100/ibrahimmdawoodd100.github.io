@@ -114,3 +114,41 @@ test('seller revenue and notifications pages: seller may read and write their ow
     await assertFails(set(ref(database,'seller/notifications/x'),{read:true}));
   }
 });
+test('manager page: every direct write the page still makes is accepted; notifications and record edits are server-only',async()=>{
+  const m=db('manager',2),c='companies/c1';
+  await env.withSecurityRulesDisabled(async context=>{const d=context.database();
+    await set(ref(d,`${c}/warehouses/w1`),{name:'Branch',active:true});
+    await set(ref(d,`${c}/missions/m1`),{empId:'e1',empName:'E',location:'L',description:'',date:'2026-11-13',expectedTime:'',status:'assigned',assignedAt:'2026-11-13T08:00:00Z'});
+    await set(ref(d,`${c}/notifications/admin/n1`),{message:'x',read:false});
+  });
+  const win={from:'08:00',to:'09:00'},ts=new Date().toISOString();
+  const cases=[
+    ['admin notifications mark read',()=>update(ref(m,`${c}/notifications/admin`),{'n1/read':true})],
+    ['employee schedule set',()=>set(ref(m,`${c}/employees/e1/schedule`),{checkIn:win,checkOut:{from:'16:00',to:'17:00'}})],
+    ['employee schedule remove',()=>set(ref(m,`${c}/employees/e1/schedule`),null)],
+    ['DENIED-BY-DESIGN private message → employee notification',()=>set(ref(m,`${c}/notifications/e1/p1`),{type:'private_msg',message:'مرحبا',timestamp:ts,read:false})],
+    ['private message → sent list',()=>set(ref(m,`${c}/private_messages/p1`),{empId:'e1',empName:'E',message:'مرحبا',createdAt:Date.now(),read:false})],
+    ['add warehouse',()=>set(ref(m,`${c}/warehouses/w2`),{name:'New',active:true})],
+    ['rename warehouse',()=>update(ref(m,`${c}/warehouses/w1`),{name:'Renamed'})],
+    ['warehouse schedule set',()=>set(ref(m,`${c}/warehouses/w1/schedule`),{checkIn:win,checkOut:{from:'16:00',to:'17:00'}})],
+    ['warehouse schedule remove',()=>set(ref(m,`${c}/warehouses/w1/schedule`),null)],
+    ['warehouse geozone',()=>set(ref(m,`${c}/warehouses/w1/geoZone`),{lat:24.7,lng:46.7,radius:100,enabled:true})],
+    ['time windows',()=>update(ref(m,`${c}/settings`),{checkIn:win,checkOut:{from:'16:00',to:'17:00'}})],
+    ['add holiday',()=>set(ref(m,`${c}/settings/holidays/h1`),{date:'2026-12-01',name:'عطلة',active:true})],
+    ['delete holiday',()=>set(ref(m,`${c}/settings/holidays/h1`),null)],
+    ['DENIED-BY-DESIGN broadcast',()=>set(ref(m,`${c}/notifications/e1/b1`),{type:'broadcast',message:'تعميم',timestamp:ts,read:false})],
+    ['company geozone',()=>set(ref(m,`${c}/settings/geoZone`),{enabled:true,zones:[{lat:24.7,lng:46.7,radius:100}]})],
+    ['new mission',()=>set(ref(m,`${c}/missions/m2`),{empId:'e1',empName:'E',location:'L',description:'d',date:'2026-11-13',expectedTime:'10:00',status:'assigned',assignedAt:ts})],
+    ['edit mission',()=>update(ref(m,`${c}/missions/m1`),{empId:'e1',empName:'E',location:'L2',description:'',date:'2026-11-13',expectedTime:''})],
+    ['DENIED-BY-DESIGN mission notification',()=>set(ref(m,`${c}/notifications/e1/mn`),{type:'mission',message:'📋 مهمة جديدة',timestamp:ts,read:false})],
+    ['complete mission',()=>update(ref(m,`${c}/missions/m1`),{status:'completed',completedAt:ts})],
+    ['delete mission',()=>set(ref(m,`${c}/missions/m1`),null)],
+    ['DENIED-BY-DESIGN reject a record location',()=>update(ref(m,`${c}/records/r1`),{locStatus:'rejected'})],
+    ['delete warehouse',()=>set(ref(m,`${c}/warehouses/w2`),null)],
+    ['clear admin notifications',()=>set(ref(m,`${c}/notifications/admin`),null)],
+  ];
+  const denied=[];
+  for(const [name,run]of cases){try{await run();}catch(e){denied.push(`${name}: ${String(e.message).slice(0,80)}`);}}
+  const expected=cases.filter(([n])=>n.startsWith('DENIED-BY-DESIGN')).map(([n])=>n);
+  require('node:assert/strict').deepEqual(denied.map(d=>d.split(':')[0]),expected,'only the server may write employee notifications or edit records');
+});

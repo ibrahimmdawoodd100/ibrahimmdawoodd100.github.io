@@ -104,6 +104,8 @@ function schedule(data) {
   for (const name of ['checkIn', 'checkOut']) { p.minutes(data?.[name]?.from); p.minutes(data?.[name]?.to); }
   return { checkIn: { from: data.checkIn.from, to: data.checkIn.to }, checkOut: { from: data.checkOut.from, to: data.checkOut.to } };
 }
+// Seller notifications are written only by the server; the seller page reads and marks them read.
+const sellerNote = (type, message) => db.ref('seller/notifications').push({ type, message, timestamp: new Date().toISOString(), read: false });
 exports.createCompany = endpoint(['seller'], async ({ uid, data }) => {
   const info = companyInfo(data), settings = schedule(data.settings), cid = db.ref('companies').push().key;
   const names = Array.isArray(data.warehouses) && data.warehouses.length ? data.warehouses : ['الفرع الرئيسي'];
@@ -114,6 +116,7 @@ exports.createCompany = endpoint(['seller'], async ({ uid, data }) => {
     await db.ref(`companies/${cid}`).set({ info, settings, warehouses });
     await db.ref(`accountLinks/${cid}/manager`).set(account.uid);
     await audit(uid, 'company.create', cid);
+    await sellerNote('new_company', `🏢 تم إنشاء شركة جديدة: ${info.nameAr}`).catch(() => {});
     return { companyId: cid, ...account };
   } catch (error) { await db.ref(`access/${account.uid}`).remove(); await auth.deleteUser(account.uid); throw error; }
 });
@@ -442,6 +445,31 @@ exports.submitRequest = endpoint(['employee'], async ({ uid, member, info, data 
   await audit(uid, `request.${collection}`, `${cid}/${id}`);
   return { ok: true };
 });
+// Employee notifications (private message, broadcast, new mission) are server-written:
+// the rules keep notification text immutable for every client, including the manager.
+function messageText(value) {
+  if (typeof value !== 'string') p.fail('اكتب نص الرسالة', 'invalid-argument');
+  const text = value.replace(/\r\n?/g, '\n').trim();
+  if (!text || text.length > 1000 || /[<>\u0000-\u0009\u000b-\u001f]/u.test(text)) p.fail('نص الرسالة غير صالح (حتى 1000 حرف، بدون < أو >)', 'invalid-argument');
+  return text;
+}
+exports.sendNotification = endpoint(['manager'], async ({ uid, member, data }) => {
+  const cid = member.companyId, kind = data.kind;
+  if (!['private_msg', 'broadcast', 'mission'].includes(kind)) p.fail('نوع غير صالح', 'invalid-argument');
+  const message = messageText(data.message);
+  const employees = (await read(`companies/${cid}/employees`)) || {};
+  let targets;
+  if (kind === 'broadcast') targets = Object.keys(employees).filter(id => employees[id]?.status === 'approved');
+  else { const eid = p.key(data.employeeId); if (employees[eid]?.status !== 'approved') p.fail('الموظف غير موجود أو غير مفعّل', 'not-found'); targets = [eid]; }
+  if (!targets.length) p.fail('لا يوجد موظفون مفعّلون', 'failed-precondition');
+  if (targets.length > 10000) p.fail('عدد الموظفين كبير', 'invalid-argument');
+  const timestamp = new Date().toISOString(), updates = {};
+  for (const eid of targets) updates[`companies/${cid}/notifications/${eid}/${db.ref().push().key}`] = { type: kind, message, timestamp, read: false };
+  if (kind === 'private_msg') updates[`companies/${cid}/private_messages/${db.ref().push().key}`] = { empId: targets[0], empName: employees[targets[0]].name || '', message, createdAt: Date.now(), read: false };
+  await db.ref().update(updates);
+  await audit(uid, `notify.${kind}`, cid, { count: targets.length });
+  return { ok: true, count: targets.length };
+});
 exports.changePassword = endpoint(allRoles, async ({ uid, token, member, data }) => {
   return withLock(uid, async () => {
   if (!Number.isFinite(token.auth_time) || Date.now() / 1000 - token.auth_time > 300) p.fail('سجّل الدخول مجددًا قبل تغيير كلمة المرور', 'unauthenticated');
@@ -523,6 +551,22 @@ exports.cleanupSecurityState = onSchedule({ schedule: 'every 24 hours', region }
       if (users.numChildren() < 100) break;
     } while (cursor);
   }
+  // Seller reminder: one notification per company and expiry date, during the last 7 days.
+  // Create-if-absent: a plain transaction is safe here (null start → create; existing → abort).
+  const now = Date.now(), soon = now + 7 * 86400000;
+  let cursor;
+  do {
+    let query = db.ref('companyDirectory').orderByKey().limitToFirst(100);
+    if (cursor) query = query.startAfter(cursor);
+    const page = (await query.get()).val() || {}, ids = Object.keys(page);
+    for (const cid of ids) {
+      cursor = cid; const info = page[cid] || {};
+      if (info.status === 'suspended' || !Number.isFinite(info.expiresAt) || info.expiresAt <= now || info.expiresAt > soon) continue;
+      const day = new Date(info.expiresAt).toISOString().slice(0, 10);
+      await db.ref(`seller/notifications/expiry_${cid}_${info.expiresAt}`).transaction(old => old ? undefined : { type: 'expiry', message: `⏰ اشتراك «${info.nameAr || cid}» ينتهي في ${day}`, timestamp: new Date().toISOString(), read: false });
+    }
+    if (ids.length < 100) break;
+  } while (cursor);
 });
 exports.dailyBackup = onSchedule({ schedule: 'every day 02:00', timeZone: 'UTC', region, timeoutSeconds: 540, memory: '1GiB', maxInstances: 1 }, async () => {
   const name = backupBucket.value();
