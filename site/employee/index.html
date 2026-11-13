@@ -2,8 +2,12 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-f+NMH9jdYQyJCrkW49u7e3lF2ciJOG0A2gkVD5CYmZg=' 'sha256-nNhTtcjYSWacRIsrTD6E4tiX9f1XBG2h63K1szkSsGM=' 'sha256-NaCdbowwwUFozbLuVDjk7Kr237NiNLIV0T62JdKxm3Q='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-PEjdkEuQ6EWVHvzJPZtp53bfO+DQwoW9caLW0UcJtYo=' 'sha256-a/IzCMNXGQu0kUO97r2RQoD/nvkekn3kX7/HnK/z5Jc=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
 
 
 
@@ -1194,7 +1198,7 @@ async function loadMissionsPage() {
   try {
     const snap = await DB.ref(`companies/${COMPANY_ID}/missions`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     const missions = [];
-    snap.forEach(c => missions.push({ key: c.key, ...c.val() }));
+    snap.forEach(c => { missions.push({ key: c.key, ...c.val() }); });
     missions.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     if (!missions.length) { container.innerHTML = '<div class="empty-state"><div class="es-icon">📋</div><p>لا توجد زمنيات مسندة إليك</p></div>'; return; }
     container.innerHTML = '';
@@ -1224,7 +1228,7 @@ async function loadMissionsPage() {
         ${canEnd ? `<button class="action-btn" style="margin-top:14px;background:linear-gradient(135deg,var(--purple),#7c3aed)" data-basma-click="endMission('${m.key}')">⏹ إنهاء الزمنية — تسجيل بالبصمة</button>` : ''}`;
       container.appendChild(card);
     }
-  } catch(e) { container.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px">خطأ في التحميل</div>'; }
+  } catch(e) { container.replaceChildren(Object.assign(document.createElement('div'),{className:'empty-state',textContent:'تعذر تحميل المهام. '+(window.BasmaErrors?.message(e,'')||'')})); }
 }
 
 async function startMission(missionKey) { throw new Error('Legacy path disabled; use the secure service.'); }
@@ -1273,7 +1277,7 @@ async function loadHistory() {
     const snap = await DB.ref(`companies/${COMPANY_ID}/records`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     const list = document.getElementById('hist-list');
     const records = [];
-    snap.forEach(c => records.push({ key: c.key, ...c.val() }));
+    snap.forEach(c => { records.push({ key: c.key, ...c.val() }); });
     records.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     if (!records.length) { list.innerHTML = '<div class="empty-state"><div class="es-icon">📭</div><p>لا توجد سجلات بعد</p></div>'; return; }
     const groups = {};
@@ -1332,7 +1336,7 @@ async function loadExcusePage() {
     const excSnap = await DB.ref(`companies/${COMPANY_ID}/excuses`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     const excList = document.getElementById('prev-excuses-list');
     const excuses = [];
-    excSnap.forEach(c => excuses.push({ key: c.key, ...c.val() }));
+    excSnap.forEach(c => { excuses.push({ key: c.key, ...c.val() }); });
     excuses.sort((a, b) => (b.createdAt||0) - (a.createdAt||0));
     if (!excuses.length) { excList.innerHTML = '<div class="empty-state" style="padding:20px"><p>لا توجد أعذار سابقة</p></div>'; return; }
     excList.innerHTML = '';
@@ -1345,7 +1349,7 @@ async function loadExcusePage() {
       el.innerHTML = `<div class="excuse-item-head"><span class="excuse-item-type">${typeMap[ex.type]||ex.type}</span><span class="${stMap[ex.status]||''}">${stText[ex.status]||ex.status}</span></div><div class="excuse-item-msg">${ex.reason||''}</div>`;
       excList.appendChild(el);
     });
-  } catch(e) {}
+  } catch(e) { const box=document.getElementById('prev-excuses-list'); if (box) box.replaceChildren(Object.assign(document.createElement('div'),{className:'empty-state',textContent:'تعذر تحميل الأعذار السابقة. '+(window.BasmaErrors?.message(e,'')||'')})); }
 }
 
 async function submitExcuse() { throw new Error('Legacy path disabled; use the secure service.'); }
@@ -1494,7 +1498,7 @@ async function loadLeavePage() {
     const snap = await DB.ref(`companies/${COMPANY_ID}/leaves`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
     const list = document.getElementById('my-leaves-list');
     const leaves = [];
-    snap.forEach(c => leaves.push({ key: c.key, ...c.val() }));
+    snap.forEach(c => { leaves.push({ key: c.key, ...c.val() }); });
     leaves.sort((a, b) => (b.createdAt||0) - (a.createdAt||0));
 
     const recent = leaves.slice(0, 8);
@@ -1512,7 +1516,7 @@ async function loadLeavePage() {
       el.innerHTML = `<div class="leave-item-head"><span class="leave-item-date">${l.date||'--'}</span><span class="${stMap[l.status]||''}" style="font-size:12px;font-weight:700">${stText[l.status]||l.status}</span></div><span class="leave-type-badge ${leaveTypeCls[lt]||'leave-paid'}">${leaveTypeLabel[lt]||lt}</span>${timeRow}<div class="leave-item-reason">${l.reason||''}</div>`;
       list.appendChild(el);
     });
-  } catch(e) {}
+  } catch(e) { const box=document.getElementById('my-leaves-list'); if (box) box.replaceChildren(Object.assign(document.createElement('div'),{className:'empty-state',textContent:'تعذر تحميل الإجازات. '+(window.BasmaErrors?.message(e,'')||'')})); }
 }
 
 function toHijri(dateStr) {

@@ -2,8 +2,12 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-f+NMH9jdYQyJCrkW49u7e3lF2ciJOG0A2gkVD5CYmZg=' 'sha256-nNhTtcjYSWacRIsrTD6E4tiX9f1XBG2h63K1szkSsGM=' 'sha256-NaCdbowwwUFozbLuVDjk7Kr237NiNLIV0T62JdKxm3Q='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com 'sha256-PEjdkEuQ6EWVHvzJPZtp53bfO+DQwoW9caLW0UcJtYo=' 'sha256-a/IzCMNXGQu0kUO97r2RQoD/nvkekn3kX7/HnK/z5Jc=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
 
 
 
@@ -1071,7 +1075,7 @@ async function loadApprovals() {
   try {
     const snap=await DB.ref(`companies/${COMPANY_ID}/employees`).orderByChild('status').equalTo('pending').once('value');
     const items=[];
-    snap.forEach(c=>items.push({key:c.key,...c.val()}));
+    snap.forEach(c=>{items.push({key:c.key,...c.val()});});
     if(!items.length){list.innerHTML='<div class="empty-state"><div class="es-icon">✅</div><p>لا توجد طلبات</p></div>';return;}
     list.innerHTML='';
     items.forEach(emp=>{
@@ -1141,7 +1145,7 @@ async function loadMessages() {
   try {
     const snap=await DB.ref(`companies/${COMPANY_ID}/private_messages`).once('value');
     const items=[];
-    snap.forEach(c=>items.push({key:c.key,...c.val()}));
+    snap.forEach(c=>{items.push({key:c.key,...c.val()});});
     items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     if(!items.length){list.innerHTML='<div class="empty-state" style="padding:20px"><p>لا توجد رسائل</p></div>';return;}
     list.innerHTML='';
@@ -1150,7 +1154,7 @@ async function loadMessages() {
       el.innerHTML=`<div class="msg-head"><span class="msg-emp">${ALL_EMPLOYEES[m.empId]?.name||m.empName||'موظف'}</span><div style="display:flex;align-items:center;gap:8px"><span class="msg-read ${m.read?'read':'unread'}">${m.read?'قُرئت':'لم تُقرأ'}</span><span class="msg-date">${new Date(m.createdAt||0).toLocaleDateString('ar-SA')}</span></div></div><div class="msg-body">${m.message||''}</div>`;
       list.appendChild(el);
     });
-  } catch(e) {}
+  } catch(e) { list.replaceChildren(Object.assign(document.createElement('div'),{className:'empty-state',textContent:'تعذر تحميل الرسائل. '+(window.BasmaErrors?.message(e,'')||'')})); }
 }
 
 async function sendPrivateMsg(){
