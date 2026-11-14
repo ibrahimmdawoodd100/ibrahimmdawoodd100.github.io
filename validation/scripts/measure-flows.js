@@ -59,12 +59,14 @@ async function measure(source,role){
  const app={name:'secure-'+role,auth:()=>auth,database:()=>database,appCheck:()=>({activate(){}}),functions:()=>({httpsCallable:(name,options)=>async data=>{
   const call={name,limitedUseAppCheckTokens:options?.limitedUseAppCheckTokens===true};calls.push(call);
   const response=data=>{call.responseJsonBytes=Buffer.byteLength(JSON.stringify(data));return {data};};
+  const who={role,companyId:'c1',employeeId:role==='employee'?'e0':null,name:'شركة',timeZone:'UTC'};
+  if(data?.warm===true)return response({warm:true});
   if(name==='profile')return response({role,companyId:'c1',employeeId:role==='employee'?'e0':null,serverTime:f.now,timeZone:'UTC'});
   if(name==='serverClock')return response({serverTime:f.now});
   if(name==='managerHome'){const c=f.data.companies.c1,day=(o,k)=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>v?.[k]===f.date));
    const keep=['name','empId','role','warehouseId','warehouseName','status','schedule','createdAt'],staff=Object.fromEntries(Object.entries(c.employees||{}).map(([id,e])=>[id,Object.fromEntries(keep.filter(k=>e[k]!==undefined).map(k=>[k,e[k]]))]));
-   return response({serverTime:f.now,date:f.date,companyId:'c1',info:c.info,settings:c.settings||{},warehouses:c.warehouses||{},employees:staff,records:day(c.records,'dateKey'),leaves:day(c.leaves,'date'),excuses:day(c.excuses,'date')});}
-  if(name==='employeeHome')return response({serverTime:f.now,date:f.date,employee:f.data.companies.c1.employees.e0,info:f.data.companies.c1.info,settings:f.data.companies.c1.settings,warehouse:f.data.companies.c1.warehouses.w1,today:f.data.companies.c1.today.e0,onLeave:false});
+   return response({serverTime:f.now,date:f.date,companyId:'c1',info:c.info,settings:c.settings||{},warehouses:c.warehouses||{},employees:staff,records:day(c.records,'dateKey'),leaves:day(c.leaves,'date'),excuses:day(c.excuses,'date'),profile:who});}
+  if(name==='employeeHome')return response({serverTime:f.now,date:f.date,employee:f.data.companies.c1.employees.e0,info:f.data.companies.c1.info,settings:f.data.companies.c1.settings,warehouse:f.data.companies.c1.warehouses.w1,today:f.data.companies.c1.today.e0,onLeave:false,profile:who});
   if(name==='beginWebAuthn')return response({challengeId:'challenge',options:{challenge:'YQ',allowCredentials:[]}});
   if(name==='finishWebAuthn')return response({proof:'proof'});
   if(name==='recordAttendance'){const p='companies/c1/today/e0';f.data.companies.c1.today.e0={dateKey:f.date,empId:'e0',checkIn:new Date(f.now).toISOString()};queueMicrotask(()=>{for(const l of listeners.filter(l=>l.path===p)){const v=value(p);reads.push({...l.spec,kind:'listener-update',jsonBytes:Buffer.byteLength(JSON.stringify(v))});l.fn(snap(v));}});return response({ok:true});}

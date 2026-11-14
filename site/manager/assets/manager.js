@@ -22,7 +22,7 @@ window.onload = async () => {
 directoryLogin = async function() {
   const btn = document.getElementById('dl-submit-btn'); btn.disabled = true;
   try { await secureManagerOpen(await Basma.login(document.getElementById('dl-username').value, document.getElementById('dl-password').value, 'manager')); document.getElementById('dl-password').value = ''; }
-  catch (error) { const node = document.getElementById('setup-error'); node.textContent = 'تعذر الدخول. تحقق من بيانات الحساب وحالة الشركة.'; node.style.display = 'block'; }
+  catch (error) { const node = document.getElementById('setup-error'); node.textContent = error?.code === 'basma/timeout' ? error.message : 'تعذر الدخول. تحقق من بيانات الحساب وحالة الشركة.'; node.style.display = 'block'; }
   finally { btn.disabled = false; }
 };
 resetFirebaseConfig = resetFbCfg = lockAdmin = () => Basma.logout();

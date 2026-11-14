@@ -23,13 +23,13 @@ test('template event dispatcher calls allowlisted actions without executing inje
 function authHarness(role,{blockLocal=false}={}) {
   const attempts=[],signouts=[],banners=[],settled=[],providers=[],callOptions=[];let profileError;
   const auth={currentUser:{getIdToken:async()=>{}},setPersistence:async value=>{attempts.push(value);if(value==='local'&&blockLocal)throw Error('Storage blocked');},onAuthStateChanged:fn=>{queueMicrotask(fn);return()=>{};},signOut:async()=>{signouts.push(true);},signInWithEmailAndPassword:async()=>{}};
-  const app={name:`secure-${role}`,auth:()=>auth,appCheck:()=>({activate(provider,autoRefresh){providers.push({provider,autoRefresh});}}),functions:()=>({httpsCallable:(name,options)=>async()=>{callOptions.push({name,...options});if(profileError)throw profileError;return{data:{role,companyId:'c1'}};}})};
+  const app={name:`secure-${role}`,auth:()=>auth,appCheck:()=>({activate(provider,autoRefresh){providers.push({provider,autoRefresh});}}),functions:()=>({httpsCallable:(name,options)=>async()=>{callOptions.push({name,...options});if(profileError)throw profileError;const who={role,companyId:'c1'};return{data:/Home$/.test(name)?{profile:who}:who};}})};
   const firebase={apps:[],initializeApp:(config,name)=>{app.name=name;return app;},appCheck:{ReCaptchaEnterpriseProvider:class{constructor(siteKey){this.siteKey=siteKey;this.kind='enterprise';}}}};
   firebase.auth={Auth:{Persistence:{LOCAL:'local',SESSION:'session'}}};
   const window={dispatchEvent:event=>settled.push(event.type),BASMA_CONFIG:{firebase:{databaseURL:'https://example.firebaseio.com'},appCheckSiteKey:'public-test',region:'us-central1'}};
   const document={getElementById:()=>null,createElement:()=>({style:{},set textContent(value){banners.push(value);}}),body:{appendChild(){}}};
   const navigator={geolocation:{getCurrentPosition:success=>success({coords:{latitude:0,longitude:0,accuracy:123}})}};
-  vm.runInNewContext(fs.readFileSync(require.resolve('../public/assets/core.js'),'utf8'),{window,firebase,navigator,document,URL,console,CustomEvent:class{constructor(type){this.type=type;}}});
+  vm.runInNewContext(fs.readFileSync(require.resolve('../public/assets/core.js'),'utf8'),{window,firebase,navigator,document,URL,console,setTimeout,clearTimeout,CustomEvent:class{constructor(type){this.type=type;}}});
   return {Basma:window.Basma,attempts,signouts,banners,settled,providers,callOptions,app,setError:error=>profileError=error};
 }
 test('employee persistence is LOCAL, while manager persistence remains SESSION in another app namespace',async()=>{

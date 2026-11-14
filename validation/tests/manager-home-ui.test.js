@@ -6,7 +6,7 @@ const read = f => fs.readFileSync(require.resolve('../public/assets/' + f), 'utf
 const plain = v => JSON.parse(JSON.stringify(v));
 
 function coreHarness({ connects = 'never' } = {}) {
-  const timers = [], log = { polling: 0, offline: 0, online: 0 }, store = {}, session = {};
+  const timers = [], log = { polling: 0, offline: 0, online: 0 }, store = {}, session = {}, calls = [];
   let listeners = [];
   const database = {
     ref: path => ({ on: (type, fn) => { listeners.push({ path, fn }); if (connects === 'websocket') queueMicrotask(() => fn({ val: () => true })); return fn; }, off: (type, fn) => { listeners = listeners.filter(l => l.fn !== fn); } }),
@@ -15,7 +15,7 @@ function coreHarness({ connects = 'never' } = {}) {
   };
   const auth = { currentUser: { getIdToken: async () => 't' }, setPersistence: async () => {}, onAuthStateChanged: fn => { queueMicrotask(fn); return () => {}; } };
   const app = { name: 'secure-manager', auth: () => auth, database: () => database, appCheck: () => ({ activate() {} }),
-    functions: () => ({ httpsCallable: name => async () => ({ data: name === 'profile' ? { role: 'manager', companyId: 'c1', serverTime: Date.now() } : {} }) }) };
+    functions: () => ({ httpsCallable: name => async data => { calls.push([name, data]); return { data: name === 'managerHome' ? { profile: { role: 'manager', companyId: 'c1' }, serverTime: Date.now(), employees: {} } : name === 'profile' ? { role: 'manager', companyId: 'c1', serverTime: Date.now() } : { warm: true } }; } }) };
   const firebase = { apps: [], initializeApp: () => app, appCheck: { ReCaptchaEnterpriseProvider: class {} }, auth: { Auth: { Persistence: { SESSION: 's', LOCAL: 'l' } } } };
   const storage = obj => ({ getItem: k => (k in obj ? obj[k] : null), setItem: (k, v) => { obj[k] = String(v); }, removeItem: k => { delete obj[k]; } });
   const ctx = { firebase, console, Promise, Date, JSON, Math, Object, Error, String, Number, Uint8Array, queueMicrotask, performance: { now: () => 0 },
@@ -23,7 +23,7 @@ function coreHarness({ connects = 'never' } = {}) {
     document: { getElementById: () => null, createElement: () => ({ style: {}, appendChild() {}, addEventListener() {} }), body: { appendChild() {} } }, location: {}, CustomEvent: class {} };
   ctx.window = ctx; ctx.BASMA_CONFIG = { firebase: {}, appCheckSiteKey: 'k', region: 'us-central1' };
   vm.runInNewContext(read('core.js'), ctx);
-  return { ctx, log, timers, store, session };
+  return { ctx, log, timers, store, session, calls };
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
@@ -39,7 +39,7 @@ test('database watchdog: a stalled WebSocket switches this tab to long polling a
   const steps = JSON.parse(h.store.basma_diag_trace).map(t => [t.step, t.ok, t.code]);
   assert.ok(steps.some(([s, ok, c]) => /websocket/.test(s) && !ok && c === 'db/connect-timeout'));
   assert.ok(steps.some(([s, ok]) => /long-polling/.test(s) && ok));
-  assert.ok(steps.some(([s]) => s === 'الدالة profile'));
+  assert.ok(steps.some(([s, ok]) => s === 'الدالة managerHome (فتح الصفحة)' && ok));
 });
 test('database watchdog: a working WebSocket is left alone', async () => {
   const h = coreHarness({ connects: 'websocket' });
@@ -113,4 +113,19 @@ test('dashboard: a server error is shown in plain Arabic with its code', async (
   const h = dashHarness(() => { throw Object.assign(Error('denied'), { code: 'functions/permission-denied' }); });
   await h.ctx.loadDashboard();
   assert.match(h.text('dash-tbody'), /تعذر تحميل لوحة التحكم/); assert.match(h.text('dash-tbody'), /functions\/permission-denied/);
+});
+
+test('opening the manager page is ONE server call (managerHome carries the profile), handed to the page once', async () => {
+  const h = coreHarness({ connects: 'websocket' });
+  const profile = await h.ctx.Basma.session('manager');
+  assert.deepEqual(plain(h.calls.map(c => c[0])), ['managerHome'], 'no separate profile call');
+  assert.equal(profile.role, 'manager'); assert.equal(profile.companyId, 'c1');
+  assert.ok(h.ctx.Basma.takeHome('managerHome'), 'home handed to the page'); assert.equal(h.ctx.Basma.takeHome('managerHome'), null, 'only once');
+});
+test('warm-up sends {warm:true} to each named function, in the background, without page events', async () => {
+  const h = coreHarness({ connects: 'websocket' });
+  await h.ctx.Basma.session('manager'); h.calls.length = 0;
+  h.ctx.Basma.warm(['beginWebAuthn', 'finishWebAuthn', 'recordAttendance']); await tick();
+  assert.deepEqual(plain(h.calls), [['beginWebAuthn', { warm: true }], ['finishWebAuthn', { warm: true }], ['recordAttendance', { warm: true }]]);
+  assert.ok(JSON.parse(h.store.basma_diag_trace).some(t => t.step === 'تسخين recordAttendance' && t.ok));
 });

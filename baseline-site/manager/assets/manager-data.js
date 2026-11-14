@@ -24,7 +24,9 @@
       if(Object.keys(result).length>200000)throw Error('الفترة كبيرة جدًا؛ اختر فترة أقصر');
     }
   }
-  function create(context,{now=()=>typeof performance==='object'?performance.now():Date.now(),baseTTL=300000,periodTTL=60000}={}){
+  function create(context,{now=()=>typeof performance==='object'?performance.now():Date.now(),baseTTL=300000,periodTTL=60000,readTimeoutMs=20000,setTimer=setTimeout,clearTimer=clearTimeout}={}){
+    // Direct reads get a visible limit instead of waiting forever when the database connection stalls.
+    const limited=promise=>{let timer;const stop=new Promise((_,reject)=>{timer=setTimer(()=>reject(Object.assign(new Error(`لم ترد قاعدة البيانات خلال ${Math.round(readTimeoutMs/1000)} ثانية. تحقق من الإنترنت ثم اضغط «إعادة المحاولة».`),{code:'basma/timeout'})),readTimeoutMs);});return Promise.race([promise,stop]).finally(()=>clearTimer(timer));};
     let scope,epoch=0,scopeEpoch=0,baseCache,periods=new Map();
     function invalidate(){epoch++;baseCache=null;periods.clear();}
     function capture(checkEpoch=true){const next=context();if(!next?.db||!next.cid||!next.session)throw stale();
@@ -33,16 +35,18 @@
       return {db,cid,check(){const current=context();if(scopeVersion!==scopeEpoch||(checkEpoch&&version!==epoch)||current?.db!==db||current?.cid!==cid||current?.session!==session)throw stale();}};
     }
     function memo(map,key,load,ttl,guard){let entry=map.get(key);if(!entry||now()-entry.at>=ttl){entry={at:now()};entry.promise=Promise.resolve().then(load).catch(error=>{if(map.get(key)===entry)map.delete(key);throw error;});map.set(key,entry);while(map.size>4)map.delete(map.keys().next().value);}return entry.promise.then(value=>{guard();return value;});}
-    async function base(){const token=capture();if(!baseCache||now()-baseCache.at>=baseTTL){const entry={at:now()};baseCache=entry;entry.promise=Promise.all(['employees','settings','warehouses'].map(name=>token.db.ref(`companies/${token.cid}/${name}`).once('value'))).then(values=>{token.check();return {employees:values[0].val()||{},settings:values[1].val()||{},warehouses:values[2].val()||{}};}).catch(error=>{if(baseCache===entry)baseCache=null;throw error;});}const value=await baseCache.promise;token.check();return value;}
+    async function base(){const token=capture();if(!baseCache||now()-baseCache.at>=baseTTL){const entry={at:now()};baseCache=entry;entry.promise=limited(Promise.all(['employees','settings','warehouses'].map(name=>token.db.ref(`companies/${token.cid}/${name}`).once('value')))).then(values=>{token.check();return {employees:values[0].val()||{},settings:values[1].val()||{},warehouses:values[2].val()||{}};}).catch(error=>{if(baseCache===entry)baseCache=null;throw error;});}const value=await baseCache.promise;token.check();return value;}
     async function period(from,to){date(from);date(to);if(from>to)throw Error('نطاق غير صالح');const token=capture();return memo(periods,`${from}/${to}`,async()=>{
-      const [leaves,excuses]=await Promise.all(['leaves','excuses'].map(collection=>pages(token.db,token.cid,collection,{from,to,check:token.check})));return {leaves,excuses};
+      const [leaves,excuses]=await limited(Promise.all(['leaves','excuses'].map(collection=>pages(token.db,token.cid,collection,{from,to,check:token.check}))));return {leaves,excuses};
     },periodTTL,token.check);}
     async function requests(collection,month){const range=monthRange(month),token=capture();
       const [history,pending]=await Promise.all([period(range.from,range.to),pages(token.db,token.cid,collection,{status:'pending',check:token.check})]);token.check();
       // Key union: a pending request in the chosen month appears once, and old pending requests remain visible.
       return {...history[collection],...pending};
     }
-    return {base,period,requests,capture,invalidate,clear(){scope=null;scopeEpoch++;invalidate();}};
+    // Fill the base cache from the managerHome callable (one server call) so pages do not re-read it directly.
+    function prime(value){const token=capture(false);baseCache={at:now(),promise:Promise.resolve({employees:value?.employees||{},settings:value?.settings||{},warehouses:value?.warehouses||{}})};token.check();}
+    return {base,period,requests,capture,invalidate,prime,clear(){scope=null;scopeEpoch++;invalidate();}};
   }
   return {create,pages,monthRange};
 });

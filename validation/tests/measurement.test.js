@@ -3,7 +3,8 @@ const test=require('node:test'),assert=require('node:assert/strict'),path=requir
 const {measure}=require('../scripts/measure-flows');
 test('employee startup uses own home projection and two narrow live listeners, with no archive queries',async()=>{
  const x=await measure(path.join(__dirname,'..'),'employee');
- assert.deepEqual(x.opening.callables.map(c=>c.name),['profile','employeeHome']);
+ // ONE call opens the page (employeeHome carries the profile); the check-in functions are warmed in the background.
+ assert.deepEqual(x.opening.callables.map(c=>c.name),['employeeHome','beginWebAuthn','finishWebAuthn','recordAttendance']);
  assert.equal(x.opening.freshLimitedUseRequests,0);
  // '.info/connected' is the SDK's local connection flag (connection watchdog), not a database read.
  assert.deepEqual(x.opening.reads.filter(r=>!r.path.startsWith('.info/')).map(r=>r.path).sort(),['companies/c1/info/status','companies/c1/today/e0']);
@@ -14,7 +15,7 @@ test('employee startup uses own home projection and two narrow live listeners, w
 test('manager opening bounds request reads and reuses metadata for attendance',async()=>{
  const x=await measure(path.join(__dirname,'..'),'manager');
  // Opening = profile + ONE managerHome call; the dashboard makes no direct reads of staff, settings or today's data.
- assert.deepEqual(x.opening.callables.map(c=>c.name),['profile','managerHome']);assert.equal(x.action.functionCalls,0);
+ assert.deepEqual(x.opening.callables.map(c=>c.name),['managerHome']);assert.equal(x.action.functionCalls,0);
  assert.equal(x.opening.reads.some(r=>/^companies\/c1\/(info|employees|settings|warehouses|records|leaves|excuses)$/.test(r.path)&&r.kind==='once'),false);
  for(const r of x.opening.reads.filter(r=>/\/(leaves|excuses)$/.test(r.path)))assert.ok(r.order==='date'||r.order==='status');
  assert.equal(x.action.reads.some(r=>/\/(employees|settings|warehouses)$/.test(r.path)),false);

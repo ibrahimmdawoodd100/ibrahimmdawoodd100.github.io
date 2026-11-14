@@ -150,6 +150,21 @@ const scenarios = {
     await assert.rejects(loadServer(file).invoke('managerHome', 'seller'), e => e.code === 'permission-denied');
     await seed.ref(`access/emp_${A}`).set({ role: 'employee', companyId: A, employeeId: `e_${A}`, enabled: true, version: 1 });
     await assert.rejects(loadServer(file).invoke('managerHome', `emp_${A}`), e => e.code === 'permission-denied');
+    assert.deepEqual({ ...home.profile }, { role: 'manager', companyId: A, employeeId: null, name: 'شركة أ', timeZone: 'UTC' }, 'profile fields: one call opens the page');
+  },
+  'warm-up: {warm:true} starts the check-in functions with NO side effect, after the same access checks': async (file, tag) => {
+    const cid = `cWarm${tag}`, uid = `emp_warm_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
+    await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    for (const name of ['beginWebAuthn', 'finishWebAuthn', 'recordAttendance']) assert.deepEqual({ ...await loadServer(file).invoke(name, uid, { warm: true }) }, { warm: true }, name);
+    for (const p of [`challenges/${uid}`, `proofs/${uid}`, `attendanceLedger/${cid}`, `operationLocks/${uid}`]) assert.equal(await get(p), null, `nothing written at ${p}`);
+    await assert.rejects(loadServer(file).invoke('recordAttendance', 'seller', { warm: true }), e => e.code === 'permission-denied', 'role still checked');
+    await seed.ref(`access/${uid}/enabled`).set(false);
+    await assert.rejects(loadServer(file).invoke('beginWebAuthn', uid, { warm: true }), e => e.code === 'permission-denied', 'disabled account still refused');
+    await seed.ref(`access/${uid}/enabled`).set(true);
+    const home = await loadServer(file).invoke('employeeHome', uid);
+    assert.deepEqual({ ...home.profile }, { role: 'employee', companyId: cid, employeeId: 'e1', name: 'شركة', timeZone: 'UTC' });
   }
 };
 

@@ -46,4 +46,10 @@ for (const relative of ['public/manager/index.html','public/employee/index.html'
   }
 }
 JSON.parse(fs.readFileSync(path.join(root, 'database.rules.json')));
+// Service workers must match the current shell files (VERSION = their SHA-256), and must never sit at the site root.
+{
+  const { build } = require('./refresh-sw');
+  for (const page of ['manager', 'employee']) if (fs.readFileSync(path.join(root, 'public', page, 'sw.js'), 'utf8') !== build(page)) throw new Error(`Stale service worker: public/${page}/sw.js (run node scripts/refresh-sw.js)`);
+  if (fs.existsSync(path.join(root, 'public', 'sw.js'))) throw new Error('A root service worker would control every app on the shared site');
+}
 console.log(`Syntax, CSP hashes, and legacy-path checks passed (${scripts} scripts).`);

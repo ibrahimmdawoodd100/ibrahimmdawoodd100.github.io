@@ -42,6 +42,8 @@ function endpoint(roles, handler) {
   });
 }
 const allRoles = ['seller', 'manager', 'employee'];
+// The same session fields as the profile endpoint, so a page can open with ONE call (one cold start, not two).
+const sessionOf = (member, info) => ({ role: member.role, companyId: member.companyId || null, employeeId: member.employeeId || null, name: info?.nameAr || 'بصمة', timeZone: info?.timeZone || 'UTC' });
 exports.profile = endpoint(allRoles, async ({ member, info }) => ({ role: member.role, companyId: member.companyId || null, employeeId: member.employeeId || null, name: info?.nameAr || 'بصمة', timeZone:info?.timeZone || 'UTC', serverTime:Date.now() }));
 exports.serverClock = endpoint(allRoles, async () => ({ serverTime:Date.now() }));
 // Narrow home projection: never return coworkers, request history or notifications.
@@ -57,7 +59,7 @@ exports.employeeHome = endpoint(['employee'], async ({member,info,employee}) => 
     info:pick(info,['nameAr','nameEn','name','logo','timeZone','status']),
     settings:pick(settings,['checkIn','checkOut','weekendDays','holidays','geoZone']),
     warehouse:pick(warehouse,['name','active','schedule','geoZone']),today:today?.dateKey===date?today:{},
-    onLeave:fullLeave === true};
+    onLeave:fullLeave === true,profile:sessionOf(member,info)};
 });
 // Manager dashboard in ONE call (like listCompanies for the seller): the page no longer depends on many direct
 // database reads, which stall forever on networks where the database connection does not establish.
@@ -74,7 +76,7 @@ exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
   const staff = Object.fromEntries(Object.entries(employees || {}).map(([eid, e]) => [eid, pick(e, MANAGER_EMPLOYEE_FIELDS)]));
   return { serverTime: Date.now(), date, companyId: cid,
     info: pick(info, ['nameAr', 'nameEn', 'logo', 'industry', 'timeZone', 'status', 'expiresAt', 'maxEmployees', 'plan']),
-    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records, leaves, excuses };
+    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records, leaves, excuses, profile: sessionOf(member, info) };
 });
 exports.listCompanies = endpoint(['seller'], async ({ data }) => {
   let query = db.ref('companyDirectory').orderByKey().limitToFirst(100);
@@ -305,6 +307,9 @@ async function employeeContext(uid, member) {
   return employee;
 }
 exports.beginWebAuthn = endpoint(['employee'], async ({ uid, member, data }) => {
+  // Warm-up ping from the employee page: starts this instance before the fingerprint button is pressed.
+  // Reached only after the endpoint's Auth, App Check, access and rate-limit checks; no reads, no side effects.
+  if (data?.warm === true) return { warm: true };
   const employee = await employeeContext(uid, member), rp = relyingParty();
   const stored = await read(`credentials/${uid}`);
   if (!['register', 'authenticate'].includes(data.mode)) p.fail('عملية غير صالحة', 'invalid-argument');
@@ -320,6 +325,9 @@ exports.beginWebAuthn = endpoint(['employee'], async ({ uid, member, data }) => 
   return { options, challengeId };
 });
 exports.finishWebAuthn = endpoint(['employee'], async ({ uid, member, data }) => {
+  // Warm-up ping from the employee page: starts this instance before the fingerprint button is pressed.
+  // Reached only after the endpoint's Auth, App Check, access and rate-limit checks; no reads, no side effects.
+  if (data?.warm === true) return { warm: true };
   return withLock(uid, async () => {
   const currentMember = await read(`access/${uid}`), currentInfo = await read(`companies/${member.companyId}/info`);
   p.authorize(currentMember, { version: member.version }, currentInfo, ['employee']);
@@ -361,6 +369,9 @@ exports.finishWebAuthn = endpoint(['employee'], async ({ uid, member, data }) =>
   });
 });
 exports.recordAttendance = endpoint(['employee'], async ({ uid, member, info, data }) => {
+  // Warm-up ping from the employee page: starts this instance before the fingerprint button is pressed.
+  // Reached only after the endpoint's Auth, App Check, access and rate-limit checks; no reads, no side effects.
+  if (data?.warm === true) return { warm: true };
   const cid = member.companyId, eid = member.employeeId, employee = await employeeContext(uid, member);
   if (employee.status !== 'approved') p.fail('سجّل البصمة أولًا');
   const type = data.type;
