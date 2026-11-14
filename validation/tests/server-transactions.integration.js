@@ -11,7 +11,7 @@ const { getDatabase } = fromFunctions('firebase-admin/database');
 const { getAuth } = fromFunctions('firebase-admin/auth');
 
 const DB_URL = 'https://demo-basma-srv-default-rtdb.firebaseio.com';
-const CURRENT = path.join(__dirname, '../functions/index.js');
+const CURRENT = process.env.BASMA_SERVER_FILE || path.join(__dirname, '../functions/index.js');
 const ORIGINAL = path.join(process.env.HOME || '', 'basma-v5-original-backup/functions/index.js');
 const HAVE_ORIGINAL = fs.existsSync(ORIGINAL);
 let serial = 0;
@@ -40,7 +40,7 @@ function loadServer(file) {
     '@simplewebauthn/server': webauthn,
     './policy': fromFunctions('./policy.js')
   };
-  const context = { exports: {}, require: name => { if (!modules[name]) throw Error('unexpected module ' + name); return modules[name]; }, Buffer, console: { error() {}, log() {} }, Date, URL, setTimeout, clearTimeout, structuredClone };
+  const context = { exports: {}, require: name => { if (!modules[name]) throw Error('unexpected module ' + name); return modules[name]; }, Buffer, console: process.env.BASMA_DEBUG_SERVER ? console : { error() {}, log() {} }, Date, URL, setTimeout, clearTimeout, structuredClone };
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
   return { exports: context.exports, invoke: (name, uid, data = {}, version = 1) => context.exports[name]({ auth: { uid, token: { version, auth_time: Date.now() / 1000 } }, app: { alreadyConsumed: false }, data }) };
 }
@@ -126,11 +126,40 @@ const scenarios = {
     assert.equal(await signIn(email, next), true);
     assert.equal((await get(`access/${uid}`)).version, 2);
     assert.deepEqual(await locksFor(uid), []);
+  },
+  'managerHome: a manager of company A receives A only, never company B data': async (file, tag) => {
+    const day = new Date().toISOString().slice(0, 10), A = `cHomeA${tag}`, B = `cHomeB${tag}`;
+    for (const [cid, who] of [[A, 'أ'], [B, 'ب']]) {
+      await seedCompany(cid);
+      await seed.ref(`companies/${cid}/info/nameAr`).set(`شركة ${who}`);
+      await seed.ref(`companies/${cid}/employees`).set({ [`e_${cid}`]: { name: `موظف ${who}`, empId: '1', role: 'r', warehouseId: 'w1', status: 'approved', credId: 'secret-cred', deviceFingerprint: 'fp' } });
+      await seed.ref(`companies/${cid}/records/r_${cid}`).set({ empId: `e_${cid}`, type: 'in', timestamp: `${day}T08:00:00Z`, dateKey: day, lat: 0, lng: 0, locStatus: 'approved', warehouseId: 'w1' });
+      await seed.ref(`companies/${cid}/records/old_${cid}`).set({ empId: `e_${cid}`, type: 'in', timestamp: '2020-01-01T08:00:00Z', dateKey: '2020-01-01', lat: 0, lng: 0, locStatus: 'approved', warehouseId: 'w1' });
+      await seed.ref(`companies/${cid}/leaves/l_${cid}`).set({ empId: `e_${cid}`, date: day, status: 'approved', leaveType: 'paid' });
+      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    }
+    // A forged companyId in the request must be ignored: the company comes from the server-side access record.
+    const home = await loadServer(file).invoke('managerHome', `mgr_${A}`, { companyId: B });
+    assert.equal(home.companyId, A); assert.equal(home.info.nameAr, 'شركة أ'); assert.equal(home.date, day);
+    assert.deepEqual(Object.keys(home.employees), [`e_${A}`]);
+    assert.deepEqual(Object.keys(home.records), [`r_${A}`], "today's records only");
+    assert.deepEqual(Object.keys(home.leaves), [`l_${A}`]);
+    const text = JSON.stringify(home);
+    assert.equal(text.includes(B), false, 'nothing from company B'); assert.equal(text.includes('شركة ب'), false);
+    assert.equal(text.includes('secret-cred') || text.includes('deviceFingerprint'), false, 'no credential fields');
+    await assert.rejects(loadServer(file).invoke('managerHome', 'seller'), e => e.code === 'permission-denied');
+    await seed.ref(`access/emp_${A}`).set({ role: 'employee', companyId: A, employeeId: `e_${A}`, enabled: true, version: 1 });
+    await assert.rejects(loadServer(file).invoke('managerHome', `emp_${A}`), e => e.code === 'permission-denied');
   }
 };
 
 test.before(async () => {
   for (const v of ['FIREBASE_DATABASE_EMULATOR_HOST', 'FIREBASE_AUTH_EMULATOR_HOST']) if (!process.env[v]) throw Error(`${v} missing: run under firebase emulators:exec --only database,auth`);
+  // Load the project's REAL rules into this emulator namespace: the admin SDK is not bound by them, but the
+  // server's queries need their .indexOn entries exactly as in production ("Index not defined" otherwise).
+  const rules = fs.readFileSync(path.join(__dirname, '../database.rules.json'), 'utf8');
+  const loaded = await fetch(`http://${process.env.FIREBASE_DATABASE_EMULATOR_HOST}/.settings/rules.json?ns=${new URL(DB_URL).hostname.split('.')[0]}`, { method: 'PUT', headers: { Authorization: 'Bearer owner' }, body: rules });
+  assert.equal(loaded.ok, true, 'project rules loaded into the emulator namespace');
   const app = adminApp(); seed = getDatabase(app); auth = getAuth(app);
   await seed.ref().set({ access: { seller: { role: 'seller', enabled: true, version: 1 } } });
 });

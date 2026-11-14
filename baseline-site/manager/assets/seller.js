@@ -255,3 +255,114 @@ function fillManagerUsername(cid) {
     if (label && value && label.textContent.trim() === 'اسم المستخدم') value.textContent = name || '--';
   }
 }
+
+// ==================== NOTIFICATIONS (plain DOM, clear error, every item) ====================
+// The old loader used snap.forEach(c => items.push(...)); push returns a number, which makes
+// Firebase stop after the FIRST child. It also hid errors behind an endless spinner.
+function sellerEmptyNote(icon, text) {
+  const box = document.createElement('div'); box.className = 'empty-state';
+  const i = document.createElement('div'); i.className = 'es-icon'; i.textContent = icon;
+  const p = document.createElement('p'); p.textContent = text;
+  box.append(i, p); return box;
+}
+loadNotifs = async function() {
+  const list = document.getElementById('seller-notifs-list'); if (!list) return;
+  const wrap = document.createElement('div'); wrap.style.textAlign = 'center'; wrap.style.padding = '20px';
+  const spin = document.createElement('div'); spin.className = 'spinner-sm'; wrap.appendChild(spin);
+  list.replaceChildren(wrap);
+  const items = [];
+  try {
+    const snap = await DB.ref('seller/notifications').once('value');
+    snap.forEach(c => { items.push({ key: c.key, ...(c.val() || {}) }); });
+  } catch (error) {
+    diagNote('notifications', error);
+    const retry = document.createElement('button'); retry.className = 'action-btn-full'; retry.textContent = 'إعادة المحاولة';
+    retry.addEventListener('click', () => loadNotifs());
+    list.replaceChildren(sellerEmptyNote('⚠️', 'تعذر تحميل الإشعارات. ' + friendlyError(error)), retry);
+    return;
+  }
+  items.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+  if (!items.length) { list.replaceChildren(sellerEmptyNote('🔕', 'لا توجد إشعارات')); return; }
+  list.replaceChildren(...items.map(n => {
+    const el = document.createElement('div'); el.className = 'notif-item' + (!n.read ? ' unread' : '');
+    const head = document.createElement('div'); head.className = 'notif-head';
+    const icon = document.createElement('span'); icon.textContent = n.type === 'new_company' ? '🏢' : n.type === 'expiry' ? '⏰' : '🔔'; icon.style.fontSize = '20px';
+    const time = document.createElement('span'); time.textContent = n.timestamp ? new Date(n.timestamp).toLocaleString('ar-SA') : ''; time.style.fontSize = '11px'; time.style.color = 'var(--text2)';
+    const msg = document.createElement('div'); msg.className = 'notif-msg'; msg.textContent = String(n.message || '');
+    head.append(icon, time); el.append(head, msg); return el;
+  }));
+  const updates = {};
+  for (const n of items) if (!n.read) updates[`${n.key}/read`] = true;
+  if (Object.keys(updates).length) {
+    try { await DB.ref('seller/notifications').update(updates); }
+    catch (error) { diagNote('notifications-read', error); }
+  }
+};
+if (typeof pageLoaders === 'object' && pageLoaders) pageLoaders.notifs = () => loadNotifs();
+
+// ==================== REVENUE (every transaction, plain DOM, clear errors) ====================
+// Same forEach bug as the notifications: the old loader read only the FIRST transaction.
+function sellerMonthKey(time) { const d = new Date(time); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+function sellerRevenueRow(cells) {
+  const tr = document.createElement('tr');
+  for (const [text, color] of cells) { const td = document.createElement('td'); td.textContent = String(text); if (color) { td.style.color = color; td.style.fontWeight = '700'; } tr.appendChild(td); }
+  return tr;
+}
+function sellerRevenueNote(tbody, text, retry) {
+  const tr = document.createElement('tr'), td = document.createElement('td');
+  td.colSpan = 5; td.style.textAlign = 'center'; td.style.padding = '20px'; td.style.color = 'var(--text2)';
+  const p = document.createElement('div'); p.textContent = text; td.appendChild(p);
+  if (retry) { const b = document.createElement('button'); b.className = 'action-btn-full'; b.textContent = 'إعادة المحاولة'; b.addEventListener('click', () => loadRevenue()); td.appendChild(b); }
+  tr.appendChild(td); tbody.replaceChildren(tr);
+}
+loadRevenue = async function() {
+  showLoading();
+  const tbody = document.getElementById('trans-tbody');
+  try { await loadAllCompanies(); }
+  catch (error) { diagNote('revenue-companies', error); showToast(friendlyError(error), 'error'); }
+  const transactions = [];
+  try {
+    const snap = await DB.ref('seller/transactions').once('value');
+    snap.forEach(c => { transactions.push({ key: c.key, ...(c.val() || {}) }); });
+  } catch (error) {
+    hideLoading(); diagNote('revenue', error);
+    for (const id of ['rev-total', 'rev-month', 'rev-avg']) setText(id, '—');
+    if (tbody) sellerRevenueNote(tbody, 'تعذر تحميل الإيرادات. ' + friendlyError(error), true);
+    return;
+  }
+  const amount = t => { const n = Number(t.amount); return Number.isFinite(n) ? n : 0; };
+  const when = t => Number(t.date) || Number(t.createdAt) || Date.parse(t.dateStr || '') || 0;
+  transactions.sort((a, b) => when(b) - when(a));
+  const monthly = {}, now = new Date();
+  for (let i = 11; i >= 0; i--) monthly[sellerMonthKey(new Date(now.getFullYear(), now.getMonth() - i, 1))] = 0;
+  for (const t of transactions) { const k = sellerMonthKey(when(t)); if (k in monthly) monthly[k] += amount(t); }
+  const thisMonth = monthly[Object.keys(monthly).pop()] || 0;
+  const total = Object.values(monthly).reduce((s, v) => s + v, 0);
+  const active = Object.values(allCompanies).filter(c => c.status === 'active').length;
+  setText('rev-total', '$' + total);
+  setText('rev-month', '$' + thisMonth);
+  setText('rev-avg', active ? '$' + Math.round(total / active) : '$0');
+  try { if (typeof drawRevenueChart === 'function') drawRevenueChart(monthly); } catch (error) { diagNote('revenue-chart', error); }
+  if (tbody) {
+    if (!transactions.length) sellerRevenueNote(tbody, 'لا توجد معاملات', false);
+    else tbody.replaceChildren(...transactions.slice(0, 20).map(t => sellerRevenueRow([
+      [t.companyName || t.companyId || '--'], [t.plan || 'manual'], ['$' + amount(t), 'var(--green)'],
+      [t.dateStr || new Date(when(t)).toLocaleDateString('ar-SA')], [t.note || '--']
+    ])));
+  }
+  const select = document.getElementById('trans-company');
+  if (select) select.replaceChildren(...Object.values(allCompanies).map(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.info?.nameAr || c.id; return o; }));
+  hideLoading();
+};
+addTransaction = async function() {
+  const value = id => document.getElementById(id)?.value ?? '';
+  const cid = value('trans-company'), amount = parseFloat(value('trans-amount')), date = value('trans-date'), note = String(value('trans-note')).trim();
+  if (!cid || !Number.isFinite(amount) || amount <= 0 || !date) { showToast('يرجى ملء الحقول المطلوبة', 'error'); return; }
+  try {
+    await DB.ref('seller/transactions').push({ companyId: cid, companyName: allCompanies[cid]?.info?.nameAr || '', plan: allCompanies[cid]?.info?.plan || 'starter', amount, dateStr: date, date: new Date(date).getTime(), note, createdAt: Date.now() });
+  } catch (error) { diagNote('addTransaction', error); showToast('تعذر تسجيل المعاملة. ' + friendlyError(error), 'error'); return; }
+  showToast('تم تسجيل المعاملة', 'success');
+  for (const id of ['trans-amount', 'trans-note']) { const el = document.getElementById(id); if (el) el.value = ''; }
+  return loadRevenue();
+};
+if (typeof pageLoaders === 'object' && pageLoaders) pageLoaders.revenue = () => loadRevenue();

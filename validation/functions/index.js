@@ -59,6 +59,23 @@ exports.employeeHome = endpoint(['employee'], async ({member,info,employee}) => 
     warehouse:pick(warehouse,['name','active','schedule','geoZone']),today:today?.dateKey===date?today:{},
     onLeave:fullLeave === true};
 });
+// Manager dashboard in ONE call (like listCompanies for the seller): the page no longer depends on many direct
+// database reads, which stall forever on networks where the database connection does not establish.
+// Company isolation: everything is read from member.companyId (the server-side access record), never from data.
+const MANAGER_EMPLOYEE_FIELDS = ['name', 'empId', 'role', 'warehouseId', 'warehouseName', 'status', 'schedule', 'createdAt'];
+exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
+  const cid = member.companyId, stamp = Date.now(), date = p.dateParts(new Date(stamp), info.timeZone).date;
+  const sameDay = (collection, field) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).equalTo(date).limitToFirst(20000).get().then(s => s.val() || {});
+  const [settings, warehouses, employees, records, leaves, excuses] = await Promise.all([
+    read(`companies/${cid}/settings`), read(`companies/${cid}/warehouses`), read(`companies/${cid}/employees`),
+    sameDay('records', 'dateKey'), sameDay('leaves', 'date'), sameDay('excuses', 'date')
+  ]);
+  const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
+  const staff = Object.fromEntries(Object.entries(employees || {}).map(([eid, e]) => [eid, pick(e, MANAGER_EMPLOYEE_FIELDS)]));
+  return { serverTime: Date.now(), date, companyId: cid,
+    info: pick(info, ['nameAr', 'nameEn', 'logo', 'industry', 'timeZone', 'status', 'expiresAt', 'maxEmployees', 'plan']),
+    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records, leaves, excuses };
+});
 exports.listCompanies = endpoint(['seller'], async ({ data }) => {
   let query = db.ref('companyDirectory').orderByKey().limitToFirst(100);
   if (data.cursor) query = query.startAfter(p.key(data.cursor));

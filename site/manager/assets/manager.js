@@ -2,10 +2,12 @@
 async function secureManagerOpen(profile) {
   clearManagerData();
   COMPANY_ID = profile.companyId; DB = Basma.db();
-  COMPANY_INFO = (await DB.ref(`companies/${COMPANY_ID}/info`).once('value')).val();
+  // No direct database read before the page opens: name and time zone come from the profile call;
+  // the rest (logo, settings, staff, today's attendance) from the managerHome call in loadDashboard.
+  COMPANY_INFO = { nameAr: profile.name || '', timeZone: profile.timeZone || 'UTC' };
   for (const id of ['setup-screen', 'pin-screen']) { const el = document.getElementById(id); if (el) { el.style.display = 'none'; el.classList.add('hidden'); } }
   document.getElementById('sb-company').textContent = COMPANY_INFO.nameAr;
-  document.getElementById('sb-logo').textContent = COMPANY_INFO.logo || '🏭';
+  document.getElementById('sb-logo').textContent = '🏭';
   Basma.controls();
   await loadAllData();
   // A live status listener closes a suspended tenant's UI immediately; database rules already deny it.

@@ -83,6 +83,14 @@ window.BasmaDiagnostics = (() => {
       return { detail: `عدد الشركات في الصفحة الأولى: ${Object.keys(page.companies || {}).length}` };
     }, 20000);
 
+    // 4b. managerHome callable (manager accounts only): the manager dashboard's single server call.
+    await step('الدالة managerHome', async () => {
+      if (!user) return { status: 'SKIP', detail: 'يحتاج تسجيل دخول المدير' };
+      if (role !== 'manager') return { status: 'SKIP', detail: 'متاحة لحساب المدير فقط' };
+      const home = (await callable('managerHome')({})).data || {};
+      return { detail: `الموظفون: ${Object.keys(home.employees || {}).length}، سجلات اليوم: ${Object.keys(home.records || {}).length}` };
+    }, 25000);
+
     // 5. One small database read (10 s). A permission refusal still proves the server answered.
     const db = app.database();
     await step('قراءة صغيرة من قاعدة البيانات', async () => {
@@ -94,10 +102,27 @@ window.BasmaDiagnostics = (() => {
       }
     }, 10000);
     // 6. Realtime connection state.
-    await step('حالة اتصال قاعدة البيانات', () => new Promise(resolve => {
+    const connected = (label, ms) => step(label, () => new Promise(resolve => {
       const ref = db.ref('.info/connected');
       const handler = ref.on('value', snap => { if (snap.val() === true) { ref.off('value', handler); resolve({ detail: 'متصل' }); } });
-    }), 10000);
+    }), ms);
+    const first = await connected('حالة اتصال قاعدة البيانات', 10000);
+    // 6b. If the normal (WebSocket) connection did not establish, try long polling the same way the pages do.
+    if (first.status === 'TIMEOUT' || first.status === 'FAIL') {
+      const internal = db.INTERNAL || firebase.database?.INTERNAL;
+      if (typeof internal?.forceLongPolling === 'function') {
+        internal.forceLongPolling(); db.goOffline(); db.goOnline();
+        const second = await connected('الاتصال بطريقة long polling', 15000);
+        if (second.status === 'OK') add('النتيجة', 'WARN', 0, 'الاتصال العادي متوقف في هذه الشبكة أو المتصفح، وطريقة long polling تعمل. الصفحات تتحول إليها تلقائيًا بعد 5 ثوانٍ.');
+      } else add('الاتصال بطريقة long polling', 'SKIP', 0, 'غير متاحة في هذه النسخة من المكتبة');
+    }
+
+    // 6c. Step timings recorded by the pages after login (step name and ms only).
+    try {
+      const trace = JSON.parse(storage?.getItem('basma_diag_trace') || '[]').slice(-20);
+      if (!trace.length) add('خطوات فتح الصفحات بعد الدخول', 'SKIP', 0, 'لا توجد خطوات مسجلة. سجّل الدخول في صفحة المدير ثم افتح هذه الصفحة.');
+      for (const t of trace) add(`${t.page || ''}: ${t.step}`, t.ok ? 'OK' : 'FAIL', t.ms, `${t.at?.slice(11, 19) || ''}${t.code ? ' — ' + t.code : ''}`);
+    } catch { add('خطوات فتح الصفحات بعد الدخول', 'SKIP', 0, 'التخزين المحلي غير متاح'); }
 
     // 7. Recent errors recorded by the seller page (operation, code, time only).
     try {

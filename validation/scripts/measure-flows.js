@@ -52,7 +52,7 @@ async function measure(source,role){
    reads.push({...spec,kind,jsonBytes:Buffer.byteLength(JSON.stringify(result)),children:result&&typeof result==='object'?Object.keys(result).length:0});return snap(result);
   }
  }
- const database={ref:query,goOffline(){}};
+ const database={ref:query,goOffline(){},goOnline(){},INTERNAL:{forceLongPolling(){}}};
  const auth={currentUser:{getIdToken:async()=>{}},setPersistence:async()=>{},onAuthStateChanged:fn=>{queueMicrotask(fn);return()=>{};},signOut:async()=>{},signInWithEmailAndPassword:async()=>{}};
  const handlers={};const browserEvents={};
  const firebase={apps:[],initializeApp:()=>app,appCheck:{ReCaptchaEnterpriseProvider:class{}},auth:{Auth:{Persistence:{LOCAL:'local',SESSION:'session'}}}};
@@ -61,6 +61,9 @@ async function measure(source,role){
   const response=data=>{call.responseJsonBytes=Buffer.byteLength(JSON.stringify(data));return {data};};
   if(name==='profile')return response({role,companyId:'c1',employeeId:role==='employee'?'e0':null,serverTime:f.now,timeZone:'UTC'});
   if(name==='serverClock')return response({serverTime:f.now});
+  if(name==='managerHome'){const c=f.data.companies.c1,day=(o,k)=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>v?.[k]===f.date));
+   const keep=['name','empId','role','warehouseId','warehouseName','status','schedule','createdAt'],staff=Object.fromEntries(Object.entries(c.employees||{}).map(([id,e])=>[id,Object.fromEntries(keep.filter(k=>e[k]!==undefined).map(k=>[k,e[k]]))]));
+   return response({serverTime:f.now,date:f.date,companyId:'c1',info:c.info,settings:c.settings||{},warehouses:c.warehouses||{},employees:staff,records:day(c.records,'dateKey'),leaves:day(c.leaves,'date'),excuses:day(c.excuses,'date')});}
   if(name==='employeeHome')return response({serverTime:f.now,date:f.date,employee:f.data.companies.c1.employees.e0,info:f.data.companies.c1.info,settings:f.data.companies.c1.settings,warehouse:f.data.companies.c1.warehouses.w1,today:f.data.companies.c1.today.e0,onLeave:false});
   if(name==='beginWebAuthn')return response({challengeId:'challenge',options:{challenge:'YQ',allowCredentials:[]}});
   if(name==='finishWebAuthn')return response({proof:'proof'});

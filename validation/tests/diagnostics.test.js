@@ -33,15 +33,15 @@ function runDiag(opts = {}, storageValue = '[]') {
   const ctx = { window: {}, setTimeout, clearTimeout, Promise, Date, JSON, String, Math, Object, Error, performance };
   vm.runInNewContext(source, ctx);
   const { firebase, calls } = fakeFirebase(opts);
-  const storage = { getItem: () => storageValue };
+  const storage = { getItem: key => key === 'basma_diag_events' ? storageValue : key === 'basma_diag_trace' ? (opts.trace ?? null) : null };
   return ctx.window.BasmaDiagnostics.run({ firebase, config: { firebase: { projectId: 'p' }, appCheckSiteKey: SITE_KEY, region: 'us-central1' }, document: dom.document, storage, region: 'us-central1' })
     .then(results => ({ results, dom, calls, text: ['diag-lines', 'diag-summary'].map(id => dom.all(dom.byId.get(id)).map(n => `${n.textContent} ${n.value}`).join('\n')).join('\n') }));
 }
 
 test('signed-in seller: one line per step, with times, and no token, key or full uid printed', async () => {
   const { results, text, calls } = await runDiag({}, JSON.stringify([{ at: '2026-11-11T13:20:00.000Z', operation: 'renewSubscription', code: 'basma/timeout' }]));
-  assert.deepEqual(plain(results.map(r => r.step)), ['تحميل مكتبات Firebase', 'حالة تسجيل الدخول', 'رمز App Check', 'الدالة profile', 'الدالة listCompanies', 'قراءة صغيرة من قاعدة البيانات', 'حالة اتصال قاعدة البيانات', 'آخر أخطاء لوحة المورّد']);
-  assert.deepEqual(plain(results.map(r => r.status)), ['OK', 'OK', 'OK', 'OK', 'OK', 'WARN', 'OK', 'WARN']);
+  assert.deepEqual(plain(results.map(r => r.step)), ['تحميل مكتبات Firebase', 'حالة تسجيل الدخول', 'رمز App Check', 'الدالة profile', 'الدالة listCompanies', 'الدالة managerHome', 'قراءة صغيرة من قاعدة البيانات', 'حالة اتصال قاعدة البيانات', 'خطوات فتح الصفحات بعد الدخول', 'آخر أخطاء لوحة المورّد']);
+  assert.deepEqual(plain(results.map(r => r.status)), ['OK', 'OK', 'OK', 'OK', 'OK', 'SKIP', 'WARN', 'OK', 'SKIP', 'WARN']);
   assert.ok(results.every(r => Number.isInteger(r.ms) && r.ms >= 0));
   assert.match(text, /uidS…/);
   for (const secret of [TOKEN, SITE_KEY, UID]) assert.equal(text.includes(secret), false, secret);
@@ -78,4 +78,12 @@ test('missing Firebase libraries are reported in one clear line', async () => {
   vm.runInNewContext(source, ctx);
   const results = await ctx.window.BasmaDiagnostics.run({ firebase: undefined, config: undefined, document: dom.document });
   assert.equal(results.length, 1); assert.equal(results[0].status, 'FAIL');
+});
+
+test('manager page step timings recorded after login are listed with their ms (names and times only)', async () => {
+  const trace = JSON.stringify([{ at: '2026-11-14T08:00:00.000Z', page: 'manager', step: 'الدالة profile', ms: 812, ok: true, code: '' }, { at: '2026-11-14T08:00:01.000Z', page: 'manager', step: 'الدالة managerHome', ms: 25000, ok: false, code: 'basma/timeout' }]);
+  const { results } = await runDiag({ trace });
+  const rows = results.filter(r => r.step.startsWith('manager: '));
+  assert.deepEqual(plain(rows.map(r => [r.step, r.status, r.ms])), [['manager: الدالة profile', 'OK', 812], ['manager: الدالة managerHome', 'FAIL', 25000]]);
+  assert.match(rows[1].detail, /basma\/timeout/);
 });

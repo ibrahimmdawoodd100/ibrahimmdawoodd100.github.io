@@ -36,8 +36,9 @@ window.Basma = (() => {
     await init(role);
     if (!app.auth().currentUser) return null;
     try {
-      await app.auth().currentUser.getIdToken(true);
-      const candidate = await call('profile');
+      const t0 = clock(); traceStart(`فتح صفحة ${role}`);
+      await app.auth().currentUser.getIdToken(true); trace('تجديد رمز الدخول', t0);
+      const t1 = clock(); const candidate = await call('profile'); trace('الدالة profile', t1);
       if (candidate.role !== role) throw Object.assign(new Error('هذا الحساب غير مخوّل لهذه الواجهة'), { code:'functions/permission-denied' });
       profile = {...candidate,clockOffset:Number.isFinite(candidate.serverTime)?candidate.serverTime-Date.now():0};
       return profile;
@@ -61,7 +62,58 @@ window.Basma = (() => {
     }
     location.reload();
   }
-  function db() { if (!profile) throw new Error('الجلسة غير متحققة'); return app.database(); }
+  // ---- Step timings for /manager/diagnostics.html: step name, ms, ok/code only. Never data or credentials. ----
+  const TRACE_KEY = 'basma_diag_trace';
+  const clock = () => (typeof performance === 'object' ? performance.now() : Date.now());
+  function trace(step, startedAt, ok = true, code = '') {
+    try {
+      const list = JSON.parse(localStorage.getItem(TRACE_KEY) || '[]');
+      list.push({ at: new Date().toISOString(), page: selectedRole || '', step: String(step).slice(0, 60), ms: Math.round(clock() - startedAt), ok: !!ok, code: String(code || '').slice(0, 60) });
+      localStorage.setItem(TRACE_KEY, JSON.stringify(list.slice(-40)));
+    } catch {}
+  }
+  function traceStart(label) { try { const list = JSON.parse(localStorage.getItem(TRACE_KEY) || '[]'); list.push({ at: new Date().toISOString(), page: selectedRole || '', step: `— ${label} —`, ms: 0, ok: true, code: '' }); localStorage.setItem(TRACE_KEY, JSON.stringify(list.slice(-40))); } catch {} }
+  // A promise with a visible limit: rejects with code basma/timeout and a plain Arabic message.
+  function timeout(promise, ms, label) {
+    let timer;
+    const limit = new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error(`لم يرد الخادم خلال ${Math.round(ms / 1000)} ثانية. تحقق من الإنترنت ثم اضغط «إعادة المحاولة».`), { code: 'basma/timeout', label })), ms); });
+    return Promise.race([Promise.resolve(promise), limit]).finally(() => clearTimeout(timer));
+  }
+  // ---- Database connection watchdog ----
+  // The SDK uses WebSocket ONLY when the browser supports it and it has not failed before. On some networks and
+  // browsers the WebSocket stalls without failing, so the connection never establishes and every read waits forever.
+  // If '.info/connected' is not true within CONNECT_MS, switch this tab to long polling (forceLongPolling, then a
+  // fresh connection via goOffline/goOnline creates a new transport choice) and remember it for this tab.
+  const CONNECT_MS = 5000, POLL_KEY = 'basma_db_long_polling';
+  const connection = { state: 'idle', transport: 'websocket', since: 0 };
+  let watched = false;
+  function forcePolling(database) {
+    const internal = database?.INTERNAL || window.firebase?.database?.INTERNAL;
+    if (typeof internal?.forceLongPolling !== 'function') return false;
+    internal.forceLongPolling(); connection.transport = 'long-polling'; return true;
+  }
+  function watchConnection(database) {
+    if (watched) return; watched = true;
+    const t0 = clock(); connection.state = 'connecting'; connection.since = Date.now();
+    let remembered = false; try { remembered = sessionStorage.getItem(POLL_KEY) === '1'; } catch {}
+    if (remembered) forcePolling(database);
+    let done = false;
+    const ref = database.ref('.info/connected');
+    const handler = ref.on('value', snap => {
+      if (snap.val() !== true || done) return;
+      done = true; connection.state = 'connected'; trace(`اتصال قاعدة البيانات (${connection.transport})`, t0, true);
+    });
+    setTimeout(() => {
+      if (done) return;
+      trace('اتصال قاعدة البيانات (websocket) لم يكتمل', t0, false, 'db/connect-timeout');
+      if (connection.transport === 'long-polling' || !forcePolling(database)) { connection.state = 'stalled'; return; }
+      try { sessionStorage.setItem(POLL_KEY, '1'); } catch {}
+      const t1 = clock(); database.goOffline(); database.goOnline();
+      const stop = ref.on('value', snap => { if (snap.val() === true) { ref.off('value', stop); connection.state = 'connected'; trace('اتصال قاعدة البيانات (long-polling)', t1, true); } });
+    }, CONNECT_MS);
+    void handler;
+  }
+  function db() { if (!profile) throw new Error('الجلسة غير متحققة'); const database = app.database(); watchConnection(database); return database; }
   function decode(value) { return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')), x => x.charCodeAt(0)); }
   function encode(value) { return btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
   // The server's per-user lock answers 'aborted' while another request for the same account is running.
@@ -148,5 +200,5 @@ window.Basma = (() => {
     }
     document.body.appendChild(bar);
   }
-  return { init, call, session, login, logout, db, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get persistenceMode() { return persistenceMode; } };
+  return { init, call, session, login, logout, db, trace, timeout, clock, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get persistenceMode() { return persistenceMode; } };
 })();

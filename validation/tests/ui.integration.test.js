@@ -24,7 +24,7 @@ test('manager dashboard, report and payroll render the same excuse status and ex
   const errors=[];
   const context={document:{getElementById:id=>nodes.get(id)||null,createElement:tag=>new Node(tag)},BasmaReports:reports,
     DB:{ref:location=>({orderByChild(){return this;},startAt(){return this;},startAfter(){return this;},endAt(){return this;},limitToFirst(){return this;},once:async()=>({val:()=>location==='.info/serverTimeOffset'?0:location.startsWith('privatePayroll/')?data.privatePayroll.e1:data[location.split('/').at(-1)]||null,forEach(){},numChildren:()=>0})})},
-    Basma:{records:async()=>({val:()=>records}),call:async()=>({ok:true})},
+    Basma:{records:async()=>({val:()=>records}),call:async name=>name==='managerHome'?{date:today,serverTime:Date.now(),info:{timeZone:'UTC'},employees:data.employees,records,leaves:data.leaves,excuses:data.excuses,settings:data.settings,warehouses:{w1:{name:'الفرع',active:true}}}:{ok:true},clock:()=>Date.now(),trace(){},timeout:promise=>promise},
     BasmaManagerData:require('../public/assets/manager-data'),window:{addEventListener(){}},setInterval(){},COMPANY_ID:'c1',COMPANY_INFO:{timeZone:'UTC'},ALL_EMPLOYEES:{e1:employee},ALL_WAREHOUSES:{w1:{name:'الفرع',active:true}},dashWHFilter:'all',attStatusFilter:'all',reportData:[],payrollData:{},adminNotifBadgeListener:null,pageLoaders:{dash:()=>{throw Error('stale navigation');}},
     showToast:message=>errors.push(message),showLoading(){},hideLoading(){},loadAllData:async()=>{},closeEmpModal(){},Date,Intl};
   for(const name of ['loadDashboard','loadAttendance','generateReport','calculatePayroll','showEmpModal','saveEmpSalary','loadAdminNotifBadge','loadLocReview','approveLocation','rejectLocation','answerBypass'])context[name]=async()=>{};

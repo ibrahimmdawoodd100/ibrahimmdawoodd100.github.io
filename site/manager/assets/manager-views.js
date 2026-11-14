@@ -49,18 +49,41 @@ const secureManagerView = (()=>{
 })();
 
 let dashboardTicket=0,attendanceTicket=0,reportTicket=0,payrollTicket=0;
+// ---- Dashboard from ONE server call (managerHome), with a visible limit and a retry button ----
+// Before: info + employees + settings + warehouses + leave/excuse pages + records + clock, all direct database reads
+// with no limit; on a stalled database connection the cards stayed "-" and the table spun forever.
+const managerHomeTimeoutMs=()=>Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000;
+function applyManagerHome(home){
+  COMPANY_INFO={...(COMPANY_INFO||{}),...(home.info||{})};
+  managerData.prime(home);ALL_EMPLOYEES=home.employees||{};ALL_WAREHOUSES=home.warehouses||{};
+  const name=document.getElementById('sb-company'),logo=document.getElementById('sb-logo');
+  if(name&&COMPANY_INFO.nameAr)name.textContent=COMPANY_INFO.nameAr;if(logo)logo.textContent=COMPANY_INFO.logo||'🏭';
+}
+function dashboardError(error){
+  for(const id of ['ds-total','ds-present','ds-absent','ds-leave']){const node=document.getElementById(id);if(node)node.textContent='—';}
+  const body=document.getElementById('dash-tbody');if(!body)return;
+  const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=7;td.style.textAlign='center';td.style.padding='24px';
+  td.appendChild(secureManagerView.text('div','تعذر تحميل لوحة التحكم. '+(window.BasmaErrors?.message(error,'')??error?.message??'')));
+  const retry=secureManagerView.text('button','إعادة المحاولة');retry.className='modal-btn';retry.style.marginTop='10px';
+  retry.addEventListener('click',()=>{retry.disabled=true;loadDashboard();});td.appendChild(retry);tr.appendChild(td);body.replaceChildren(tr);
+}
 loadDashboard=async function(){
-  const ticket=++dashboardTicket;
+  const ticket=++dashboardTicket,token=managerData.capture(false),t0=Basma.clock();
+  let home;
+  try{home=await Basma.timeout(Basma.call('managerHome'),managerHomeTimeoutMs(),'managerHome');token.check();Basma.trace('الدالة managerHome',t0,true);}
+  catch(error){if(error?.code==='stale-manager-scope'||ticket!==dashboardTicket)return;Basma.trace('الدالة managerHome',t0,false,error?.code||'error');dashboardError(error);return;}
+  if(ticket!==dashboardTicket)return;
+  const t1=Basma.clock();
   try{
-    const date=secureManagerView.today(),rows=await secureManagerView.dataset(date,date,{warehouseId:dashWHFilter});
-    if(ticket!==dashboardTicket)return;
+    applyManagerHome(home);
+    const rows=BasmaReports.build({employees:home.employees||{},records:home.records||{},leaves:home.leaves||{},excuses:home.excuses||{},settings:home.settings||{},from:home.date,to:home.date,warehouseId:dashWHFilter,timeZone:COMPANY_INFO.timeZone||'UTC'});
     const count=kind=>rows.filter(r=>r.classification===kind).length;
     document.getElementById('ds-total').textContent=rows.length;
     document.getElementById('ds-present').textContent=count('present')+count('excused');
     document.getElementById('ds-absent').textContent=count('absent');document.getElementById('ds-leave').textContent=count('leave');
     secureManagerView.table('dash-tbody',rows,r=>[r.name,r.role,r.warehouseName,r.statusLabel,secureManagerView.time(r.checkIn),secureManagerView.time(r.checkOut),r.locationName||'—'],r=>showEmpModal(r.employeeId));
-    secureManagerView.filters();
-  }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
+    secureManagerView.filters();Basma.trace('عرض لوحة التحكم',t1,true);
+  }catch(error){Basma.trace('عرض لوحة التحكم',t1,false,error?.code||'error');dashboardError(error);}
 };
 loadAttendance=async function(){
   const ticket=++attendanceTicket;
@@ -152,7 +175,7 @@ function stopManagerSubscriptions(){for(const [query,handler]of managerSubscript
 function clearManagerData(){if(adminNotifPageListener&&DB){DB.ref(`companies/${COMPANY_ID}/notifications/admin`).off('value',adminNotifPageListener);adminNotifPageListener=null;}if(adminNotifBadgeListener?.query){adminNotifBadgeListener.query.off('value',adminNotifBadgeListener.handler);adminNotifBadgeListener=null;}stopManagerSubscriptions();managerData.clear();dashboardTicket++;attendanceTicket++;reportTicket++;payrollTicket++;requestTickets.leaves++;requestTickets.excuses++;ALL_EMPLOYEES={};ALL_WAREHOUSES={};reportData=[];payrollData={};}
 loadAllData=async function(){
   showLoading('جاري تحميل البيانات...');
-  try{managerData.invalidate();const token=managerData.capture(),base=await managerData.base();token.check();ALL_EMPLOYEES=base.employees;ALL_WAREHOUSES=base.warehouses;populateWHSelects();await loadDashboard();loadBadges();loadAdminNotifBadge();}
+  try{managerData.invalidate();await loadDashboard();populateWHSelects();loadBadges();loadAdminNotifBadge();}
   finally{hideLoading();}
 };
 const requestTickets={leaves:0,excuses:0};
@@ -201,6 +224,7 @@ loadAdminNotifBadge=function(){
 };
 async function refreshVisibleManager(){
   if(typeof DB==='undefined'||!DB||document.visibilityState==='hidden')return;managerData.invalidate();
+  if(currentPage==='dash'){await loadDashboard();return;}
   try{const token=managerData.capture(),base=await managerData.base();token.check();ALL_EMPLOYEES=base.employees;ALL_WAREHOUSES=base.warehouses;secureManagerView.filters();
     if(currentPage==='reports'){if(reportData.length)await generateReport();return;}
     if(currentPage==='payroll'){if(payrollData.rows)await calculatePayroll();return;}
