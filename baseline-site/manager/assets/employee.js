@@ -1,7 +1,10 @@
 'use strict';
 async function secureEmployeeOpen(profile) {
   COMPANY_ID = profile.companyId; DB = Basma.db(); ACTIVATION_UID = profile.employeeId;
-  const home=await Basma.call('employeeHome');
+  // The session already fetched employeeHome while opening (one call); reuse it instead of a second call.
+  const home=Basma.takeHome?.('employeeHome')||await Basma.call('employeeHome');
+  // Start the check-in functions' instances now, while the employee reads the screen (saves ~2 s per cold start).
+  Basma.warm?.(home.employee?.status==='approved'&&home.employee?.credId?['beginWebAuthn','finishWebAuthn','recordAttendance']:['beginWebAuthn','finishWebAuthn']);
   const employee=home.employee;
   if(!employee||!['approved','pending_activation'].includes(employee.status))throw new Error('حساب الموظف غير مفعّل');
   secureAttendanceWindows.seed(home);
@@ -26,7 +29,7 @@ initFirebase = async function() {
 directoryEmployeeLogin = async function() {
   const button = document.getElementById('dl-emp-submit'); button.disabled = true;
   try { await secureEmployeeOpen(await Basma.login(document.getElementById('dl-emp-username').value, document.getElementById('dl-emp-password').value, 'employee')); document.getElementById('dl-emp-password').value = ''; }
-  catch (error) { const node = document.getElementById('dl-emp-error'); node.textContent = 'تعذر الدخول. تحقق من بيانات الحساب وحالة الشركة.'; node.style.display = 'block'; }
+  catch (error) { const node = document.getElementById('dl-emp-error'); node.textContent = error?.code === 'basma/timeout' ? error.message : 'تعذر الدخول. تحقق من بيانات الحساب وحالة الشركة.'; node.style.display = 'block'; }
   finally { button.disabled = false; }
 };
 // Fingerprint activation: one request at a time, button locked while it runs, plain-Arabic result.

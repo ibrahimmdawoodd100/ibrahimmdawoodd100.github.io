@@ -68,9 +68,9 @@ function dashboardError(error){
   retry.addEventListener('click',()=>{retry.disabled=true;loadDashboard();});td.appendChild(retry);tr.appendChild(td);body.replaceChildren(tr);
 }
 loadDashboard=async function(){
-  const ticket=++dashboardTicket,token=managerData.capture(false),t0=Basma.clock();
+  const ticket=++dashboardTicket,token=managerData.capture(false),t0=Basma.clock();dashRefreshAt=Date.now();
   let home;
-  try{home=await Basma.timeout(Basma.call('managerHome'),managerHomeTimeoutMs(),'managerHome');token.check();Basma.trace('الدالة managerHome',t0,true);}
+  try{home=Basma.takeHome?.('managerHome')||await Basma.timeout(Basma.call('managerHome'),managerHomeTimeoutMs(),'managerHome');token.check();Basma.trace('الدالة managerHome',t0,true);}
   catch(error){if(error?.code==='stale-manager-scope'||ticket!==dashboardTicket)return;Basma.trace('الدالة managerHome',t0,false,error?.code||'error');dashboardError(error);return;}
   if(ticket!==dashboardTicket)return;
   const t1=Basma.clock();
@@ -222,9 +222,11 @@ loadAdminNotifBadge=function(){
   const handler=query.on('value',snapshot=>{try{token.check();const count=snapshot.numChildren(),badge=document.getElementById('admin-notif-badge');badge.textContent=count;badge.style.display=count?'inline':'none';adminNotifCount=count;}catch{}});
   adminNotifBadgeListener={query,handler};
 };
+let dashRefresh=null,dashRefreshAt=0;
 async function refreshVisibleManager(){
   if(typeof DB==='undefined'||!DB||document.visibilityState==='hidden')return;managerData.invalidate();
-  if(currentPage==='dash'){await loadDashboard();return;}
+  // focus + pageshow + visibilitychange fire together on return: one dashboard request, and none within 15 s of the last.
+  if(currentPage==='dash'){if(dashRefresh)return dashRefresh;if(Date.now()-dashRefreshAt<15000)return;dashRefreshAt=Date.now();dashRefresh=loadDashboard().finally(()=>{dashRefresh=null;});return dashRefresh;}
   try{const token=managerData.capture(),base=await managerData.base();token.check();ALL_EMPLOYEES=base.employees;ALL_WAREHOUSES=base.warehouses;secureManagerView.filters();
     if(currentPage==='reports'){if(reportData.length)await generateReport();return;}
     if(currentPage==='payroll'){if(payrollData.rows)await calculatePayroll();return;}

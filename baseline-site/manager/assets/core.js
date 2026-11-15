@@ -6,6 +6,11 @@ window.Basma = (() => {
     if (ready) return ready;
     if (!['employee','manager','seller'].includes(role)) throw new Error('يجب تحديد نوع الحساب قبل الاتصال');
     selectedRole = role;
+    // App-shell cache for the manager and employee pages ONLY. Never the seller page (site root): a root
+    // service worker would control every app on this shared site, including Golden Cart.
+    if ((role === 'manager' || role === 'employee') && typeof navigator === 'object' && navigator.serviceWorker?.register) {
+      navigator.serviceWorker.register(`/${role}/sw.js`, { scope: `/${role}/` }).catch(() => {});
+    }
     ready = (async () => {
       const config = window.BASMA_CONFIG;
       if (!config || JSON.stringify(config).includes('REPLACE_ME')) throw new Error('يلزم إكمال إعدادات النشر في ملف config.js');
@@ -28,17 +33,44 @@ window.Basma = (() => {
   async function call(name, data = {}) {
     await init();
     try { const result=(await app.functions(window.BASMA_CONFIG.region).httpsCallable(name, { limitedUseAppCheckTokens: false })(data)).data;
-      if(selectedRole==='manager'&&!['profile','serverClock'].includes(name))window.dispatchEvent?.(new CustomEvent('basma-manager-mutated'));
+      if(selectedRole==='manager'&&!['profile','serverClock','managerHome'].includes(name))window.dispatchEvent?.(new CustomEvent('basma-manager-mutated'));
       return result; }
     finally { if(name==='recordAttendance') window.dispatchEvent?.(new CustomEvent('basma-attendance-settled')); }
+  }
+  const HOME_CALL = { employee: 'employeeHome', manager: 'managerHome' };
+  let pendingHome = null;
+  // The home data fetched while opening the session, handed to the page ONCE (no second call).
+  function takeHome(name) { const value = pendingHome?.name === name ? pendingHome.value : null; pendingHome = null; return value; }
+  // Warm-up: start the given functions' instances in the background (server answers {warm:true} after its checks).
+  // Not through call(): no page events, no retries; failures are only recorded as step timings.
+  function warm(names) {
+    if (!app || !app.auth().currentUser) return;
+    for (const name of names) {
+      const t0 = clock();
+      app.functions(window.BASMA_CONFIG.region).httpsCallable(name, { limitedUseAppCheckTokens: false })({ warm: true })
+        .then(() => trace(`تسخين ${name}`, t0), error => trace(`تسخين ${name}`, t0, false, error?.code || 'error'));
+    }
   }
   async function session(role) {
     await init(role);
     if (!app.auth().currentUser) return null;
     try {
-      const t0 = clock(); traceStart(`فتح صفحة ${role}`);
-      await app.auth().currentUser.getIdToken(true); trace('تجديد رمز الدخول', t0);
-      const t1 = clock(); const candidate = await call('profile'); trace('الدالة profile', t1);
+      traceStart(`فتح صفحة ${role}`);
+      // App Check token and the forced ID-token refresh (fresh claims) are independent: run them in parallel.
+      const t0 = clock();
+      await Promise.all([
+        Promise.resolve(app.appCheck().getToken?.(false)).then(() => trace('رمز App Check', t0), error => trace('رمز App Check', t0, false, error?.code || 'error')),
+        app.auth().currentUser.getIdToken(true).then(() => trace('تجديد رمز الدخول', t0))
+      ]);
+      // Employee and manager pages open with their home call, which also carries the profile fields:
+      // ONE server call (one cold start) instead of profile + home.
+      const homeName = HOME_CALL[role], t1 = clock();
+      let candidate;
+      try {
+        if (homeName) { const home = await timeout(call(homeName), Number(window.BASMA_HOME_TIMEOUT_MS) || 25000, homeName); pendingHome = { name: homeName, value: home }; candidate = { ...home.profile, serverTime: home.serverTime }; }
+        else candidate = await call('profile');
+        trace(`الدالة ${homeName || 'profile'} (فتح الصفحة)`, t1);
+      } catch (error) { trace(`الدالة ${homeName || 'profile'} (فتح الصفحة)`, t1, false, error?.code || 'error'); throw error; }
       if (candidate.role !== role) throw Object.assign(new Error('هذا الحساب غير مخوّل لهذه الواجهة'), { code:'functions/permission-denied' });
       profile = {...candidate,clockOffset:Number.isFinite(candidate.serverTime)?candidate.serverTime-Date.now():0};
       return profile;
@@ -200,5 +232,5 @@ window.Basma = (() => {
     }
     document.body.appendChild(bar);
   }
-  return { init, call, session, login, logout, db, trace, timeout, clock, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get persistenceMode() { return persistenceMode; } };
+  return { init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get persistenceMode() { return persistenceMode; } };
 })();

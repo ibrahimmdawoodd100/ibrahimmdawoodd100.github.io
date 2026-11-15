@@ -165,6 +165,30 @@ const scenarios = {
     await seed.ref(`access/${uid}/enabled`).set(true);
     const home = await loadServer(file).invoke('employeeHome', uid);
     assert.deepEqual({ ...home.profile }, { role: 'employee', companyId: cid, employeeId: 'e1', name: 'شركة', timeZone: 'UTC' });
+  },
+  'managerRecords: own company only, chosen range only, compact fields, 31-day limit, month + pending requests': async (file, tag) => {
+    const A = `cRecA${tag}`, B = `cRecB${tag}`;
+    for (const cid of [A, B]) {
+      await seedCompany(cid);
+      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+      await seed.ref(`companies/${cid}/records`).set({
+        [`in_${cid}`]: { empId: 'e1', type: 'in', timestamp: '2026-10-05T08:00:00Z', dateKey: '2026-10-05', lat: 33.3, lng: 44.4, actor: 'uid-secret', locStatus: 'approved', warehouseId: 'w1', warehouseName: 'Branch', delayMins: 3 },
+        [`old_${cid}`]: { empId: 'e1', type: 'in', timestamp: '2026-08-01T08:00:00Z', dateKey: '2026-08-01', lat: 0, lng: 0, locStatus: 'approved', warehouseId: 'w1' } });
+      await seed.ref(`companies/${cid}/leaves`).set({ [`oct_${cid}`]: { empId: 'e1', date: '2026-10-05', status: 'approved' }, [`pend_${cid}`]: { empId: 'e1', date: '2026-07-01', status: 'pending' }, [`done_${cid}`]: { empId: 'e1', date: '2026-07-02', status: 'rejected' } });
+    }
+    const range = await loadServer(file).invoke('managerRecords', `mgr_${A}`, { from: '2026-10-01', to: '2026-10-31', companyId: B });
+    assert.deepEqual(Object.keys(range.records), [`in_${A}`], 'range only, company A only');
+    assert.deepEqual(Object.keys(range.records[`in_${A}`]).sort(), ['dateKey', 'delayMins', 'empId', 'locStatus', 'timestamp', 'type', 'warehouseId', 'warehouseName'], 'compact: no coordinates or actor');
+    assert.deepEqual(Object.keys(range.leaves), [`oct_${A}`]);
+    assert.equal(JSON.stringify(range).includes(B), false, 'nothing from company B');
+    await assert.rejects(loadServer(file).invoke('managerRecords', `mgr_${A}`, { from: '2026-09-01', to: '2026-10-31' }), e => e.code === 'invalid-argument', 'more than 31 days refused');
+    await assert.rejects(loadServer(file).invoke('managerRecords', `mgr_${A}`, { from: '2026-02-30', to: '2026-03-01' }), e => e.code === 'invalid-argument', 'invalid date refused');
+    const requests = await loadServer(file).invoke('managerRecords', `mgr_${A}`, { kind: 'requests', collection: 'leaves', month: '2026-10' });
+    assert.deepEqual(Object.keys(requests.items).sort(), [`oct_${A}`, `pend_${A}`].sort(), 'month + older pending, not resolved history');
+    await assert.rejects(loadServer(file).invoke('managerRecords', `mgr_${A}`, { kind: 'requests', collection: 'records', month: '2026-10' }), e => e.code === 'invalid-argument');
+    await seed.ref(`access/emp_${A}`).set({ role: 'employee', companyId: A, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`companies/${A}/employees/e1`).set({ status: 'approved', name: 'E', warehouseId: 'w1' });
+    await assert.rejects(loadServer(file).invoke('managerRecords', `emp_${A}`, { from: '2026-10-01', to: '2026-10-02' }), e => e.code === 'permission-denied');
   }
 };
 

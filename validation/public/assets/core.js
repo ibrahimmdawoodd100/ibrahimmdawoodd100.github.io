@@ -17,7 +17,9 @@ window.Basma = (() => {
       const appName = `secure-${selectedRole}`;
       app = firebase.apps.find(x => x.name === appName) || firebase.initializeApp(config.firebase, appName);
       app.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(config.appCheckSiteKey), true);
-      persistenceMode = selectedRole === 'employee' ? 'LOCAL' : 'SESSION';
+      // LOCAL for every role (owner's choice): the session survives closing and reopening the app. Explicit «خروج»
+      // still signs out; sensitive actions stay protected server-side (changePassword needs a sign-in < 5 min old).
+      persistenceMode = 'LOCAL';
       try { await app.auth().setPersistence(firebase.auth.Auth.Persistence[persistenceMode]); }
       catch (error) {
         if (persistenceMode !== 'LOCAL') throw error;
@@ -33,7 +35,7 @@ window.Basma = (() => {
   async function call(name, data = {}) {
     await init();
     try { const result=(await app.functions(window.BASMA_CONFIG.region).httpsCallable(name, { limitedUseAppCheckTokens: false })(data)).data;
-      if(selectedRole==='manager'&&!['profile','serverClock','managerHome'].includes(name))window.dispatchEvent?.(new CustomEvent('basma-manager-mutated'));
+      if(selectedRole==='manager'&&!['profile','serverClock','managerHome','managerRecords'].includes(name))window.dispatchEvent?.(new CustomEvent('basma-manager-mutated'));
       return result; }
     finally { if(name==='recordAttendance') window.dispatchEvent?.(new CustomEvent('basma-attendance-settled')); }
   }
@@ -76,7 +78,10 @@ window.Basma = (() => {
       return profile;
     } catch (error) {
       profile = null;
-      if (['functions/permission-denied','functions/unauthenticated','auth/user-token-expired','auth/invalid-user-token','auth/user-disabled'].includes(error.code)) await app.auth().signOut();
+      // Sign out only when the account itself is refused or its token is invalid. NOT on 'functions/unauthenticated':
+      // a callable also returns it when the App Check token is briefly unavailable (e.g. right after reopening),
+      // which used to throw the user out of a valid session.
+      if (['functions/permission-denied','auth/user-token-expired','auth/invalid-user-token','auth/user-disabled'].includes(error.code)) await app.auth().signOut();
       throw error;
     }
   }
@@ -219,18 +224,58 @@ window.Basma = (() => {
     await dialogs.notice('تم تغيير كلمة المرور', 'أُلغيت الجلسات القديمة. سجّل الدخول بالكلمة الجديدة.');
     await logout();
   }
+  // Opening failed but the saved session is still there (e.g. no network or a slow server): explain and offer a retry
+  // instead of the sign-in form, so a reopened app never asks for the password because of a temporary problem.
+  function reopenError(error) {
+    banner('تعذر فتح الحساب الآن: ' + (window.BasmaErrors?.message(error) ?? error?.message ?? '') + ' — الجلسة محفوظة.');
+    const node = document.getElementById('secure-status');
+    if (node && !node.querySelector?.('button')) {
+      const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'إعادة المحاولة';
+      retry.style.cssText = 'margin-inline-start:10px;padding:6px 14px;border-radius:50px;border:0;background:#fff;color:#7f1d1d;font-weight:700;cursor:pointer';
+      retry.addEventListener('click', () => location.reload()); node.appendChild(retry);
+    }
+  }
   function banner(message) {
     let node = document.getElementById('secure-status');
     if (!node) { node = document.createElement('div'); node.id = 'secure-status'; node.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:100000;padding:14px;background:#7f1d1d;color:white;text-align:center;direction:rtl'; document.body.appendChild(node); }
     node.textContent = message;
   }
+  // Account menu: one 👤 button inside the page's own top header (the side opposite the title in RTL) that opens a
+  // small themed menu with «تغيير كلمة المرور» and «خروج». Same handlers as before. Nothing is fixed at the bottom,
+  // so the bottom navigation is never covered. Screens without a header get the button at the TOP-left corner.
+  let controlsCleanup = null;
   function controls() {
-    document.getElementById('basma-controls')?.remove();
-    const bar = document.createElement('div'); bar.id = 'basma-controls'; bar.style.cssText = 'position:fixed;bottom:10px;left:10px;z-index:1000;display:flex;gap:8px';
-    for (const [text, handler] of [['تغيير كلمة المرور', changePassword], ['خروج', logout]]) {
-      const button = document.createElement('button'); button.textContent = text; button.style.cssText = 'padding:8px;border-radius:8px;cursor:pointer'; button.addEventListener('click', () => Promise.resolve(handler()).catch(error => banner(window.BasmaErrors?.message(error) ?? error.message))); bar.appendChild(button);
+    controlsCleanup?.(); controlsCleanup = null;
+    for (const id of ['basma-controls', 'basma-account-btn', 'basma-account-menu']) document.getElementById(id)?.remove();
+    const header = document.querySelector('#s-main .top-bar-left, .top-header > div:last-child');
+    const button = document.createElement('button');
+    button.id = 'basma-account-btn'; button.type = 'button'; button.textContent = '👤';
+    button.setAttribute('aria-label', 'الحساب'); button.setAttribute('aria-haspopup', 'menu'); button.setAttribute('aria-expanded', 'false');
+    Object.assign(button.style, { width: '38px', height: '38px', borderRadius: '50%', border: '1px solid var(--border,#2a3050)', background: 'var(--surface,#1e2438)', color: 'var(--text,#e8eaf0)', fontSize: '18px', lineHeight: '1', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: '0', padding: '0' });
+    if (header) header.appendChild(button);
+    else { Object.assign(button.style, { position: 'fixed', top: 'calc(10px + env(safe-area-inset-top, 0px))', left: 'calc(10px + env(safe-area-inset-left, 0px))', zIndex: '1000' }); document.body.appendChild(button); }
+    const menu = document.createElement('div');
+    menu.id = 'basma-account-menu'; menu.setAttribute('role', 'menu'); menu.dir = 'rtl'; menu.hidden = true;
+    Object.assign(menu.style, { position: 'fixed', zIndex: '100001', minWidth: '190px', background: 'var(--card,#161b2e)', border: '1px solid var(--border,#2a3050)', borderRadius: 'var(--radius-card,16px)', boxShadow: '0 12px 32px rgba(0,0,0,.45)', padding: '6px', fontFamily: "'Cairo',sans-serif" });
+    const close = () => { menu.hidden = true; button.setAttribute('aria-expanded', 'false'); };
+    for (const [text, handler, color] of [['تغيير كلمة المرور', changePassword, 'var(--text,#e8eaf0)'], ['خروج', logout, 'var(--red,#ef4444)']]) {
+      const item = document.createElement('button'); item.type = 'button'; item.setAttribute('role', 'menuitem'); item.textContent = text;
+      Object.assign(item.style, { display: 'block', width: '100%', textAlign: 'right', background: 'transparent', border: '0', borderRadius: '10px', padding: '12px 14px', color, fontSize: '14px', fontWeight: '700', fontFamily: "'Cairo',sans-serif", cursor: 'pointer' });
+      item.addEventListener('click', () => { close(); Promise.resolve(handler()).catch(error => banner(window.BasmaErrors?.message(error) ?? error.message)); });
+      menu.appendChild(item);
     }
-    document.body.appendChild(bar);
+    document.body.appendChild(menu);
+    const place = () => {
+      const r = button.getBoundingClientRect(), width = Math.max(menu.offsetWidth || 190, 190);
+      menu.style.top = `${Math.round(r.bottom + 8)}px`;
+      menu.style.left = `${Math.round(Math.max(8, Math.min(r.left, (window.innerWidth || 360) - width - 8)))}px`;
+    };
+    button.addEventListener('click', event => { event.stopPropagation?.(); if (menu.hidden) { menu.hidden = false; place(); button.setAttribute('aria-expanded', 'true'); menu.querySelector('button')?.focus?.(); } else close(); });
+    const outside = event => { if (!menu.hidden && !menu.contains(event.target) && event.target !== button) close(); };
+    const escape = event => { if (event.key === 'Escape' && !menu.hidden) { close(); button.focus?.(); } };
+    const resize = () => { if (!menu.hidden) place(); };
+    document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', escape); window.addEventListener?.('resize', resize);
+    controlsCleanup = () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape); window.removeEventListener?.('resize', resize); };
   }
-  return { init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get persistenceMode() { return persistenceMode; } };
+  return { init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get signedIn() { return !!app?.auth().currentUser; }, reopenError, get persistenceMode() { return persistenceMode; } };
 })();

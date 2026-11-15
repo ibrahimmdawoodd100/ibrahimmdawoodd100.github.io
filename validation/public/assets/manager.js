@@ -17,7 +17,7 @@ async function secureManagerOpen(profile) {
 }
 window.onload = async () => {
   try { const profile = await Basma.session('manager'); if (profile) await secureManagerOpen(profile); else document.getElementById('setup-screen').style.display = 'flex'; }
-  catch (error) { Basma.banner(window.BasmaErrors?.message(error) ?? error.message); document.getElementById('setup-screen').style.display = 'flex'; }
+  catch (error) { if (Basma.signedIn) { Basma.reopenError(error); return; } Basma.banner(window.BasmaErrors?.message(error) ?? error.message); document.getElementById('setup-screen').style.display = 'flex'; }
 };
 directoryLogin = async function() {
   const btn = document.getElementById('dl-submit-btn'); btn.disabled = true;

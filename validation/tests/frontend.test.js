@@ -32,18 +32,20 @@ function authHarness(role,{blockLocal=false}={}) {
   vm.runInNewContext(fs.readFileSync(require.resolve('../public/assets/core.js'),'utf8'),{window,firebase,navigator,document,URL,console,setTimeout,clearTimeout,CustomEvent:class{constructor(type){this.type=type;}}});
   return {Basma:window.Basma,attempts,signouts,banners,settled,providers,callOptions,app,setError:error=>profileError=error};
 }
-test('employee persistence is LOCAL, while manager persistence remains SESSION in another app namespace',async()=>{
+test('every role uses LOCAL persistence (the session survives closing the app), each in its own app namespace',async()=>{
   const employee=authHarness('employee'),manager=authHarness('manager');
   assert.equal((await employee.Basma.session('employee')).role,'employee');await manager.Basma.session('manager');
-  assert.deepEqual(employee.attempts,['local']);assert.deepEqual(manager.attempts,['session']);assert.notEqual(employee.app.name,manager.app.name);
-  assert.equal(employee.Basma.persistenceMode,'LOCAL');
-  const seller=authHarness('seller');await seller.Basma.session('seller');
+  assert.deepEqual(employee.attempts,['local']);assert.deepEqual(manager.attempts,['local']);assert.notEqual(employee.app.name,manager.app.name);
+  assert.equal(employee.Basma.persistenceMode,'LOCAL');assert.equal(manager.Basma.persistenceMode,'LOCAL');
+  const seller=authHarness('seller');await seller.Basma.session('seller');assert.deepEqual(seller.attempts,['local']);
   for(const h of [employee,manager,seller]){assert.equal(h.providers.length,1);assert.equal(h.providers[0].provider.kind,'enterprise');assert.equal(h.providers[0].provider.siteKey,'public-test');assert.equal(h.providers[0].autoRefresh,true);}
 });
 test('blocked local storage falls back explicitly; a transient network failure does not clear persistent Auth',async()=>{
   const h=authHarness('employee',{blockLocal:true});await h.Basma.session('employee');
   assert.deepEqual(h.attempts,['local','session']);assert.equal(h.Basma.persistenceMode,'SESSION');assert.match(h.banners[0],/تعذر حفظ الجلسة/);
   h.setError(Object.assign(Error('offline'),{code:'functions/unavailable'}));await assert.rejects(()=>h.Basma.session('employee'));assert.equal(h.signouts.length,0);
+  // A callable also answers 'unauthenticated' when the App Check token is briefly missing after reopening: keep the session.
+  h.setError(Object.assign(Error('app check'),{code:'functions/unauthenticated'}));await assert.rejects(()=>h.Basma.session('employee'));assert.equal(h.signouts.length,0);
   h.setError(Object.assign(Error('revoked'),{code:'functions/permission-denied'}));await assert.rejects(()=>h.Basma.session('employee'));assert.equal(h.signouts.length,1);
 });
 test('GPS capture forwards measured accuracy including valid zero coordinates',async()=>{

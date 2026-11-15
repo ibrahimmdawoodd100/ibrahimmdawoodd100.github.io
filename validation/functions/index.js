@@ -78,6 +78,30 @@ exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
     info: pick(info, ['nameAr', 'nameEn', 'logo', 'industry', 'timeZone', 'status', 'expiresAt', 'maxEmployees', 'plan']),
     settings: settings || {}, warehouses: warehouses || {}, employees: staff, records, leaves, excuses, profile: sessionOf(member, info) };
 });
+// Manager attendance records, reports, payroll and request lists through ONE call per range (no direct database
+// reads, which stall on networks where the realtime connection does not establish). Indexed queries only
+// (records.dateKey, leaves/excuses.date and .status), the manager's own company only, compact record fields.
+const RECORD_FIELDS = ['empId', 'empName', 'type', 'timestamp', 'dateKey', 'warehouseId', 'warehouseName', 'locStatus', 'excuseType', 'delayMins', 'locationName', 'missionKey'];
+function isoDay(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) p.fail('تاريخ غير صالح', 'invalid-argument');
+  return value;
+}
+exports.managerRecords = endpoint(['manager'], async ({ member, data }) => {
+  const cid = member.companyId, MAX = 20000;
+  const query = (collection, field, from, to) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).startAt(from).endAt(to).limitToFirst(MAX + 1).get().then(s => s.val() || {});
+  const bounded = value => { if (Object.keys(value).length > MAX) p.fail('عدد السجلات كبير؛ اختر فترة أقصر', 'invalid-argument'); return value; };
+  if (data.kind === 'requests') {
+    if (!['leaves', 'excuses'].includes(data.collection) || !/^\d{4}-\d{2}$/.test(data.month || '')) p.fail('طلب غير صالح', 'invalid-argument');
+    const from = isoDay(`${data.month}-01`), [y, m] = data.month.split('-').map(Number), to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    const [history, pending] = await Promise.all([query(data.collection, 'date', from, to), query(data.collection, 'status', 'pending', 'pending')]);
+    return { month: data.month, items: { ...bounded(history), ...bounded(pending) } };
+  }
+  const from = isoDay(data.from), to = isoDay(data.to);
+  if (from > to || (Date.parse(to) - Date.parse(from)) / 86400000 > 30) p.fail('اختر فترة لا تتجاوز 31 يومًا', 'invalid-argument');
+  const [records, leaves, excuses] = await Promise.all([query('records', 'dateKey', from, to), query('leaves', 'date', from, to), query('excuses', 'date', from, to)]);
+  const pick = value => Object.fromEntries(RECORD_FIELDS.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
+  return { from, to, records: Object.fromEntries(Object.entries(bounded(records)).map(([id, r]) => [id, pick(r)])), leaves: bounded(leaves), excuses: bounded(excuses) };
+});
 exports.listCompanies = endpoint(['seller'], async ({ data }) => {
   let query = db.ref('companyDirectory').orderByKey().limitToFirst(100);
   if (data.cursor) query = query.startAfter(p.key(data.cursor));

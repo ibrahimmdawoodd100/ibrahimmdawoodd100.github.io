@@ -63,6 +63,9 @@ async function measure(source,role){
   if(data?.warm===true)return response({warm:true});
   if(name==='profile')return response({role,companyId:'c1',employeeId:role==='employee'?'e0':null,serverTime:f.now,timeZone:'UTC'});
   if(name==='serverClock')return response({serverTime:f.now});
+  if(name==='managerRecords'){const c=f.data.companies.c1,inRange=(o,k,a,b)=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>v?.[k]>=a&&v?.[k]<=b));
+   if(data.kind==='requests'){const [y,m]=data.month.split('-').map(Number),to=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10);return response({month:data.month,items:{...inRange(c[data.collection],'date',data.month+'-01',to),...Object.fromEntries(Object.entries(c[data.collection]||{}).filter(([,v])=>v?.status==='pending'))}});}
+   return response({from:data.from,to:data.to,records:inRange(c.records,'dateKey',data.from,data.to),leaves:inRange(c.leaves,'date',data.from,data.to),excuses:inRange(c.excuses,'date',data.from,data.to)});}
   if(name==='managerHome'){const c=f.data.companies.c1,day=(o,k)=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>v?.[k]===f.date));
    const keep=['name','empId','role','warehouseId','warehouseName','status','schedule','createdAt'],staff=Object.fromEntries(Object.entries(c.employees||{}).map(([id,e])=>[id,Object.fromEntries(keep.filter(k=>e[k]!==undefined).map(k=>[k,e[k]]))]));
    return response({serverTime:f.now,date:f.date,companyId:'c1',info:c.info,settings:c.settings||{},warehouses:c.warehouses||{},employees:staff,records:day(c.records,'dateKey'),leaves:day(c.leaves,'date'),excuses:day(c.excuses,'date'),profile:who});}
