@@ -95,6 +95,24 @@ const scenarios = {
     await assert.rejects(finish(), e => e.code === 'permission-denied', 'replay rejected');
     assert.deepEqual(await locksFor(uid), []);
   },
+  'recordAttendance returns the new day summary, identical to what the projection trigger writes': async (file, tag) => {
+    const cid = `cAttT${tag}`, uid = `emp_attT_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
+    await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    const proof = id => seed.ref(`proofs/${uid}/${id}`).set({ intent: id.slice(0, -1), version: 1, expiresAt: Date.now() + 60000 });
+    await proof('in1');
+    const first = JSON.parse(JSON.stringify(await loadServer(file).invoke('recordAttendance', uid, { type: 'in', proof: 'in1', location: { lat: 0, lng: 0 } })));
+    assert.ok(first.today, 'the answer carries the day summary (the page shows it at once)');
+    assert.equal(first.today.checkIn, first.timestamp); assert.equal(first.today.ledgerRevision, 1);
+    await loadServer(file).exports.projectAttendance({ params: { cid, eid: 'e1', date: first.date } });
+    assert.deepEqual(first.today, await get(`companies/${cid}/today/e1`), 'same values as the projection');
+    await proof('out1');
+    const second = JSON.parse(JSON.stringify(await loadServer(file).invoke('recordAttendance', uid, { type: 'out', proof: 'out1', location: { lat: 0, lng: 0 } })));
+    assert.equal(second.today.checkOut, second.timestamp); assert.equal(second.today.checkIn, first.timestamp); assert.equal(second.today.ledgerRevision, 2);
+    await loadServer(file).exports.projectAttendance({ params: { cid, eid: 'e1', date: second.date } });
+    assert.deepEqual(second.today, await get(`companies/${cid}/today/e1`));
+  },
   'recordAttendance records one check-in and rejects a duplicate': async (file, tag) => {
     const cid = `cAtt${tag}`, uid = `emp_att_${tag}`;
     await seedCompany(cid);

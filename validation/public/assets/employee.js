@@ -75,7 +75,8 @@ activateBio = async function() {
 verifyBio = async () => Basma.biometric('authenticate', 'login');
 async function secureRecord(type, missionKey) {
   showLoading('جاري التحقق والتسجيل...');
-  try { await Basma.attendance(type, GPS_DATA, missionKey); showToast('تم التسجيل بتوقيت الخادم', 'success'); await loadTodayStats(); if (missionKey) { loadMissionsPage(); checkActiveMissions(); } }
+  // The answer carries the new day summary: show it at once (the projection trigger writes the same values shortly after).
+  try { const result = await Basma.attendance(type, GPS_DATA, missionKey); if (result?.today) { secureAttendanceWindows.updateToday(Basma.snapshotOf(result.today)); DB?.prime?.('employeeList', { kind: 'today' }, { value: result.today }); } showToast('تم التسجيل بتوقيت الخادم', 'success'); await loadTodayStats(); if (missionKey) { loadMissionsPage(); checkActiveMissions(); } }
   catch (error) { if(error.details?.reason==='attendance-window'){let synced=false;try{await secureAttendanceWindows.sync();synced=true;}catch{}showToast(synced?'التسجيل خارج النافذة حسب وقت الخادم. أُعيدت مزامنة الوقت؛ حاول داخل النافذة المعروضة.':'التسجيل خارج النافذة حسب الخادم؛ تعذرت إعادة المزامنة. تحقق من الاتصال وحاول مجددًا.','error');}else showToast(window.BasmaErrors?.message(error, 'تعذر التحقق') ?? error.message, 'error'); }
   finally { secureAttendanceWindows.evaluate();hideLoading(); }
 }

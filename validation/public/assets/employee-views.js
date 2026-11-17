@@ -32,13 +32,16 @@ const secureAttendanceWindows=(()=>{
     clockPending=(async()=>{const before=mono(),result=await Basma.call('serverClock'),after=mono();if(!Number.isFinite(result.serverTime))throw Error('تعذرت مزامنة وقت الخادم');anchor={server:result.serverTime+(after-before)/2,at:after};SERVER_TIME_OFFSET=anchor.server-Date.now();})();
     try{await clockPending;}finally{clockPending=null;}
   }
+  // Never replace today's state with an OLDER copy of the same day (a re-read can arrive before the projection
+  // trigger has written the new check-in; the attendance answer itself carries the newer state). E2E v5.12.
+  const newer=(old,incoming)=>{incoming=incoming||{};if(old?.dateKey&&old.dateKey===incoming.dateKey&&(Number(old.ledgerRevision)||0)>(Number(incoming.ledgerRevision)||0))return old;if(old?.dateKey&&incoming.dateKey&&old.dateKey>incoming.dateKey)return old;if(old?.dateKey&&!incoming.dateKey&&(Number(old.ledgerRevision)||0)>0)return old;return incoming;};
   function apply(home,before=mono()){
     const after=mono();
     if(!Number.isFinite(home.serverTime))throw Error('تعذرت مزامنة وقت الخادم');
     anchor={server:home.serverTime+(after-before)/2,at:after};SERVER_TIME_OFFSET=anchor.server-Date.now();
     COMPANY_INFO=home.info;SETTINGS=home.settings||{};EMP={...home.employee,id:ACTIVATION_UID||EMP.id};
     const wh=home.warehouse||{};WAREHOUSE_GEO_ZONE=wh.geoZone||null;WAREHOUSE_SCHEDULE=wh.schedule||null;
-    current={today:home.today||{},date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS};
+    current={today:newer(current?.today,home.today),date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS};
     for(const id of ['main-wh-name','profile-wh'])document.getElementById(id).textContent=wh.name||EMP.warehouseName||'';
     for(const id of ['splash-company-name','wh-company-name','reg-company-name','main-company-name']){const el=document.getElementById(id);if(el)el.textContent=COMPANY_INFO.nameAr||COMPANY_INFO.name||'الشركة';}
     for(const id of ['splash-logo','wh-logo','reg-logo','login-logo','main-logo']){const el=document.getElementById(id);if(el)el.textContent=COMPANY_INFO.logo||'🏭';}
@@ -48,7 +51,7 @@ const secureAttendanceWindows=(()=>{
     if(seeded){const home=seeded;seeded=null;return apply(home);}
     const before=mono(),home=await Basma.call('employeeHome');return apply(home,before);
   }
-  function updateToday(snapshot){if(current){current.today=snapshot.val()||{};view?.evaluate();}}
+  function updateToday(snapshot){if(current){current.today=newer(current.today,snapshot.val());view?.evaluate();}}
   function render(cache,stamp){
     const inButton=document.getElementById('btn-checkin'),outButton=document.getElementById('btn-checkout');
     inButton.disabled=true;outButton.disabled=true;

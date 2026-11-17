@@ -635,22 +635,31 @@ exports.recordAttendance = endpoint(['employee'], async ({ uid, member, info, da
     return { ...state, revision: (state?.revision ?? Object.keys(state?.events || {}).length) + 1, events: { ...state?.events, [eventId]: event } };
   });
   if (!ledger.committed) throw conflict || new p.PolicyError('resource-exhausted', 'حد العمليات اليومية');
-  return { ok: true, timestamp: stamp, date: clock.date };
+  return { ok: true, timestamp: stamp, date: clock.date, today: todaySummary(ledger.snapshot.val(), eid, clock.date) };
 });
 // The ledger is authoritative. Trigger retries rebuild projections after interrupted writes.
+// The employee's day summary from the attendance ledger. Used by projectAttendance (writes companies/{cid}/today) AND
+// returned by recordAttendance, so the page shows the check-in at once instead of waiting for the trigger (E2E v5.12).
+function todaySummary(state, eid, date) {
+  const today = { dateKey: date, empId: eid, ledgerRevision: state.revision || Object.keys(state.events || {}).length, ...p.attendanceSummary(state) };
+  for (const value of Object.values(state.events || {})) {
+    if (value.type === 'in') Object.assign(today, { checkIn: value.timestamp, empName: value.empName, warehouseId: value.warehouseId, warehouseName: value.warehouseName, locationName: value.locationName, delayMins: value.delayMins });
+    if (value.type === 'out') today.checkOut = value.timestamp;
+  }
+  // Same shape as the stored node (the database drops null/undefined fields).
+  return Object.fromEntries(Object.entries(today).filter(([, v]) => v !== null && v !== undefined));
+}
 exports.projectAttendance = onValueWritten({ ref: '/attendanceLedger/{cid}/{eid}/{date}', region, retry: true }, async event => {
   const { cid, eid, date } = event.params;
   const state = await read(`attendanceLedger/${cid}/${eid}/${date}`);
   if (!state) return;
   const revision = state.revision || Object.keys(state.events || {}).length;
-  const updates = {}, today = { dateKey: date, empId: eid, ledgerRevision: revision, ...p.attendanceSummary(state) };
+  const updates = {}, today = todaySummary(state, eid, date);
   for (const [id, value] of Object.entries(state.events || {})) {
     const recordId = `${date}_${eid}_${id}`;
     // Existing reviewed records are not overwritten on subsequent events or trigger retries.
     const existing = await read(`companies/${cid}/records/${recordId}`);
     if (!existing) updates[`companies/${cid}/records/${recordId}`] = value;
-    if (value.type === 'in') Object.assign(today, { checkIn: value.timestamp, empName: value.empName, warehouseId: value.warehouseId, warehouseName: value.warehouseName, locationName: value.locationName, delayMins: value.delayMins });
-    if (value.type === 'out') today.checkOut = value.timestamp;
     if (['departure', 'return'].includes(value.type)) updates[`companies/${cid}/partialLeaveRecords/${eid}/${date}/${value.type === 'departure' ? 'departureAt' : 'returnAt'}`] = value.timestamp;
     if (value.missionKey) {
       await serverTransaction(db.ref(`companies/${cid}/missions/${value.missionKey}`), mission => {
