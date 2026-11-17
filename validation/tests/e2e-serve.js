@@ -3,7 +3,7 @@
 // emulator mode: config.js is replaced by a test config that points at local Firebase emulators, and the page CSP
 // gets the emulator ports in connect-src (and loses upgrade-insecure-requests, which would turn http://127.0.0.1
 // calls into https). Everything else in the CSP is served unchanged, so image/script/style violations are still caught.
-const http = require('node:http'), fs = require('node:fs'), path = require('node:path');
+const http = require('node:http'), https = require('node:https'), fs = require('node:fs'), path = require('node:path');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
 const EMULATORS = { host: '127.0.0.1', auth: 9099, database: 9000, functions: 5001 };
 const TEST_CONFIG = `window.BASMA_CONFIG = ${JSON.stringify({ firebase: { projectId: 'demo-basma', apiKey: 'demo-api-key', appId: '1:0:web:e2e', databaseURL: 'https://demo-basma-default-rtdb.firebaseio.com', authDomain: 'demo-basma.firebaseapp.com' }, appCheckSiteKey: 'e2e-site-key', region: 'us-central1', emulators: EMULATORS })};\n`;
@@ -11,9 +11,11 @@ function emulatorCsp(html) {
   const extra = `http://${EMULATORS.host}:${EMULATORS.auth} http://${EMULATORS.host}:${EMULATORS.database} ws://${EMULATORS.host}:${EMULATORS.database} http://${EMULATORS.host}:${EMULATORS.functions}`;
   return html.replace(/(<meta http-equiv="Content-Security-Policy" content="[^"]*?connect-src [^;"]*)/, `$1 ${extra}`).replace(/; upgrade-insecure-requests/, '');
 }
-function start({ root, port = 4173, mode = 'static' }) {
+// tls {cert,key}: HTTPS, as in production. The server accepts fingerprints only from https origins (correct), so the
+// E2E site runs on https://localhost with a short-lived local test certificate trusted only on the CI runner.
+function start({ root, port = 4173, mode = 'static', tls = null }) {
   root = path.resolve(root);
-  const server = http.createServer((req, res) => {
+  const handler = (req, res) => {
     let rel = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.join(root, rel);
@@ -25,7 +27,8 @@ function start({ root, port = 4173, mode = 'static' }) {
       const body = mode === 'emulator' && type.startsWith('text/html') ? emulatorCsp(bytes.toString('utf8')) : bytes;
       res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }).end(body);
     });
-  });
+  };
+  const server = tls ? https.createServer({ cert: fs.readFileSync(tls.cert), key: fs.readFileSync(tls.key) }, handler) : http.createServer(handler);
   return new Promise(resolve => server.listen(port, '127.0.0.1', () => resolve(server)));
 }
 module.exports = { start, EMULATORS, emulatorCsp };
