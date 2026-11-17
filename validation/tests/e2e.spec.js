@@ -57,7 +57,7 @@ async function guarded(browser, options = {}) {
   // Requests still open after `ms` (a resource that never finishes is a finding, not something to wait on forever).
   const stuck = (ms = 15000) => [...open].filter(([, at]) => Date.now() - at > ms).map(([r]) => r.url().slice(0, 160));
   return {
-    context, issues, stuck,
+    context, issues, stuck, consoleTail,
     // Open a page and wait for its ready control; on failure say exactly what was still loading.
     async open(page, url, ready, label) {
       try {
@@ -196,11 +196,18 @@ test.describe('full flow on local emulators', () => {
     // Employee: one browser, five steps of at most 60 s each.
     const ge = await guarded(browser, { permissions: ['geolocation'], geolocation: { latitude: branch.lat, longitude: branch.lng, accuracy: 15 } }), page = await ge.context.newPage();
     const cdp = await ge.context.newCDPSession(page); await cdp.send('WebAuthn.enable');
-    await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+    const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
     await test.step('employee: login and fingerprint registration (virtual authenticator)', async () => {
       await ge.open(page, '/employee/', '#dl-emp-username', 'employee login'); await page.fill('#dl-emp-username', accounts.employee); await page.fill('#dl-emp-password', password);
       const t = Date.now(); await page.click('#dl-emp-submit'); await expect(page.locator('#act-bio-btn')).toBeVisible({ timeout: 20000 }); timing('employee: login → activation screen (cold)', Date.now() - t, BUDGET.cold);
-      await page.click('#act-bio-btn'); await expect(page.locator('#btn-checkin')).toBeVisible({ timeout: 30000 }); await shot(page, 'employee-home');
+      await page.click('#act-bio-btn');
+      try { await expect(page.locator('#btn-checkin')).toBeVisible({ timeout: 30000 }); }
+      catch (error) {
+        const status = await page.locator('#act-bio-status').innerText({ timeout: 2000 }).catch(() => '?');
+        const creds = await cdp.send('WebAuthn.getCredentials', { authenticatorId }).then(r => r.credentials.length).catch(e => `error ${e.message}`);
+        throw new Error(`fingerprint registration did not reach the home screen in 30 s. Page status: "${status}". Credentials on the virtual authenticator: ${creds}. Last console: ${JSON.stringify(ge.consoleTail)}`);
+      }
+      await shot(page, 'employee-home');
     }, { timeout: 60000 });
     await test.step('employee: notifications, leave and excuse pages', async () => {
       await show(page, 'showTab', 'notifs'); await expect(page.locator('#main-tab-notifs')).toContainText('e2e إشعار للموظف'); await shot(page, 'employee-notifications');
