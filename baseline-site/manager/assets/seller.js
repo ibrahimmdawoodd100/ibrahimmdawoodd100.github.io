@@ -16,7 +16,7 @@ window.onload = async () => {
   panel.innerHTML = '<div style="max-width:420px;padding:30px;direction:rtl"><h2>دخول المورّد</h2><input id="seller-email" type="email" placeholder="البريد الإلكتروني" autocomplete="username"><input id="seller-password" type="password" placeholder="كلمة المرور" autocomplete="current-password"><button id="seller-login">دخول</button><p id="seller-error"></p></div>';
   document.getElementById('seller-login').addEventListener('click', secureSellerLogin);
   try { const profile = await Basma.session('seller'); if (profile) await secureSellerOpen(profile); else panel.style.display = 'flex'; }
-  catch (error) { panel.style.display = 'flex'; Basma.banner(window.BasmaErrors?.message(error) ?? error.message); }
+  catch (error) { if (Basma.signedIn) { Basma.reopenError(error); return; } panel.style.display = 'flex'; Basma.banner(window.BasmaErrors?.message(error) ?? error.message); }
 };
 lockSeller = resetSellerFirebase = () => Basma.logout();
 changeSellerPin = () => Basma.changePassword ? Basma.changePassword() : showToast('استخدم زر تغيير كلمة المرور أسفل الصفحة', 'info');

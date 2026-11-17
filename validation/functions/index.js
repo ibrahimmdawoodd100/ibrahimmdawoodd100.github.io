@@ -102,6 +102,64 @@ exports.managerRecords = endpoint(['manager'], async ({ member, data }) => {
   const pick = value => Object.fromEntries(RECORD_FIELDS.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
   return { from, to, records: Object.fromEntries(Object.entries(bounded(records)).map(([id, r]) => [id, pick(r)])), leaves: bounded(leaves), excuses: bounded(excuses) };
 });
+// Manager list pages (employees, branches, messages, missions, admin notifications, settings) through one small call
+// per page instead of direct database reads. Own company only, compact fields, key cursor: employees and branches in
+// key order (next page after the cursor), messages/missions/notifications newest first (next page before the cursor).
+const LIST_PAGES = {
+  employees: { path: 'employees', size: 200, fields: MANAGER_EMPLOYEE_FIELDS, newest: false },
+  warehouses: { path: 'warehouses', size: 200, fields: ['name', 'active', 'schedule', 'geoZone'], newest: false },
+  messages: { path: 'private_messages', size: 50, fields: ['empId', 'empName', 'message', 'read', 'createdAt'], newest: true },
+  missions: { path: 'missions', size: 100, fields: ['empId', 'empName', 'location', 'description', 'date', 'expectedTime', 'status', 'assignedAt', 'startedAt', 'completedAt'], newest: true },
+  notifications: { path: 'notifications/admin', size: 50, fields: ['type', 'message', 'timestamp', 'read'], newest: true }
+};
+exports.managerList = endpoint(['manager'], async ({ member, data }) => {
+  const cid = member.companyId;
+  if (data.kind === 'settings') return { settings: (await read(`companies/${cid}/settings`)) || {} };
+  const spec = Object.hasOwn(LIST_PAGES, data.kind) ? LIST_PAGES[data.kind] : p.fail('قائمة غير معروفة', 'invalid-argument');
+  const cursor = data.cursor == null ? null : p.key(data.cursor);
+  let query = db.ref(`companies/${cid}/${spec.path}`).orderByKey();
+  if (spec.newest) query = (cursor ? query.endBefore(cursor) : query).limitToLast(spec.size + 1);
+  else query = (cursor ? query.startAfter(cursor) : query).limitToFirst(spec.size + 1);
+  const keys = [], values = {};
+  (await query.get()).forEach(child => { keys.push(child.key); values[child.key] = child.val(); });
+  const more = keys.length > spec.size, page = spec.newest ? keys.slice(-spec.size).reverse() : keys.slice(0, spec.size);
+  const items = {};
+  for (const id of page) if (values[id] && typeof values[id] === 'object') items[id] = Object.fromEntries(spec.fields.filter(k => values[id][k] !== undefined).map(k => [k, values[id][k]]));
+  const result = { kind: data.kind, order: page, items, next: more ? page[page.length - 1] : null };
+  if (data.kind === 'warehouses') {
+    // Approved staff per branch from the indexed status query (no employee details sent).
+    const counts = {};
+    (await db.ref(`companies/${cid}/employees`).orderByChild('status').equalTo('approved').get()).forEach(child => { const w = child.val()?.warehouseId; if (typeof w === 'string' && Object.hasOwn(items, w)) counts[w] = (counts[w] || 0) + 1; });
+    result.counts = counts;
+  }
+  return result;
+});
+// Branch changes through the server: the realtime write channel stalls on the same networks as the reads.
+// Stricter than the database rules: own company, known branch, plain-text name, HH:MM times, real coordinates.
+const hhmm = value => (typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : p.fail('وقت غير صالح', 'invalid-argument'));
+exports.managerBranch = endpoint(['manager'], async ({ uid, member, data }) => {
+  const cid = member.companyId, all = db.ref(`companies/${cid}/warehouses`);
+  if (data.action === 'add') {
+    const ref = all.push();
+    await ref.set({ name: p.text(data.name, 'اسم الفرع', 80), active: true });
+    await audit(uid, 'branch.add', `${cid}/${ref.key}`);
+    return { id: ref.key };
+  }
+  const id = p.key(data.id), ref = all.child(id);
+  if (!(await ref.child('name').get()).exists()) p.fail('الفرع غير موجود', 'not-found');
+  if (data.action === 'rename') await ref.update({ name: p.text(data.name, 'اسم الفرع', 80) });
+  else if (data.action === 'delete') await ref.remove();
+  else if (data.action === 'schedule') {
+    if (data.schedule == null) await ref.child('schedule').remove();
+    else await ref.child('schedule').set({ checkIn: { from: hhmm(data.schedule.checkIn?.from), to: hhmm(data.schedule.checkIn?.to) }, checkOut: { from: hhmm(data.schedule.checkOut?.from), to: hhmm(data.schedule.checkOut?.to) } });
+  } else if (data.action === 'geoZone') {
+    const { lat, lng, radius } = data.geoZone || {};
+    if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180 || !Number.isFinite(radius) || radius < 1 || radius > 100000) p.fail('موقع غير صالح', 'invalid-argument');
+    await ref.child('geoZone').set({ lat, lng, radius: Math.round(radius), enabled: true });
+  } else p.fail('عملية غير معروفة', 'invalid-argument');
+  await audit(uid, `branch.${data.action}`, `${cid}/${id}`);
+  return { id };
+});
 exports.listCompanies = endpoint(['seller'], async ({ data }) => {
   let query = db.ref('companyDirectory').orderByKey().limitToFirst(100);
   if (data.cursor) query = query.startAfter(p.key(data.cursor));

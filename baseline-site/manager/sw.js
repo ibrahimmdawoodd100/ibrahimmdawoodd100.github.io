@@ -3,7 +3,7 @@
 // App-shell cache for /manager/ only (never the site root, never another app on this site).
 // Cache-first for the files listed in SHELL; everything else (Firebase, data, other origins, POST) goes to the
 // network untouched. A new release changes VERSION, so the browser installs a fresh cache and deletes the old one.
-const VERSION = 'b05c2ea8d8278b66';
+const VERSION = 'c2c67ab283b05a13';
 const SCOPE = '/manager/';
 const SHELL = [
   "/manager/",

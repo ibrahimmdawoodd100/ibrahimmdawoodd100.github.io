@@ -24,7 +24,7 @@ async function secureEmployeeOpen(profile) {
 let employeeStatusListener = null;
 initFirebase = async function() {
   try { const profile = await Basma.session('employee'); if (profile) await secureEmployeeOpen(profile); else showScreen('s-dirlogin'); }
-  catch (error) { showScreen('s-dirlogin'); Basma.banner(window.BasmaErrors?.message(error) ?? error.message); }
+  catch (error) { if (Basma.signedIn) { Basma.reopenError(error); return; } showScreen('s-dirlogin'); Basma.banner(window.BasmaErrors?.message(error) ?? error.message); }
 };
 directoryEmployeeLogin = async function() {
   const button = document.getElementById('dl-emp-submit'); button.disabled = true;

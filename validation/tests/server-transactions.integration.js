@@ -189,6 +189,66 @@ const scenarios = {
     await seed.ref(`access/emp_${A}`).set({ role: 'employee', companyId: A, employeeId: 'e1', enabled: true, version: 1 });
     await seed.ref(`companies/${A}/employees/e1`).set({ status: 'approved', name: 'E', warehouseId: 'w1' });
     await assert.rejects(loadServer(file).invoke('managerRecords', `emp_${A}`, { from: '2026-10-01', to: '2026-10-02' }), e => e.code === 'permission-denied');
+  },
+  'managerList: own company only, compact fields, key pages (employees forward, messages newest first), branch counts': async (file, tag) => {
+    const A = `cLstA${tag}`, B = `cLstB${tag}`;
+    for (const cid of [A, B]) {
+      await seedCompany(cid);
+      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+      const staff = {};
+      for (let i = 0; i < 205; i++) staff[`e${String(i).padStart(3, '0')}`] = { name: `موظف ${i}`, empId: `N${i}`, status: i < 3 ? 'approved' : 'pending_activation', warehouseId: 'w1', credId: 'secret-cred', deviceFingerprint: 'secret-device' };
+      await seed.ref(`companies/${cid}/employees`).set(staff);
+      const messages = {}; for (let i = 0; i < 52; i++) messages[`m${String(i).padStart(3, '0')}`] = { empId: 'e000', message: `رسالة ${i}`, read: false, createdAt: i, actor: 'uid-secret' };
+      await seed.ref(`companies/${cid}/private_messages`).set(messages);
+      await seed.ref(`companies/${cid}/warehouses/w2`).set({ name: `فرع ${cid}`, active: true, pin: 'secret-pin' });
+    }
+    const call = async data => JSON.parse(JSON.stringify(await loadServer(file).invoke('managerList', `mgr_${A}`, data)));
+    const first = await call({ kind: 'employees', companyId: B });
+    assert.equal(first.order.length, 200); assert.equal(first.next, 'e199');
+    const second = await call({ kind: 'employees', cursor: first.next });
+    assert.deepEqual(second.order, ['e200', 'e201', 'e202', 'e203', 'e204']); assert.equal(second.next, null);
+    assert.deepEqual(Object.keys(first.items.e000).sort(), ['empId', 'name', 'status', 'warehouseId'], 'no credential or device fields');
+    const branches = await call({ kind: 'warehouses' });
+    assert.deepEqual(branches.order, ['w1', 'w2']); assert.deepEqual(branches.counts, { w1: 3 });
+    assert.equal(JSON.stringify(branches).includes('secret-pin'), false); assert.equal(JSON.stringify(branches).includes(B), false, 'nothing from company B');
+    const newest = await call({ kind: 'messages' });
+    assert.equal(newest.order[0], 'm051'); assert.equal(newest.order.length, 50); assert.equal(newest.next, 'm002');
+    const older = await call({ kind: 'messages', cursor: newest.next });
+    assert.deepEqual(older.order, ['m001', 'm000']); assert.equal(older.next, null);
+    assert.equal(JSON.stringify(newest).includes('uid-secret'), false);
+    assert.deepEqual((await call({ kind: 'settings' })).settings.checkIn, settings.checkIn);
+    for (const bad of [{ kind: 'records' }, { kind: '../access' }, { kind: 'employees', cursor: '../x' }]) await assert.rejects(call(bad), e => e.code === 'invalid-argument');
+    await seed.ref(`access/emp_${A}`).set({ role: 'employee', companyId: A, employeeId: 'e000', enabled: true, version: 1 });
+    await seed.ref(`companies/${A}/employees/e000/status`).set('approved');
+    await assert.rejects(loadServer(file).invoke('managerList', `emp_${A}`, { kind: 'employees' }), e => e.code === 'permission-denied');
+  },
+  'managerBranch: add, rename, hours, location, delete in own company only, with strict checks': async (file, tag) => {
+    const A = `cBrA${tag}`, B = `cBrB${tag}`;
+    for (const cid of [A, B]) { await seedCompany(cid); await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 }); }
+    const call = (data, uid = `mgr_${A}`) => loadServer(file).invoke('managerBranch', uid, data);
+    const { id } = await call({ action: 'add', name: '  فرع جديد  ', companyId: B });
+    assert.deepEqual(await get(`companies/${A}/warehouses/${id}`), { name: 'فرع جديد', active: true });
+    assert.equal(Object.keys(await get(`companies/${B}/warehouses`)).length, 1, 'company B unchanged');
+    await call({ action: 'rename', id, name: 'الفرع الشمالي' });
+    await call({ action: 'schedule', id, schedule: { checkIn: { from: '08:00', to: '09:00' }, checkOut: { from: '16:00', to: '17:30' } } });
+    await call({ action: 'geoZone', id, geoZone: { lat: 24.71, lng: 46.67, radius: 250.4 } });
+    assert.deepEqual(await get(`companies/${A}/warehouses/${id}`), { name: 'الفرع الشمالي', active: true, schedule: { checkIn: { from: '08:00', to: '09:00' }, checkOut: { from: '16:00', to: '17:30' } }, geoZone: { lat: 24.71, lng: 46.67, radius: 250, enabled: true } });
+    await call({ action: 'schedule', id, schedule: null });
+    assert.equal(await get(`companies/${A}/warehouses/${id}/schedule`), null);
+    const refused = [{ action: 'add', name: '<b>x</b>' }, { action: 'add', name: '' }, { action: 'rename', id, name: 'x'.repeat(81) }, { action: 'schedule', id, schedule: { checkIn: { from: '25:00', to: '09:00' }, checkOut: { from: '16:00', to: '17:00' } } },
+      { action: 'geoZone', id, geoZone: { lat: 91, lng: 0, radius: 100 } }, { action: 'geoZone', id, geoZone: { lat: 1, lng: 1, radius: 0 } }, { action: 'pin', id }, { action: 'rename', id: '../info', name: 'x' }];
+    for (const data of refused) await assert.rejects(call(data), e => e.code === 'invalid-argument', JSON.stringify(data));
+    await call({ action: 'delete', id: 'w1' }, `mgr_${B}`);
+    assert.equal(await get(`companies/${B}/warehouses/w1`), null, 'B deletes its own w1');
+    assert.ok(await get(`companies/${A}/warehouses/w1`), 'company A w1 untouched by B');
+    await assert.rejects(call({ action: 'rename', id: 'nope', name: 'x' }), e => e.code === 'not-found');
+    await call({ action: 'delete', id });
+    assert.equal(await get(`companies/${A}/warehouses/${id}`), null);
+    await seed.ref(`access/emp_${A}`).set({ role: 'employee', companyId: A, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`companies/${A}/employees/e1`).set({ status: 'approved', name: 'E', warehouseId: 'w1' });
+    await assert.rejects(call({ action: 'add', name: 'x' }, `emp_${A}`), e => e.code === 'permission-denied');
+    const audit = Object.values((await get('audit')) || {}).filter(a => a.actor === `mgr_${A}` && String(a.action).startsWith('branch.'));
+    assert.deepEqual(audit.map(a => a.action), ['branch.add', 'branch.rename', 'branch.schedule', 'branch.geoZone', 'branch.schedule', 'branch.delete']);
   }
 };
 

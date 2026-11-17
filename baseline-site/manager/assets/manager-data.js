@@ -24,7 +24,7 @@
       if(Object.keys(result).length>200000)throw Error('الفترة كبيرة جدًا؛ اختر فترة أقصر');
     }
   }
-  function create(context,{now=()=>typeof performance==='object'?performance.now():Date.now(),baseTTL=300000,periodTTL=60000,readTimeoutMs=20000,setTimer=setTimeout,clearTimer=clearTimeout}={}){
+  function create(context,{now=()=>typeof performance==='object'?performance.now():Date.now(),baseTTL=300000,periodTTL=60000,readTimeoutMs=20000,setTimer=setTimeout,clearTimer=clearTimeout,loadBase=null}={}){
     // Direct reads get a visible limit instead of waiting forever when the database connection stalls.
     const limited=promise=>{let timer;const stop=new Promise((_,reject)=>{timer=setTimer(()=>reject(Object.assign(new Error(`لم ترد قاعدة البيانات خلال ${Math.round(readTimeoutMs/1000)} ثانية. تحقق من الإنترنت ثم اضغط «إعادة المحاولة».`),{code:'basma/timeout'})),readTimeoutMs);});return Promise.race([promise,stop]).finally(()=>clearTimer(timer));};
     let scope,epoch=0,scopeEpoch=0,baseCache,periods=new Map();
@@ -35,7 +35,8 @@
       return {db,cid,check(){const current=context();if(scopeVersion!==scopeEpoch||(checkEpoch&&version!==epoch)||current?.db!==db||current?.cid!==cid||current?.session!==session)throw stale();}};
     }
     function memo(map,key,load,ttl,guard){let entry=map.get(key);if(!entry||now()-entry.at>=ttl){entry={at:now()};entry.promise=Promise.resolve().then(load).catch(error=>{if(map.get(key)===entry)map.delete(key);throw error;});map.set(key,entry);while(map.size>4)map.delete(map.keys().next().value);}return entry.promise.then(value=>{guard();return value;});}
-    async function base(){const token=capture();if(!baseCache||now()-baseCache.at>=baseTTL){const entry={at:now()};baseCache=entry;entry.promise=limited(Promise.all(['employees','settings','warehouses'].map(name=>token.db.ref(`companies/${token.cid}/${name}`).once('value')))).then(values=>{token.check();return {employees:values[0].val()||{},settings:values[1].val()||{},warehouses:values[2].val()||{}};}).catch(error=>{if(baseCache===entry)baseCache=null;throw error;});}const value=await baseCache.promise;token.check();return value;}
+    async function base(){const token=capture();if(!baseCache||now()-baseCache.at>=baseTTL){const entry={at:now()};baseCache=entry;// loadBase (the page's server call) replaces the three direct reads when provided.
+      entry.promise=(loadBase?Promise.resolve().then(loadBase).then(v=>[v?.employees||{},v?.settings||{},v?.warehouses||{}]):limited(Promise.all(['employees','settings','warehouses'].map(name=>token.db.ref(`companies/${token.cid}/${name}`).once('value')))).then(values=>values.map(v=>v.val()||{}))).then(values=>{token.check();return {employees:values[0],settings:values[1],warehouses:values[2]};}).catch(error=>{if(baseCache===entry)baseCache=null;throw error;});}const value=await baseCache.promise;token.check();return value;}
     async function period(from,to){date(from);date(to);if(from>to)throw Error('نطاق غير صالح');const token=capture();return memo(periods,`${from}/${to}`,async()=>{
       const [leaves,excuses]=await limited(Promise.all(['leaves','excuses'].map(collection=>pages(token.db,token.cid,collection,{from,to,check:token.check}))));return {leaves,excuses};
     },periodTTL,token.check);}

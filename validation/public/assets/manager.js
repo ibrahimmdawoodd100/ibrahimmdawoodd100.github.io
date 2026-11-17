@@ -1,7 +1,7 @@
 'use strict';
 async function secureManagerOpen(profile) {
   clearManagerData();
-  COMPANY_ID = profile.companyId; DB = Basma.db();
+  COMPANY_ID = profile.companyId; DB = Basma.limitWrites(Basma.db());
   // No direct database read before the page opens: name and time zone come from the profile call;
   // the rest (logo, settings, staff, today's attendance) from the managerHome call in loadDashboard.
   COMPANY_INFO = { nameAr: profile.name || '', timeZone: profile.timeZone || 'UTC' };

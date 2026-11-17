@@ -1,6 +1,24 @@
 'use strict';
 // Final adapters for the three HTML files explicitly supplied on 15 October.
-const managerData=BasmaManagerData.create(()=>({db:DB,cid:COMPANY_ID,session:Basma.profile||DB}));
+// Base data (staff, settings, branches) comes from the managerHome server call, never from direct database reads.
+const managerData=BasmaManagerData.create(()=>({db:DB,cid:COMPANY_ID,session:Basma.profile||DB}),{loadBase:()=>Basma.timeout(Basma.call('managerHome'),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,'managerHome')});
+// Records, leaves and excuses for any range: managerRecords, at most 31 days per call (reports split longer ranges).
+async function managerRange(from,to){
+  const merged={records:{},leaves:{},excuses:{}};let start=Date.parse(`${from}T00:00:00Z`);const end=Date.parse(`${to}T00:00:00Z`);
+  if(!Number.isFinite(start)||!Number.isFinite(end)||start>end)throw Error('نطاق التاريخ غير صالح');
+  while(start<=end){
+    const stop=Math.min(end,start+30*86400000),a=new Date(start).toISOString().slice(0,10),b=new Date(stop).toISOString().slice(0,10),t0=Basma.clock();
+    try{const part=await Basma.timeout(Basma.call('managerRecords',{from:a,to:b}),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,'managerRecords');Basma.trace(`الدالة managerRecords ${a}…${b}`,t0,true);for(const key of ['records','leaves','excuses'])Object.assign(merged[key],part[key]||{});}
+    catch(error){Basma.trace(`الدالة managerRecords ${a}…${b}`,t0,false,error?.code||'error');throw error;}
+    start=stop+86400000;
+  }
+  return merged;
+}
+// Table states: loading rows while data is fetched; a clear Arabic error with a retry button instead of an empty table.
+function tableLoading(id,columns){const body=document.getElementById(id);if(!body)return;const rows=[];for(let i=0;i<3;i++){const tr=document.createElement('tr');for(let c=0;c<columns;c++){const td=document.createElement('td');td.textContent='…';td.style.opacity='.45';tr.appendChild(td);}rows.push(tr);}body.replaceChildren(...rows);}
+function tableError(id,columns,error,retry){const body=document.getElementById(id);if(!body)return;const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=columns;td.style.textAlign='center';td.style.padding='24px';
+  td.appendChild(secureManagerView.text('div','تعذر تحميل البيانات. '+(window.BasmaErrors?.message(error,'')??error?.message??'')));
+  const button=secureManagerView.text('button','إعادة المحاولة');button.className='modal-btn';button.style.marginTop='10px';button.addEventListener('click',()=>{button.disabled=true;retry();});td.appendChild(button);tr.appendChild(td);body.replaceChildren(tr);}
 const secureManagerView = (()=>{
   let offset=0;
   const today=()=>BasmaReports.dateAt(Date.now()+(offset||Basma.profile?.clockOffset||0),COMPANY_INFO.timeZone||'UTC');
@@ -21,11 +39,10 @@ const secureManagerView = (()=>{
   }
   async function dataset(from,to,{employeeId='all',warehouseId='all'}={}) {
     const token=managerData.capture();
-    const [base,history,records,clock]=await Promise.all([
-      managerData.base(),managerData.period(from,to),Basma.records(token.db,token.cid,from,to,COMPANY_INFO.timeZone||'UTC'),token.db.ref('.info/serverTimeOffset').once('value')
-    ]);
-    token.check();offset=clock.val()||0;ALL_EMPLOYEES=base.employees;ALL_WAREHOUSES=base.warehouses;
-    return BasmaReports.build({employees:base.employees,records:records.val()||{},leaves:history.leaves,excuses:history.excuses,settings:base.settings,from,to,employeeId,warehouseId,timeZone:COMPANY_INFO.timeZone||'UTC'});
+    // Two server calls at most (base is cached from managerHome); no direct database read, no clock read.
+    const [base,range]=await Promise.all([managerData.base(),managerRange(from,to)]);
+    token.check();ALL_EMPLOYEES=base.employees;ALL_WAREHOUSES=base.warehouses;
+    return BasmaReports.build({employees:base.employees,records:range.records,leaves:range.leaves,excuses:range.excuses,settings:base.settings,from,to,employeeId,warehouseId,timeZone:COMPANY_INFO.timeZone||'UTC'});
   }
   function options(select,values,first) {
     const selected=select.value;select.replaceChildren();const all=text('option',first);all.value='all';select.appendChild(all);
@@ -88,12 +105,13 @@ loadDashboard=async function(){
 loadAttendance=async function(){
   const ticket=++attendanceTicket;
   const date=document.getElementById('att-date').value;if(!date)return;
+  tableLoading('att-tbody',7);
   try{
     let rows=await secureManagerView.dataset(date,date,{warehouseId:document.getElementById('att-wh').value});
     if(ticket!==attendanceTicket||date!==document.getElementById('att-date').value)return;
     if(attStatusFilter!=='all')rows=rows.filter(r=>attStatusFilter==='present'?['present','excused'].includes(r.classification):attStatusFilter==='excused_out'?r.attendanceStatus==='excused_out':r.classification===attStatusFilter);
     secureManagerView.table('att-tbody',rows,r=>[r.name,r.role,r.warehouseName,r.statusLabel,secureManagerView.time(r.checkIn),secureManagerView.time(r.checkOut),r.delayMins],r=>secureManagerView.details([r],`${r.name} — ${date}`));
-  }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
+  }catch(error){if(error?.code==='stale-manager-scope'||ticket!==attendanceTicket)return;tableError('att-tbody',7,error,()=>loadAttendance());}
 };
 generateReport=async function(){
   const ticket=++reportTicket;
@@ -183,7 +201,7 @@ async function loadManagerRequests(collection){
   const ticket=++requestTickets[collection],input=document.getElementById(`${collection}-month`),list=document.getElementById(`${collection}-list`);
   if(!input||!list)return;const month=input.value||secureManagerView.today().slice(0,7);input.value=month;list.replaceChildren(secureManagerView.text('p','جاري تحميل جميع صفحات الفترة...'));
   try{
-    const token=managerData.capture(),values=await managerData.requests(collection,month);token.check();if(ticket!==requestTickets[collection]||month!==input.value)return;
+    const token=managerData.capture(),values=(await Basma.timeout(Basma.call('managerRecords',{kind:'requests',collection,month}),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,'managerRecords')).items||{};token.check();if(ticket!==requestTickets[collection]||month!==input.value)return;
     const items=Object.entries(values).map(([key,value])=>({...value,key})).sort((a,b)=>(a.status==='pending'?0:1)-(b.status==='pending'?0:1)||String(b.date).localeCompare(String(a.date))||a.key.localeCompare(b.key));
     let page=0;const size=200;
     const draw=()=>{list.replaceChildren();
