@@ -6,6 +6,8 @@ function managerRoute(path, op, { query, value }) {
   if (op === 'read') {
     const badges = pick => ({ ...list({ kind: 'badges' }), pick });
     if (path === `${base}/info/status`) return badges(b => ({ value: b.status ?? null }));
+    const today = path.match(new RegExp(`^${base}/today/([A-Za-z0-9_-]+)$`)); if (today) return list({ kind: 'employeeToday', employeeId: today[1] });
+    if (path === `${base}/warehouses` && !Object.keys(query).length) return list({ kind: 'warehouses' });
     const pay = path.match(new RegExp(`^privatePayroll/${COMPANY_ID}/([A-Za-z0-9_-]+)$`)); if (pay) return list({ kind: 'payroll', employeeId: pay[1] });
     const counted = path.match(new RegExp(`^${base}/(leaves|excuses|missions|notifications/admin)$`));
     const field = { 'leaves|pending': 'leaves', 'excuses|pending': 'excuses', 'missions|assigned': 'assigned', 'missions|started': 'started', 'notifications/admin|false': 'unread' }[`${counted?.[1]}|${query.equalTo}`];
@@ -73,7 +75,8 @@ resetEmployeeBio = async function(eid) {
 };
 confirmDeleteEmp = function(eid) { showConfirm('تعطيل الموظف', 'سيُمنع دخول الموظف مع الاحتفاظ بسجلاته للمراجعة.', () => doDeleteEmp(eid)); };
 doDeleteEmp = async function(eid) {
-  try { await Basma.call('disableEmployee', { employeeId: eid }); closeConfirm(); closeEmpModal(); await loadAllData(); showToast('تم تعطيل الحساب', 'success'); }
+  // After disabling, also redraw the page the manager is on (the employees list kept the old row: E2E v5.12).
+  try { await Basma.call('disableEmployee', { employeeId: eid }); closeConfirm(); closeEmpModal(); await loadAllData(); if (currentPage !== 'dash') await pageLoaders[currentPage]?.(); showToast('تم تعطيل الحساب', 'success'); }
   catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
 };
 overrideAttendance = async function(eid, status) {

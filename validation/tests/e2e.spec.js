@@ -49,7 +49,8 @@ async function guarded(browser, options = {}) {
   context.on('page', page => {
     page.on('request', r => open.set(r, Date.now())); page.on('requestfinished', r => open.delete(r)); page.on('requestfailed', r => open.delete(r));
     page.on('console', m => { consoleTail.push(`${m.type()}: ${m.text().slice(0, 200)}`); if (consoleTail.length > 8) consoleTail.shift(); });
-    page.on('console', m => { if (m.type() === 'error' && !ALLOWED_CONSOLE.some(r => r.test(m.text()))) issues.push(`console error: ${m.text().slice(0, 300)}`); });
+    // The source URL is part of the message: it tells our page apart from Google's frames and names a failed resource.
+    page.on('console', m => { if (m.type() === 'error' && !ALLOWED_CONSOLE.some(r => r.test(m.text()))) issues.push(`console error: ${m.text().slice(0, 240)} [from ${(m.location()?.url || '?').slice(0, 140)}]`); });
     page.on('pageerror', e => issues.push(`page error: ${String(e.message).slice(0, 300)}`));
     page.on('requestfailed', r => { const why = r.failure()?.errorText || ''; if (!/ERR_ABORTED/.test(why) && REQUIRED.test(r.url())) issues.push(`request failed: ${r.url().slice(0, 160)} (${why})`); });
     page.on('response', r => { if (r.status() >= 400 && REQUIRED.test(r.url())) issues.push(`HTTP ${r.status()}: ${r.url().slice(0, 160)}`); });
