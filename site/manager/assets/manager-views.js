@@ -73,6 +73,8 @@ const managerHomeTimeoutMs=()=>Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000;
 function applyManagerHome(home){
   COMPANY_INFO={...(COMPANY_INFO||{}),...(home.info||{})};
   managerData.prime(home);ALL_EMPLOYEES=home.employees||{};ALL_WAREHOUSES=home.warehouses||{};
+  // Badges and company status arrive inside managerHome: the badge listeners start from them (no extra call).
+  if(home.badges&&typeof DB?.prime==='function')DB.prime('managerList',{kind:'badges'},home.badges);
   const name=document.getElementById('sb-company'),logo=document.getElementById('sb-logo');
   if(name&&COMPANY_INFO.nameAr)name.textContent=COMPANY_INFO.nameAr;if(logo)logo.textContent=COMPANY_INFO.logo||'🏭';
 }
@@ -474,3 +476,5 @@ loadAdminNotifPage=async function(){
 };
 // The inline page map holds the original functions; point it at the server-backed loaders.
 if(typeof pageLoaders!=='undefined'){pageLoaders.emps=()=>loadEmployees();pageLoaders.warehouses=()=>loadWarehouses();pageLoaders.messages=()=>loadMessages();pageLoaders.settings=()=>{loadSettings();updateRepDates();};pageLoaders['admin-notifs']=()=>loadAdminNotifPage();}
+// Leaflet is served from this site (/manager/assets/leaflet/); marker images come from the same folder.
+if(window.L?.Icon?.Default)window.L.Icon.Default.imagePath='/manager/assets/leaflet/images/';

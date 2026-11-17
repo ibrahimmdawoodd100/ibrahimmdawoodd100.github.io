@@ -35,7 +35,7 @@ window.Basma = (() => {
   async function call(name, data = {}) {
     await init();
     try { const result=(await app.functions(window.BASMA_CONFIG.region).httpsCallable(name, { limitedUseAppCheckTokens: false })(data)).data;
-      if(selectedRole==='manager'&&!['profile','serverClock','managerHome','managerRecords'].includes(name))window.dispatchEvent?.(new CustomEvent('basma-manager-mutated'));
+      if(selectedRole==='manager'&&!['profile','serverClock','managerHome','managerRecords','managerList'].includes(name))window.dispatchEvent?.(new CustomEvent('basma-manager-mutated'));
       return result; }
     finally { if(name==='recordAttendance') window.dispatchEvent?.(new CustomEvent('basma-attendance-settled')); }
   }
@@ -277,5 +277,67 @@ window.Basma = (() => {
     document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', escape); window.addEventListener?.('resize', resize);
     controlsCleanup = () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape); window.removeEventListener?.('resize', resize); };
   }
-  return { init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get signedIn() { return !!app?.auth().currentUser; }, reopenError, get persistenceMode() { return persistenceMode; } };
+  // A list or screen state: loading (spinner + text), error (plain Arabic, the code in small text, retry button) or empty.
+  function stateBox(kind, { text = '', error = null, retry = null } = {}) {
+    const wrap = document.createElement('div'); wrap.className = `basma-state basma-state-${kind}`;
+    wrap.style.cssText = 'text-align:center;padding:24px 12px;color:var(--text2);grid-column:1/-1';
+    if (kind === 'loading') { const spin = document.createElement('div'); spin.className = 'spinner-sm'; wrap.appendChild(spin); }
+    const line = document.createElement('div'); line.style.marginTop = '8px'; line.textContent = text || (kind === 'loading' ? 'جاري التحميل...' : ''); wrap.appendChild(line);
+    if (kind === 'error') {
+      const code = error?.code; if (code) { const small = document.createElement('div'); small.textContent = String(code); small.style.cssText = 'font-size:11px;opacity:.7;margin-top:4px;direction:ltr'; wrap.appendChild(small); }
+      if (retry) { const button = document.createElement('button'); button.type = 'button'; button.className = 'modal-btn'; button.textContent = 'إعادة المحاولة'; button.style.marginTop = '10px'; button.addEventListener('click', () => { button.disabled = true; retry(); }); wrap.appendChild(button); }
+    }
+    return wrap;
+  }
+  // Every visible spinner gets a limit: still spinning after 20 s, it is hidden and replaced by an Arabic message and a
+  // retry button (the page's refresh, otherwise a reload). The spinner node is kept, so the overlay can be reused.
+  const SPINNERS = '.spinner-sm,.spinner,.spinner-lg,.lo-spinner', spinnerSeen = new WeakMap(), stoppedSpinners = new Map();
+  const spinnerLimit = () => Number(window.BASMA_SPINNER_TIMEOUT_MS) || 20000;
+  function retryPage() { if (typeof window.refreshCurrentPage === 'function') window.refreshCurrentPage(); else window.location.reload(); }
+  function sweepSpinners(now = Date.now()) {
+    if (typeof document?.querySelectorAll !== 'function') return 0;
+    let stopped = 0;
+    // A stopped overlay spinner comes back once the page hides the overlay, so the next showLoading() spins again.
+    for (const [node, restore] of stoppedSpinners) { const overlay = node.closest?.('.loading-overlay'); if (!node.isConnected || (overlay && !overlay.classList.contains('active'))) restore(); }
+    for (const node of document.querySelectorAll(SPINNERS)) {
+      const overlay = node.closest?.('.loading-overlay');
+      const visible = node.style.display !== 'none' && (overlay ? overlay.classList.contains('active') : node.offsetParent !== null);
+      if (!visible) { spinnerSeen.delete(node); continue; }
+      if (!spinnerSeen.has(node)) { spinnerSeen.set(node, now); continue; }
+      if (now - spinnerSeen.get(node) < spinnerLimit()) continue;
+      spinnerSeen.delete(node); stopped++;
+      const error = Object.assign(new Error('تأخر الرد أكثر من 20 ثانية'), { code: 'basma/timeout' });
+      const text = overlay ? 'تأخر الرد أكثر من 20 ثانية. قد تكتمل العملية لاحقًا؛ تحقق منها قبل تكرارها.' : 'تأخر التحميل أكثر من 20 ثانية. تحقق من الإنترنت ثم اضغط «إعادة المحاولة».';
+      const restore = () => { stoppedSpinners.delete(node); box.remove(); node.style.display = ''; for (const t of hiddenText) t.style.display = ''; };
+      const box = stateBox('error', { text, error, retry: () => { restore(); if (overlay) overlay.classList.remove('active'); retryPage(); } });
+      const hiddenText = [];
+      // The "loading" words next to the spinner would contradict the message.
+      for (const sibling of [...(node.parentElement?.children || [])]) if (sibling !== node && /تحميل|الاتصال|جاري/.test(sibling.textContent || '') && !sibling.querySelector?.('button')) { sibling.style.display = 'none'; hiddenText.push(sibling); }
+      for (const child of [...(node.parentElement?.childNodes || [])]) if (child.nodeType === 3 && /تحميل|جاري/.test(child.textContent)) child.textContent = '';
+      if (overlay) { const close = document.createElement('button'); close.type = 'button'; close.className = 'modal-btn'; close.textContent = 'إغلاق'; close.style.margin = '10px 6px 0'; close.addEventListener('click', () => { restore(); overlay.classList.remove('active'); }); box.appendChild(close); }
+      node.style.display = 'none'; node.after(box); stoppedSpinners.set(node, restore);
+    }
+    return stopped;
+  }
+  if (typeof setInterval === 'function' && typeof document?.querySelectorAll === 'function' && !window.BASMA_NO_SPINNER_GUARD) setInterval(() => sweepSpinners(), 1000);
+  // Direct writes still used by some manager actions get a visible 20 s limit (the realtime channel stalls on the
+  // owner's network for writes as for reads). Only set/update/remove/push are limited; reads and listeners pass through.
+  const WRITE_CALLS = new Set(['set', 'update', 'remove', 'push', 'setWithPriority']);
+  function limitWrites(database) {
+    const limit = () => Number(window.BASMA_WRITE_TIMEOUT_MS) || 20000;
+    const limited = promise => { let timer; const stop = new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error(`لم يُؤكَّد الحفظ خلال ${Math.round(limit() / 1000)} ثانية. تحقق من الإنترنت ثم أعد المحاولة.`), { code: 'basma/write-timeout' })), limit()); }); return Promise.race([Promise.resolve(promise), stop]).finally(() => clearTimeout(timer)); };
+    const wrapRef = ref => new Proxy(ref, { get(target, prop) {
+      const value = target[prop];
+      if (typeof value !== 'function') return value;
+      if (prop === 'child') return (...args) => wrapRef(value.apply(target, args));
+      if (WRITE_CALLS.has(prop)) return (...args) => { const result = value.apply(target, args); return prop === 'push' && args.length === 0 ? result : limited(result); };
+      return value.bind(target);
+    } });
+    return new Proxy(database, { get(target, prop) {
+      const value = target[prop];
+      if (prop === 'ref') return (...args) => wrapRef(value.apply(target, args));
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+  }
+  return { stateBox, limitWrites, sweepSpinners, init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get signedIn() { return !!app?.auth().currentUser; }, reopenError, get persistenceMode() { return persistenceMode; } };
 })();

@@ -1,6 +1,22 @@
 'use strict';
+// v5.11: every employee page read/write goes through the employeeList server call (no realtime connection needed).
+function employeeRoute(path, op, { query, value }) {
+  const base = `companies/${COMPANY_ID}`, eid = ACTIVATION_UID, call = data => ({ name: 'employeeList', data });
+  if (op === 'read') {
+    if (path === `${base}/info/status`) return call({ kind: 'status' });
+    if (path === `${base}/employees/${eid}/status`) return call({ kind: 'selfStatus' });
+    if (path === `${base}/today/${eid}`) return call({ kind: 'today' });
+    if (path === `${base}/todayPartialLeave/${eid}`) return call({ kind: 'partialLeave' });
+    const day = path.match(new RegExp(`^${base}/partialLeaveRecords/${eid}/(\\d{4}-\\d{2}-\\d{2})$`)); if (day) return call({ kind: 'partialRecords', date: day[1] });
+    const own = path.match(new RegExp(`^${base}/(missions|leaves|excuses|records)$`));
+    if (own && query.orderByChild === 'empId' && query.equalTo === eid) return call({ kind: own[1] === 'records' ? 'history' : own[1] });
+    if (path === `${base}/notifications/${eid}`) return call({ kind: 'notifications' });
+  }
+  if (op === 'update' && path === `${base}/notifications/${eid}`) return call({ kind: 'notificationsUpdate', updates: value });
+  return null;
+}
 async function secureEmployeeOpen(profile) {
-  COMPANY_ID = profile.companyId; DB = Basma.db(); ACTIVATION_UID = profile.employeeId;
+  COMPANY_ID = profile.companyId; ACTIVATION_UID = profile.employeeId; DB = Basma.serverDb(() => Basma.db(), employeeRoute);
   // The session already fetched employeeHome while opening (one call); reuse it instead of a second call.
   const home=Basma.takeHome?.('employeeHome')||await Basma.call('employeeHome');
   // Start the check-in functions' instances now, while the employee reads the screen (saves ~2 s per cold start).
@@ -8,6 +24,8 @@ async function secureEmployeeOpen(profile) {
   const employee=home.employee;
   if(!employee||!['approved','pending_activation'].includes(employee.status))throw new Error('حساب الموظف غير مفعّل');
   secureAttendanceWindows.seed(home);
+  DB.prime('employeeList', { kind: 'today' }, { value: home.today || null });
+  DB.prime('employeeList', { kind: 'status' }, { value: home.info?.status ?? null }); // the today listener starts from the home payload (no extra call)
   CRED_ID=employee.credId||null;
   Basma.controls();
   if (employee.status === 'approved' && employee.credId) { await setupMainScreen(); }

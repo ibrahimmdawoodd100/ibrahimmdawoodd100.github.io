@@ -3,7 +3,7 @@
 // returns the new length, so such loaders showed only the FIRST item. These tests keep it fixed.
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const root = path.join(__dirname, '..');
-const pages = ['public/seller.html', 'public/manager/index.html', 'public/employee/index.html', ...fs.readdirSync(path.join(root, 'public/assets')).map(f => 'public/assets/' + f)];
+const pages = ['public/seller.html', 'public/manager/index.html', 'public/employee/index.html', ...fs.readdirSync(path.join(root, 'public/assets'), { withFileTypes: true }).filter(e => e.isFile()).map(e => 'public/assets/' + e.name)];
 const bad = /\.forEach\(\s*\(?\s*[A-Za-z_$][\w$]*\s*\)?\s*=>\s*[A-Za-z_$][\w$.]*\.push\(/;
 
 test('no page uses forEach(c => list.push(...)) on a database snapshot', () => {

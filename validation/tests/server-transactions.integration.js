@@ -222,6 +222,91 @@ const scenarios = {
     await seed.ref(`companies/${A}/employees/e000/status`).set('approved');
     await assert.rejects(loadServer(file).invoke('managerList', `emp_${A}`, { kind: 'employees' }), e => e.code === 'permission-denied');
   },
+  'employeeList: own today/missions/leaves/excuses/history/notifications only; notifications update = read flags only': async (file, tag) => {
+    const cid = `cEmpL${tag}`;
+    await seedCompany(cid);
+    for (const eid of ['e1', 'e2']) {
+      await seed.ref(`companies/${cid}/employees/${eid}`).set({ status: 'approved', name: eid, empId: eid, warehouseId: 'w1' });
+      await seed.ref(`access/u_${eid}_${cid}`).set({ role: 'employee', companyId: cid, employeeId: eid, enabled: true, version: 1 });
+    }
+    await seed.ref(`companies/${cid}/today`).set({ e1: { dateKey: '2026-11-17', checkIn: 'x' }, e2: { dateKey: '2026-11-17', checkIn: 'secret-e2' } });
+    for (const c of ['missions', 'leaves', 'excuses', 'records']) await seed.ref(`companies/${cid}/${c}`).set({ [`${c}1`]: { empId: 'e1', date: '2026-11-17', status: 'pending', dateKey: '2026-11-17' }, [`${c}2`]: { empId: 'e2', date: '2026-11-17', status: 'pending', dateKey: '2026-11-17', note: 'secret-e2' } });
+    await seed.ref(`companies/${cid}/notifications`).set({ e1: { n1: { message: 'a', read: false }, n2: { message: 'b', read: false }, junk: 'x' }, e2: { n9: { message: 'secret-e2', read: false } } });
+    const call = async data => JSON.parse(JSON.stringify(await loadServer(file).invoke('employeeList', `u_e1_${cid}`, data)));
+    assert.equal((await call({ kind: 'today', employeeId: 'e2' })).value.checkIn, 'x', 'own today, the requested employeeId is ignored');
+    for (const [kind, key] of [['missions', 'missions1'], ['leaves', 'leaves1'], ['excuses', 'excuses1'], ['history', 'records1']]) assert.deepEqual((await call({ kind })).order, [key], kind);
+    const notes = await call({ kind: 'notifications' });
+    assert.deepEqual(notes.order, ['junk', 'n1', 'n2']); assert.equal(JSON.stringify(notes).includes('secret-e2'), false);
+    assert.deepEqual(await call({ kind: 'notificationsUpdate', updates: { 'n1/read': true, junk: null, 'n9/read': true } }), { updated: 2 });
+    assert.deepEqual(await get(`companies/${cid}/notifications/e1`), { n1: { message: 'a', read: true }, n2: { message: 'b', read: false } }, 'n9 (not mine) ignored');
+    assert.equal((await get(`companies/${cid}/notifications/e2/n9`)).read, false);
+    assert.deepEqual(await call({ kind: 'notificationsUpdate', updates: { n2: null } }), { updated: 0 }, 'a real notification is never deleted by the employee');
+    assert.ok(await get(`companies/${cid}/notifications/e1/n2`));
+    for (const updates of [{ 'n2/message': 'x' }, { 'n2/read': 'yes' }, { '../x/read': true }]) await assert.rejects(call({ kind: 'notificationsUpdate', updates }), e => e.code === 'invalid-argument', JSON.stringify(updates));
+    assert.equal((await call({ kind: 'status' })).value, 'active');
+    await assert.rejects(call({ kind: 'records' }), e => e.code === 'invalid-argument');
+    await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await assert.rejects(loadServer(file).invoke('employeeList', `mgr_${cid}`, { kind: 'today' }), e => e.code === 'permission-denied');
+  },
+  'managerSettings: time windows, holidays, zones, schedules, missions, activity notifications — own company, strict checks': async (file, tag) => {
+    const A = `cSetA${tag}`, B = `cSetB${tag}`;
+    for (const cid of [A, B]) { await seedCompany(cid); await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 }); await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'أحمد', empId: 'N1', warehouseId: 'w1' }); }
+    const call = async (data, uid = `mgr_${A}`) => JSON.parse(JSON.stringify(await loadServer(file).invoke('managerSettings', uid, data)));
+    const w = (from, to) => ({ from, to });
+    await call({ action: 'timeWindows', checkIn: w('07:30', '08:30'), checkOut: w('15:00', '16:00'), companyId: B });
+    assert.deepEqual((await get(`companies/${A}/settings`)).checkIn, w('07:30', '08:30')); assert.deepEqual((await get(`companies/${B}/settings`)).checkIn, settings.checkIn, 'B unchanged');
+    assert.equal((await get(`companies/${A}/settings`)).weekendDays[0], 9, 'other settings kept (update, not replace)');
+    const { id: holiday } = await call({ action: 'holidayAdd', date: '2026-12-02', name: 'اليوم الوطني' });
+    assert.deepEqual(await get(`companies/${A}/settings/holidays/${holiday}`), { date: '2026-12-02', name: 'اليوم الوطني', active: true });
+    await call({ action: 'holidayRemove', id: holiday }); assert.equal(await get(`companies/${A}/settings/holidays/${holiday}`), null);
+    await call({ action: 'geoZone', geoZone: { enabled: true, zones: [{ lat: 24.7, lng: 46.6, radius: 300.6, name: 'المقر' }] } });
+    assert.deepEqual(await get(`companies/${A}/settings/geoZone`), { enabled: true, zones: [{ lat: 24.7, lng: 46.6, radius: 301, name: 'المقر' }] });
+    await call({ action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: w('09:00', '10:00'), checkOut: w('17:00', '18:00') } });
+    assert.deepEqual((await get(`companies/${A}/employees/e1`)).schedule.checkIn, w('09:00', '10:00'));
+    await call({ action: 'employeeSchedule', employeeId: 'e1', schedule: null }); assert.equal(await get(`companies/${A}/employees/e1/schedule`), null);
+    const { id: mission } = await call({ action: 'missionAdd', mission: { empId: 'e1', location: 'العميل', description: 'تسليم', date: '2026-11-18', expectedTime: '10:00', status: 'completed', empName: 'fake' } });
+    const saved = await get(`companies/${A}/missions/${mission}`);
+    assert.equal(saved.status, 'assigned', 'status set by the server'); assert.equal(saved.empName, 'أحمد', 'name from the employee record'); assert.equal(saved.location, 'العميل');
+    await call({ action: 'missionUpdate', id: mission, mission: { location: 'موقع جديد', empId: 'e1', empName: 'x', description: '', date: '2026-11-19', expectedTime: '' } });
+    assert.equal((await get(`companies/${A}/missions/${mission}`)).location, 'موقع جديد');
+    await call({ action: 'missionUpdate', id: mission, mission: { status: 'completed', completedAt: 'client-time' } });
+    const done = await get(`companies/${A}/missions/${mission}`); assert.equal(done.status, 'completed'); assert.notEqual(done.completedAt, 'client-time');
+    await seed.ref(`companies/${A}/notifications/admin`).set({ n1: { message: 'm', read: false }, n2: { message: 'm', read: false } });
+    await call({ action: 'adminNotificationsRead', updates: { 'n1/read': true } }); assert.equal((await get(`companies/${A}/notifications/admin/n1`)).read, true);
+    const refused = [{ action: 'timeWindows', checkIn: w('7:30', '08:30'), checkOut: w('15:00', '16:00') }, { action: 'holidayAdd', date: '2026-02-30', name: 'x' }, { action: 'holidayAdd', date: '2026-12-01', name: '<i>' },
+      { action: 'geoZone', geoZone: { enabled: 'yes', zones: [] } }, { action: 'geoZone', geoZone: { enabled: true, zones: [{ lat: 100, lng: 0, radius: 10 }] } }, { action: 'geoZone', geoZone: { enabled: true, zones: Array(21).fill({ lat: 1, lng: 1, radius: 10 }) } },
+      { action: 'missionAdd', mission: { empId: 'e1', location: '', date: '2026-11-18' } }, { action: 'missionUpdate', id: mission, mission: { status: 'assigned' } }, { action: 'missionUpdate', id: mission, mission: { actor: 'x' } },
+      { action: 'adminNotificationsRead', updates: { 'n2/message': 'x' } }, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: w('09:00', '25:00'), checkOut: w('17:00', '18:00') } }, { action: 'deleteCompany' }];
+    for (const data of refused) await assert.rejects(call(data), e => e.code === 'invalid-argument', JSON.stringify(data));
+    await assert.rejects(call({ action: 'missionAdd', mission: { empId: 'nobody', location: 'x', date: '2026-11-18' } }), e => e.code === 'not-found');
+    await assert.rejects(call({ action: 'employeeSchedule', employeeId: 'nobody', schedule: null }), e => e.code === 'not-found');
+    await call({ action: 'missionRemove', id: mission }); assert.equal(await get(`companies/${A}/missions/${mission}`), null);
+    await call({ action: 'adminNotificationsClear' }); assert.equal(await get(`companies/${A}/notifications/admin`), null);
+    await seed.ref(`access/emp_${A}`).set({ role: 'employee', companyId: A, employeeId: 'e1', enabled: true, version: 1 });
+    await assert.rejects(call({ action: 'adminNotificationsClear' }, `emp_${A}`), e => e.code === 'permission-denied');
+    // Badges: keys only, inside managerHome (no extra call on open) and from managerList.
+    await seed.ref(`companies/${A}/leaves`).set({ l1: { empId: 'e1', date: '2026-11-17', status: 'pending' }, l2: { empId: 'e1', date: '2026-11-17', status: 'approved' } });
+    await seed.ref(`companies/${A}/notifications/admin`).set({ u1: { message: 'secret-text', read: false } });
+    const home = JSON.parse(JSON.stringify(await loadServer(file).invoke('managerHome', `mgr_${A}`)));
+    assert.deepEqual(home.badges, { status: 'active', leaves: ['l1'], excuses: [], assigned: [], started: [], unread: ['u1'] });
+    assert.deepEqual(JSON.parse(JSON.stringify(await loadServer(file).invoke('managerList', `mgr_${A}`, { kind: 'badges' }))), home.badges);
+    assert.equal(JSON.stringify(home.badges).includes('secret-text'), false);
+  },
+  'sellerData: seller only; transactions and notifications; validated transaction with company name from the server': async (file, tag) => {
+    const cid = `cSel${tag}`; await seedCompany(cid); await seed.ref(`companies/${cid}/info/plan`).set('pro');
+    await seed.ref('seller/notifications').set({ s1: { message: 'x', read: false } });
+    const call = async (data, uid = 'seller') => JSON.parse(JSON.stringify(await loadServer(file).invoke('sellerData', uid, data)));
+    const { id } = await call({ kind: 'addTransaction', transaction: { companyId: cid, companyName: 'fake', plan: 'fake', amount: 150, dateStr: '2026-11-17', note: 'دفعة' } });
+    const saved = await get(`seller/transactions/${id}`);
+    assert.equal(saved.companyName, 'شركة'); assert.equal(saved.plan, 'pro'); assert.equal(saved.amount, 150); assert.equal(saved.date, Date.parse('2026-11-17T00:00:00Z'));
+    assert.ok((await call({ kind: 'transactions' })).order.includes(id));
+    assert.deepEqual(await call({ kind: 'notificationsUpdate', updates: { 's1/read': true } }), { updated: 1 });
+    for (const t of [{ companyId: cid, amount: -1, dateStr: '2026-11-17' }, { companyId: cid, amount: 5, dateStr: 'x' }, { companyId: '../x', amount: 5, dateStr: '2026-11-17' }, { companyId: cid, amount: 5, dateStr: '2026-11-17', note: '<b>' }])
+      await assert.rejects(call({ kind: 'addTransaction', transaction: t }), e => e.code === 'invalid-argument', JSON.stringify(t));
+    await assert.rejects(call({ kind: 'addTransaction', transaction: { companyId: 'nope', amount: 5, dateStr: '2026-11-17' } }), e => e.code === 'not-found');
+    await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await assert.rejects(call({ kind: 'transactions' }, `mgr_${cid}`), e => e.code === 'permission-denied');
+  },
   'managerBranch: add, rename, hours, location, delete in own company only, with strict checks': async (file, tag) => {
     const A = `cBrA${tag}`, B = `cBrB${tag}`;
     for (const cid of [A, B]) { await seedCompany(cid); await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 }); }

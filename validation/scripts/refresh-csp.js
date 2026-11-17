@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),{createHash}=require('node
 const root=path.resolve(__dirname,'..'),config=JSON.parse(fs.readFileSync(path.join(root,'security-policy.json')));
 const hashes=[];
 for(const relative of ['public/manager/index.html','public/employee/index.html','public/seller.html'])for(const match of fs.readFileSync(path.join(root,relative),'utf8').matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi))if(!/\bsrc=/.test(match[1]))hashes.push(`'sha256-${createHash('sha256').update(match[2]).digest('base64')}'`);
-config.contentSecurityPolicy=config.contentSecurityPolicy.replace(/script-src [^;]+/,`script-src 'self' https://www.gstatic.com https://www.google.com https://cdnjs.cloudflare.com https://unpkg.com ${hashes.join(' ')}`);
+config.contentSecurityPolicy=config.contentSecurityPolicy.replace(/script-src [^;]+/,`script-src 'self' https://www.gstatic.com https://www.google.com ${hashes.join(' ')}`);
 fs.writeFileSync(path.join(root,'security-policy.json'),JSON.stringify(config,null,2)+'\n');
 const csp=config.contentSecurityPolicy;
 // GitHub Pages cannot emit application-defined HTTP headers. frame-ancestors is

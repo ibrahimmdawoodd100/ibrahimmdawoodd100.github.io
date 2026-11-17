@@ -65,18 +65,25 @@ exports.employeeHome = endpoint(['employee'], async ({member,info,employee}) => 
 // database reads, which stall forever on networks where the database connection does not establish.
 // Company isolation: everything is read from member.companyId (the server-side access record), never from data.
 const MANAGER_EMPLOYEE_FIELDS = ['name', 'empId', 'role', 'warehouseId', 'warehouseName', 'status', 'schedule', 'createdAt'];
+// Badge counts as keys only (no content) plus company status: pending leaves/excuses, assigned/started missions,
+// unread activity notifications. Sent inside managerHome (no extra call on open) and by managerList 'badges'.
+async function badgesOf(cid) {
+  const keys = (collection, field, value) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).equalTo(value).limitToFirst(5000).get().then(snap => { const order = []; snap.forEach(child => { order.push(child.key); }); return order; });
+  const [leaves, excuses, assigned, started, unread, status] = await Promise.all([keys('leaves', 'status', 'pending'), keys('excuses', 'status', 'pending'), keys('missions', 'status', 'assigned'), keys('missions', 'status', 'started'), keys('notifications/admin', 'read', false), read(`companies/${cid}/info/status`)]);
+  return { status: status ?? null, leaves, excuses, assigned, started, unread };
+}
 exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
   const cid = member.companyId, stamp = Date.now(), date = p.dateParts(new Date(stamp), info.timeZone).date;
   const sameDay = (collection, field) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).equalTo(date).limitToFirst(20000).get().then(s => s.val() || {});
-  const [settings, warehouses, employees, records, leaves, excuses] = await Promise.all([
+  const [settings, warehouses, employees, records, leaves, excuses, badges] = await Promise.all([
     read(`companies/${cid}/settings`), read(`companies/${cid}/warehouses`), read(`companies/${cid}/employees`),
-    sameDay('records', 'dateKey'), sameDay('leaves', 'date'), sameDay('excuses', 'date')
+    sameDay('records', 'dateKey'), sameDay('leaves', 'date'), sameDay('excuses', 'date'), badgesOf(cid)
   ]);
   const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
   const staff = Object.fromEntries(Object.entries(employees || {}).map(([eid, e]) => [eid, pick(e, MANAGER_EMPLOYEE_FIELDS)]));
   return { serverTime: Date.now(), date, companyId: cid,
     info: pick(info, ['nameAr', 'nameEn', 'logo', 'industry', 'timeZone', 'status', 'expiresAt', 'maxEmployees', 'plan']),
-    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records, leaves, excuses, profile: sessionOf(member, info) };
+    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records, leaves, excuses, badges, profile: sessionOf(member, info) };
 });
 // Manager attendance records, reports, payroll and request lists through ONE call per range (no direct database
 // reads, which stall on networks where the realtime connection does not establish). Indexed queries only
@@ -115,6 +122,10 @@ const LIST_PAGES = {
 exports.managerList = endpoint(['manager'], async ({ member, data }) => {
   const cid = member.companyId;
   if (data.kind === 'settings') return { settings: (await read(`companies/${cid}/settings`)) || {} };
+  // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
+  if (data.kind === 'status') return { value: (await read(`companies/${cid}/info/status`)) ?? null };
+  if (data.kind === 'payroll') return { value: (await read(`privatePayroll/${cid}/${p.key(data.employeeId)}`)) ?? null };
+  if (data.kind === 'badges') return badgesOf(cid);
   const spec = Object.hasOwn(LIST_PAGES, data.kind) ? LIST_PAGES[data.kind] : p.fail('قائمة غير معروفة', 'invalid-argument');
   const cursor = data.cursor == null ? null : p.key(data.cursor);
   let query = db.ref(`companies/${cid}/${spec.path}`).orderByKey();
@@ -159,6 +170,130 @@ exports.managerBranch = endpoint(['manager'], async ({ uid, member, data }) => {
   } else p.fail('عملية غير معروفة', 'invalid-argument');
   await audit(uid, `branch.${data.action}`, `${cid}/${id}`);
   return { id };
+});
+// ---- v5.11: the remaining page reads/writes through the server (the realtime channel stalls on the owner's network,
+// and long polling is CSP-blocked). Same checks as every callable; company and employee come from the access record.
+const isoDate = value => (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value ? value : p.fail('تاريخ غير صالح', 'invalid-argument'));
+const ordered = async query => { const order = [], items = {}; (await query.get()).forEach(child => { order.push(child.key); items[child.key] = child.val(); }); return { order, items }; };
+// Read-receipt updates: only "<key>/read": true for existing items (removing a key only when it is not an object).
+async function markRead(base, updates, { allowCleanup = false } = {}) {
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates) || Object.keys(updates).length > 500) p.fail('تحديث غير صالح', 'invalid-argument');
+  const current = (await base.get()).val() || {}, out = {};
+  for (const [path, value] of Object.entries(updates)) {
+    const [key, field, extra] = path.split('/');
+    p.key(key);
+    if (field === 'read' && extra === undefined && value === true) { if (current[key] && typeof current[key] === 'object') out[`${key}/read`] = true; }
+    else if (allowCleanup && field === undefined && value === null) { if (Object.hasOwn(current, key) && (!current[key] || typeof current[key] !== 'object')) out[key] = null; }
+    else p.fail('تحديث غير صالح', 'invalid-argument');
+  }
+  if (Object.keys(out).length) await base.update(out);
+  return { updated: Object.keys(out).length };
+}
+exports.employeeList = endpoint(['employee'], async ({ member, info, employee, data }) => {
+  const cid = member.companyId, eid = member.employeeId, own = collection => db.ref(`companies/${cid}/${collection}`).orderByChild('empId').equalTo(eid).limitToLast(200);
+  switch (data.kind) {
+    case 'today': return { value: (await read(`companies/${cid}/today/${eid}`)) ?? null };
+    case 'partialLeave': return { value: (await read(`companies/${cid}/todayPartialLeave/${eid}`)) ?? null };
+    case 'partialRecords': return { value: (await read(`companies/${cid}/partialLeaveRecords/${eid}/${isoDate(data.date)}`)) ?? null };
+    case 'missions': case 'leaves': case 'excuses': return ordered(own(data.kind));
+    case 'history': return ordered(own('records'));
+    case 'notifications': return ordered(db.ref(`companies/${cid}/notifications/${eid}`).orderByKey().limitToLast(100));
+    case 'notificationsUpdate': return markRead(db.ref(`companies/${cid}/notifications/${eid}`), data.updates, { allowCleanup: true });
+    case 'status': return { value: info?.status ?? null };
+    case 'selfStatus': return { value: employee?.status ?? null };
+    default: p.fail('قائمة غير معروفة', 'invalid-argument');
+  }
+});
+// Manager settings, holidays, company zones, employee schedules, missions and activity notifications.
+const zone = z => {
+  if (!z || typeof z !== 'object') p.fail('موقع غير صالح', 'invalid-argument');
+  const { lat, lng, radius } = z;
+  if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180 || !Number.isFinite(radius) || radius < 1 || radius > 100000) p.fail('موقع غير صالح', 'invalid-argument');
+  return { lat, lng, radius: Math.round(radius), name: z.name == null || z.name === '' ? '' : p.text(z.name, 'اسم النطاق', 80) };
+};
+const windowOf = w => ({ from: hhmm(w?.from), to: hhmm(w?.to) });
+async function approvedEmployee(cid, eid) {
+  const employee = await read(`companies/${cid}/employees/${p.key(eid)}`);
+  if (!employee || employee.status !== 'approved') p.fail('الموظف غير موجود', 'not-found');
+  return employee;
+}
+function missionFields(input, { partial }) {
+  if (!input || typeof input !== 'object') p.fail('مهمة غير صالحة', 'invalid-argument');
+  const out = {};
+  if (!partial || input.location !== undefined) out.location = p.text(input.location, 'موقع المهمة', 200);
+  if (input.description !== undefined && input.description !== '') out.description = p.text(input.description, 'وصف المهمة', 1000);
+  else if (input.description === '') out.description = '';
+  if (!partial || input.date !== undefined) out.date = isoDate(input.date);
+  if (input.expectedTime !== undefined && input.expectedTime !== '') out.expectedTime = hhmm(input.expectedTime);
+  else if (input.expectedTime === '') out.expectedTime = '';
+  return out;
+}
+exports.managerSettings = endpoint(['manager'], async ({ uid, member, data }) => {
+  const cid = member.companyId, settings = db.ref(`companies/${cid}/settings`);
+  let target = cid;
+  switch (data.action) {
+    case 'timeWindows': await settings.update({ checkIn: windowOf(data.checkIn), checkOut: windowOf(data.checkOut) }); break;
+    case 'holidayAdd': { const ref = settings.child('holidays').push(); await ref.set({ date: isoDate(data.date), name: p.text(data.name, 'اسم العطلة', 80), active: true }); target = ref.key; break; }
+    case 'holidayRemove': target = p.key(data.id); await settings.child(`holidays/${target}`).remove(); break;
+    case 'geoZone': {
+      const g = data.geoZone;
+      if (!g || typeof g.enabled !== 'boolean' || !Array.isArray(g.zones) || g.zones.length > 20) p.fail('موقع غير صالح', 'invalid-argument');
+      await settings.child('geoZone').set({ enabled: g.enabled, zones: g.zones.map(zone) }); break;
+    }
+    case 'employeeSchedule': {
+      target = p.key(data.employeeId);
+      if (!(await read(`companies/${cid}/employees/${target}/name`))) p.fail('الموظف غير موجود', 'not-found');
+      const ref = db.ref(`companies/${cid}/employees/${target}/schedule`);
+      if (data.schedule == null) await ref.remove(); else await ref.set({ checkIn: windowOf(data.schedule.checkIn), checkOut: windowOf(data.schedule.checkOut) });
+      break;
+    }
+    case 'adminNotificationsRead': return markRead(db.ref(`companies/${cid}/notifications/admin`), data.updates);
+    case 'adminNotificationsClear': await db.ref(`companies/${cid}/notifications/admin`).remove(); break;
+    case 'missionAdd': {
+      const mission = missionFields(data.mission, { partial: false }), employee = await approvedEmployee(cid, data.mission?.empId);
+      const ref = db.ref(`companies/${cid}/missions`).push();
+      await ref.set({ empId: data.mission.empId, empName: employee.name || '', ...mission, status: 'assigned', assignedAt: new Date().toISOString() });
+      target = ref.key; break;
+    }
+    case 'missionUpdate': {
+      target = p.key(data.id);
+      const ref = db.ref(`companies/${cid}/missions/${target}`), current = (await ref.get()).val();
+      if (!current) p.fail('المهمة غير موجودة', 'not-found');
+      const input = data.mission || {};
+      if (input.status !== undefined) {
+        if (input.status !== 'completed' || Object.keys(input).some(k => !['status', 'completedAt'].includes(k))) p.fail('مهمة غير صالحة', 'invalid-argument');
+        await ref.update({ status: 'completed', completedAt: new Date().toISOString() }); break;
+      }
+      const update = missionFields(input, { partial: true });
+      if (input.empId !== undefined && input.empId !== current.empId) { update.empId = input.empId; update.empName = (await approvedEmployee(cid, input.empId)).name || ''; }
+      else if (input.empName !== undefined) update.empName = current.empName || '';
+      if (Object.keys(input).some(k => !['location', 'description', 'date', 'expectedTime', 'empId', 'empName'].includes(k))) p.fail('مهمة غير صالحة', 'invalid-argument');
+      await ref.update(update); break;
+    }
+    case 'missionRemove': target = p.key(data.id); await db.ref(`companies/${cid}/missions/${target}`).remove(); break;
+    default: p.fail('عملية غير معروفة', 'invalid-argument');
+  }
+  await audit(uid, `settings.${data.action}`, `${cid}/${target}`);
+  return { ok: true, id: target };
+});
+// Seller revenue and notifications (seller only).
+exports.sellerData = endpoint(['seller'], async ({ uid, data }) => {
+  switch (data.kind) {
+    case 'transactions': return ordered(db.ref('seller/transactions').orderByKey().limitToLast(20000));
+    case 'notifications': return ordered(db.ref('seller/notifications').orderByKey().limitToLast(500));
+    case 'notificationsUpdate': return markRead(db.ref('seller/notifications'), data.updates);
+    case 'addTransaction': {
+      const t = data.transaction || {}, companyId = p.key(t.companyId);
+      if (!Number.isFinite(t.amount) || t.amount <= 0 || t.amount > 1e9) p.fail('مبلغ غير صالح', 'invalid-argument');
+      const info = await read(`companies/${companyId}/info`);
+      if (!info) p.fail('الشركة غير موجودة', 'not-found');
+      const dateStr = isoDate(t.dateStr), ref = db.ref('seller/transactions').push();
+      await ref.set({ companyId, companyName: info.nameAr || '', plan: info.plan || 'starter', amount: t.amount, dateStr, date: Date.parse(`${dateStr}T00:00:00Z`), note: t.note ? p.text(t.note, 'ملاحظة', 500) : '', createdAt: Date.now() });
+      await audit(uid, 'seller.transaction', ref.key);
+      return { id: ref.key };
+    }
+    default: p.fail('عملية غير معروفة', 'invalid-argument');
+  }
 });
 exports.listCompanies = endpoint(['seller'], async ({ data }) => {
   let query = db.ref('companyDirectory').orderByKey().limitToFirst(100);

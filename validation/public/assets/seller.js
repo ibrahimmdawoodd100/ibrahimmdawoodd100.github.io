@@ -1,6 +1,6 @@
 'use strict';
 async function secureSellerOpen(profile) {
-  DB = guardDb(Basma.db());
+  DB = guardDb(Basma.serverDb(() => Basma.db(), sellerRoute));
   for (const id of ['setup-screen', 'pin-screen']) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
   Basma.controls(); initEmojiGrid();
   document.getElementById('trans-date').value = new Date().toISOString().slice(0, 10);
@@ -117,7 +117,15 @@ openPanel=async function(cid){
 // App Check or browser can never leave the page waiting silently.
 window.BASMA_SELLER_BUILD = 'v5.2.1-seller-r3';
 function sellerTimeoutMs() { return Number(window.BASMA_SELLER_TIMEOUT_MS) || 25000; }
-function sellerDbTimeoutMs() { return Number(window.BASMA_SELLER_DB_TIMEOUT_MS) || 15000; }
+function sellerDbTimeoutMs() { return Number(window.BASMA_SELLER_DB_TIMEOUT_MS) || 20000; }
+// v5.11: revenue and notifications through the sellerData server call (no realtime connection needed).
+function sellerRoute(path, op, { value }) {
+  const call = data => ({ name: 'sellerData', data });
+  if (op === 'read' && (path === 'seller/transactions' || path === 'seller/notifications')) return call({ kind: path.split('/')[1] });
+  if (op === 'push' && path === 'seller/transactions') return call({ kind: 'addTransaction', transaction: value });
+  if (op === 'update' && path === 'seller/notifications') return call({ kind: 'notificationsUpdate', updates: value });
+  return null;
+}
 function withTimeout(promise, ms, label) {
   let timer;
   const limit = new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'basma/timeout', label, seconds: Math.round(ms / 1000) })), ms); });

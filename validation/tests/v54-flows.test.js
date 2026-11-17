@@ -107,7 +107,7 @@ function employeeHarness({ biometric, homes } = {}) {
   const ref = () => ({ on: (ev, fn) => { log.listeners++; return fn; }, off: () => { log.offs++; } });
   const ctx = {
     window: w, document: dom.document, console,
-    Basma: { db: () => ({ ref }), call: async name => { if (name === 'employeeHome') { log.homeCalls++; return homes ? homes.shift() : { employee: { status: 'pending_activation', name: 'م' } }; } }, controls() {}, logout() {}, banner() {}, profile: { companyId: 'c1', employeeId: 'e1' },
+    Basma: { db: () => ({ ref }), serverDb: getReal => ({ ...getReal(), prime() {} }), call: async name => { if (name === 'employeeHome') { log.homeCalls++; return homes ? homes.shift() : { employee: { status: 'pending_activation', name: 'م' } }; } }, controls() {}, logout() {}, banner() {}, profile: { companyId: 'c1', employeeId: 'e1' },
       biometric: async (...a) => { log.biometricCalls++; return biometric(...a); } },
     COMPANY_ID: null, DB: null, ACTIVATION_UID: null, CRED_ID: null,
     secureAttendanceWindows: { seed() {}, sync: async () => {}, evaluate() {} }, showScreen: s => log.screens.push(s), setupMainScreen: async () => log.screens.push('main'),

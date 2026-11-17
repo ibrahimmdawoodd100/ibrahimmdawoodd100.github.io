@@ -1,6 +1,6 @@
 'use strict';
 // Real public/assets/core.js and manager-views.js against small fakes (no browser):
-// the database watchdog switches to long polling, and the dashboard never spins forever.
+// the database watchdog never forces long polling (CSP-blocked), and the dashboard never spins forever.
 const test = require('node:test'), assert = require('node:assert/strict'), vm = require('node:vm'), fs = require('node:fs');
 const read = f => fs.readFileSync(require.resolve('../public/assets/' + f), 'utf8');
 const plain = v => JSON.parse(JSON.stringify(v));
@@ -27,18 +27,17 @@ function coreHarness({ connects = 'never' } = {}) {
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
-test('database watchdog: a stalled WebSocket switches this tab to long polling and reconnects', async () => {
-  const h = coreHarness({ connects: 'polling' });
+// v5.11: long polling is blocked by the site CSP (it loads scripts from the database host), so it is never forced.
+test('database watchdog: a stalled WebSocket gets ONE fresh WebSocket attempt, never long polling', async () => {
+  const h = coreHarness({ connects: 'polling' }); // this fake connects on goOnline (the fresh attempt)
   await h.ctx.Basma.session('manager'); h.ctx.Basma.db(); await tick();
   const watchdog = h.timers.find(t => t.ms === 5000); assert.ok(watchdog, '5 s watchdog armed');
-  assert.equal(h.log.polling, 0, 'WebSocket is tried first');
   watchdog.fn(); await tick();
-  assert.deepEqual(plain(h.log), { polling: 1, offline: 1, online: 1 });
-  assert.equal(h.session.basma_db_long_polling, '1', 'remembered for this tab');
-  assert.equal(h.ctx.Basma.connection.state, 'connected'); assert.equal(h.ctx.Basma.connection.transport, 'long-polling');
+  assert.deepEqual(plain(h.log), { polling: 0, offline: 1, online: 1 }, 'reconnect without forceLongPolling');
+  assert.equal(h.session.basma_db_long_polling, undefined, 'nothing remembered for the tab');
+  assert.equal(h.ctx.Basma.connection.transport, 'websocket');
   const steps = JSON.parse(h.store.basma_diag_trace).map(t => [t.step, t.ok, t.code]);
   assert.ok(steps.some(([s, ok, c]) => /websocket/.test(s) && !ok && c === 'db/connect-timeout'));
-  assert.ok(steps.some(([s, ok]) => /long-polling/.test(s) && ok));
   assert.ok(steps.some(([s, ok]) => s === 'الدالة managerHome (فتح الصفحة)' && ok));
 });
 test('database watchdog: a working WebSocket is left alone', async () => {
@@ -48,10 +47,10 @@ test('database watchdog: a working WebSocket is left alone', async () => {
   assert.deepEqual(plain(h.log), { polling: 0, offline: 0, online: 0 });
   assert.equal(h.ctx.Basma.connection.transport, 'websocket');
 });
-test('database watchdog: a tab that needed long polling starts with it next time', async () => {
+test('database watchdog: the long-polling flag saved by v5.7–v5.10 is cleared and NOT applied', async () => {
   const h = coreHarness({ connects: 'websocket' }); h.session.basma_db_long_polling = '1';
   await h.ctx.Basma.session('manager'); h.ctx.Basma.db(); await tick();
-  assert.equal(h.log.polling, 1); assert.equal(h.ctx.Basma.connection.transport, 'long-polling');
+  assert.equal(h.log.polling, 0); assert.equal(h.session.basma_db_long_polling, undefined); assert.equal(h.ctx.Basma.connection.transport, 'websocket');
 });
 test('Basma.timeout rejects with basma/timeout and a plain Arabic message', async () => {
   const h = coreHarness();

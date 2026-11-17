@@ -1,7 +1,33 @@
 'use strict';
+// v5.11: the remaining manager reads (status, payroll, badge counts) and writes (settings, holidays, zones, schedules,
+// missions, activity notifications) go through managerList / managerSettings instead of the realtime connection.
+function managerRoute(path, op, { query, value }) {
+  const base = `companies/${COMPANY_ID}`, list = data => ({ name: 'managerList', data }), set = data => ({ name: 'managerSettings', data });
+  if (op === 'read') {
+    const badges = pick => ({ ...list({ kind: 'badges' }), pick });
+    if (path === `${base}/info/status`) return badges(b => ({ value: b.status ?? null }));
+    const pay = path.match(new RegExp(`^privatePayroll/${COMPANY_ID}/([A-Za-z0-9_-]+)$`)); if (pay) return list({ kind: 'payroll', employeeId: pay[1] });
+    const counted = path.match(new RegExp(`^${base}/(leaves|excuses|missions|notifications/admin)$`));
+    const field = { 'leaves|pending': 'leaves', 'excuses|pending': 'excuses', 'missions|assigned': 'assigned', 'missions|started': 'started', 'notifications/admin|false': 'unread' }[`${counted?.[1]}|${query.equalTo}`];
+    if (counted && field && ['status', 'read'].includes(query.orderByChild) && Object.keys(query).length === 2) return badges(b => { const order = b[field] || []; return { order, items: Object.fromEntries(order.map(k => [k, true])) }; });
+    return null;
+  }
+  if (path === `${base}/settings` && op === 'update' && value && Object.keys(value).every(k => ['checkIn', 'checkOut'].includes(k))) return set({ action: 'timeWindows', checkIn: value.checkIn, checkOut: value.checkOut });
+  if (path === `${base}/settings/holidays` && op === 'push') return set({ action: 'holidayAdd', date: value?.date, name: value?.name });
+  const holiday = path.match(new RegExp(`^${base}/settings/holidays/([A-Za-z0-9_-]+)$`)); if (holiday && op === 'remove') return set({ action: 'holidayRemove', id: holiday[1] });
+  if (path === `${base}/settings/geoZone` && op === 'set') return set({ action: 'geoZone', geoZone: value });
+  const schedule = path.match(new RegExp(`^${base}/employees/([A-Za-z0-9_-]+)/schedule$`));
+  if (schedule && (op === 'set' || op === 'remove')) return set({ action: 'employeeSchedule', employeeId: schedule[1], schedule: op === 'set' ? value : null });
+  if (path === `${base}/notifications/admin`) { if (op === 'update') return set({ action: 'adminNotificationsRead', updates: value }); if (op === 'remove') return set({ action: 'adminNotificationsClear' }); }
+  if (path === `${base}/missions` && op === 'push') return set({ action: 'missionAdd', mission: value });
+  const mission = path.match(new RegExp(`^${base}/missions/([A-Za-z0-9_-]+)$`));
+  if (mission && op === 'update') return set({ action: 'missionUpdate', id: mission[1], mission: value });
+  if (mission && op === 'remove') return set({ action: 'missionRemove', id: mission[1] });
+  return null;
+}
 async function secureManagerOpen(profile) {
   clearManagerData();
-  COMPANY_ID = profile.companyId; DB = Basma.limitWrites(Basma.db());
+  COMPANY_ID = profile.companyId; DB = Basma.limitWrites(Basma.serverDb(() => Basma.db(), managerRoute));
   // No direct database read before the page opens: name and time zone come from the profile call;
   // the rest (logo, settings, staff, today's attendance) from the managerHome call in loadDashboard.
   COMPANY_INFO = { nameAr: profile.name || '', timeZone: profile.timeZone || 'UTC' };

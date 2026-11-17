@@ -120,3 +120,27 @@ loadMonthlyDelay=async function(){
 };
 const secureNotificationPage=loadNotifPage;
 loadNotifPage=function(){loadNotifBadge();return secureNotificationPage();};
+// v5.11: notifications page from the employeeList server call (newest 100), 20 s limit, Arabic error + retry,
+// empty text; shown unread items are marked read through the server. Text only (no HTML from data).
+let notifTicket=0;
+loadNotifPage=async function(){
+  const container=document.getElementById('main-tab-notifs');if(!container)return;
+  const ticket=++notifTicket,header=document.createElement('div');header.className='page-header';header.appendChild(Object.assign(document.createElement('h2'),{textContent:'🔔 الإشعارات'}));
+  const list=document.createElement('div');list.className='notif-list';list.id='notif-list';list.style.paddingBottom='90px';container.replaceChildren(header,list);
+  list.replaceChildren(Basma.stateBox('loading',{text:'جاري تحميل الإشعارات...'}));
+  try{loadNotifBadge();}catch{}
+  let result;
+  try{result=await Basma.timeout(Basma.call('employeeList',{kind:'notifications'}),Number(window.BASMA_LIST_TIMEOUT_MS)||20000,'employeeList');}
+  catch(error){if(ticket!==notifTicket)return;list.replaceChildren(Basma.stateBox('error',{text:'تعذر تحميل الإشعارات. '+(window.BasmaErrors?.message(error,'')||error?.message||''),error,retry:()=>loadNotifPage()}));return;}
+  if(ticket!==notifTicket)return;
+  const items=(result.order||[]).slice().reverse().map(key=>({key,...result.items?.[key]})).filter(n=>n&&typeof n==='object'&&n.message!==undefined);
+  if(!items.length){list.replaceChildren(Basma.stateBox('empty',{text:'🔕 لا توجد إشعارات'}));return;}
+  const icon={approved:'✅',rejected:'❌',excuse_res:'📝',leave_res:'🌴',private_msg:'💬',broadcast:'🔔',loc_rejected:'📍',checkin:'⏰',checkout:'🚪',mission_assigned:'📋',mission:'📋'};
+  list.replaceChildren(...items.map(n=>{
+    const item=document.createElement('div');item.className='notif-item'+(n.read?'':' unread')+(n.type==='private_msg'?' private':'');
+    const head=document.createElement('div');head.className='notif-head';
+    head.append(Object.assign(document.createElement('span'),{className:'notif-icon-type',textContent:`${icon[n.type]||'🔔'}${n.type==='private_msg'?' رسالة خاصة':''}`}),Object.assign(document.createElement('span'),{className:'notif-date',textContent:n.timestamp?new Date(n.timestamp).toLocaleString('ar'):''}));
+    item.append(head,Object.assign(document.createElement('div'),{className:'notif-msg',textContent:String(n.message||'')}));return item;}));
+  const updates={};for(const n of items)if(!n.read)updates[`${n.key}/read`]=true;
+  if(Object.keys(updates).length)DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).update(updates).catch(()=>{});
+};

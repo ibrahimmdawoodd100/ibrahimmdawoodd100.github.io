@@ -1,13 +1,14 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path');
 const {measure}=require('../scripts/measure-flows');
-test('employee startup uses own home projection and two narrow live listeners, with no archive queries',async()=>{
+test('employee startup uses own home projection, no direct database reads or listeners, no archive queries',async()=>{
  const x=await measure(path.join(__dirname,'..'),'employee');
  // ONE call opens the page (employeeHome carries the profile); the check-in functions are warmed in the background.
  assert.deepEqual(x.opening.callables.map(c=>c.name),['employeeHome','beginWebAuthn','finishWebAuthn','recordAttendance']);
  assert.equal(x.opening.freshLimitedUseRequests,0);
- // '.info/connected' is the SDK's local connection flag (connection watchdog), not a database read.
- assert.deepEqual(x.opening.reads.filter(r=>!r.path.startsWith('.info/')).map(r=>r.path).sort(),['companies/c1/info/status','companies/c1/today/e0']);
+ // v5.11: NO direct database read or listener at all (today + company status start from employeeHome; the realtime
+ // connection is not even opened, so a stalled WebSocket cannot slow the page).
+ assert.deepEqual(x.opening.reads,[]);assert.deepEqual(x.action.reads,[]);
  assert.deepEqual(x.opening.errors,[]);
  assert.deepEqual(x.action.callables.map(c=>c.name),['beginWebAuthn','finishWebAuthn','recordAttendance','employeeHome']);
  assert.equal(x.action.freshLimitedUseRequests,0);assert.deepEqual(x.action.errors,[]);
@@ -22,6 +23,8 @@ test('manager opening bounds request reads and reuses metadata for attendance',a
  for(const r of x.opening.reads.filter(r=>/\/(leaves|excuses)$/.test(r.path)))assert.ok(r.order==='date'||r.order==='status');
  assert.equal(x.action.reads.some(r=>/\/(employees|settings|warehouses)$/.test(r.path)),false);
  assert.equal(x.action.reads.some(r=>/\/(records|leaves|excuses)$/.test(r.path)&&r.kind==='once'),false);
+ // v5.11: badges and company status come inside managerHome: no direct database read or listener on open.
+ assert.deepEqual(x.opening.reads,[]);assert.deepEqual(x.action.reads,[]);
  assert.deepEqual(x.opening.errors,[]);assert.deepEqual(x.action.errors,[]);
 });
 test('adding resolved history outside October does not increase opening or monthly request payload',async()=>{
