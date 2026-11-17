@@ -197,7 +197,17 @@ exports.employeeList = endpoint(['employee'], async ({ member, info, employee, d
     case 'partialLeave': return { value: (await read(`companies/${cid}/todayPartialLeave/${eid}`)) ?? null };
     case 'partialRecords': return { value: (await read(`companies/${cid}/partialLeaveRecords/${eid}/${isoDate(data.date)}`)) ?? null };
     case 'missions': case 'leaves': case 'excuses': return ordered(own(data.kind));
-    case 'history': return ordered(own('records'));
+    case 'history': {
+      // Plus today's ledger events not projected yet (the trigger writes records a moment after check-in; opening
+      // «سجلاتي» right after checking out showed nothing — E2E v5.13). Same record ids as projectAttendance: no duplicates.
+      const list = await ordered(own('records')), date = p.dateParts(new Date(), info.timeZone).date;
+      const ledger = await read(`attendanceLedger/${cid}/${eid}/${date}`);
+      for (const [id, value] of Object.entries(ledger?.events || {})) {
+        const key = `${date}_${eid}_${id}`;
+        if (value && typeof value === 'object' && !Object.hasOwn(list.items, key)) { list.items[key] = value; list.order.push(key); }
+      }
+      return list;
+    }
     case 'notifications': return ordered(db.ref(`companies/${cid}/notifications/${eid}`).orderByKey().limitToLast(100));
     case 'notificationsUpdate': return markRead(db.ref(`companies/${cid}/notifications/${eid}`), data.updates, { allowCleanup: true });
     case 'status': return { value: info?.status ?? null };

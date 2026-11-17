@@ -109,6 +109,10 @@ const scenarios = {
     assert.deepEqual(first.today, await get(`companies/${cid}/today/e1`), 'same values as the projection');
     await proof('out1');
     const second = JSON.parse(JSON.stringify(await loadServer(file).invoke('recordAttendance', uid, { type: 'out', proof: 'out1', location: { lat: 0, lng: 0 } })));
+    // «سجلاتي» before the projection trigger ran: today's events already appear, once each.
+    const history = JSON.parse(JSON.stringify(await loadServer(file).invoke('employeeList', uid, { kind: 'history' })));
+    const types = history.order.map(k => history.items[k].type).sort();
+    assert.deepEqual(types, ['in', 'out'], 'check-in (projected) and check-out (not yet projected), no duplicates');
     assert.equal(second.today.checkOut, second.timestamp); assert.equal(second.today.checkIn, first.timestamp); assert.equal(second.today.ledgerRevision, 2);
     await loadServer(file).exports.projectAttendance({ params: { cid, eid: 'e1', date: second.date } });
     assert.deepEqual(second.today, await get(`companies/${cid}/today/e1`));
