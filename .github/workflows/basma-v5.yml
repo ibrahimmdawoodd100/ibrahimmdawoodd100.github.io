@@ -59,7 +59,7 @@ jobs:
   # Browser E2E (Playwright + Chromium) on LOCAL Firebase emulators: real pages from site/, real server code, real
   # rules, App Check enforced with a local test token. No production accounts, data or secrets. Blocks the deploy.
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright 1.52 has no Chromium build for ubuntu-latest (26.04)
     timeout-minutes: 25
     defaults:
       run:
@@ -136,7 +136,7 @@ jobs:
   # After publishing: read-only checks of the LIVE site (no login, nothing written). A failure shows as a red run.
   live-check:
     needs: deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright 1.52 has no Chromium build for ubuntu-latest (26.04)
     timeout-minutes: 15
     defaults:
       run:
