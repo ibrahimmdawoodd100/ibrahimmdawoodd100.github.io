@@ -134,8 +134,9 @@ test.describe('full flow on local emulators', () => {
       const g = await guarded(browser), page = await g.context.newPage();
       await g.open(page, '/seller.html', '#seller-email', 'seller login'); await page.fill('#seller-email', accounts.seller); await page.fill('#seller-password', password);
       const t = Date.now(); await page.click('#seller-login');
-      await expect(page.locator('#companies-list')).toContainText(companyName, { timeout: 20000 }); timing('seller: login → company list (cold)', Date.now() - t, BUDGET.cold);
-      await show(page, 'showPage', 'companies'); await shot(page, 'seller-companies'); await g.verify(page, 'seller'); await g.context.close();
+      // The dashboard counts the companies; the list itself is drawn when the companies page opens (as a user does).
+      await expect(page.locator('#ds-active')).toHaveText('1', { timeout: 20000 }); timing('seller: login → dashboard (cold)', Date.now() - t, BUDGET.cold);
+      await show(page, 'showPage', 'companies'); await expect(page.locator('#companies-list')).toContainText(companyName, { timeout: 15000 }); await shot(page, 'seller-companies'); await g.verify(page, 'seller'); await g.context.close();
     }, { timeout: 60000 });
 
     const gm = await guarded(browser), manager = await gm.context.newPage();
