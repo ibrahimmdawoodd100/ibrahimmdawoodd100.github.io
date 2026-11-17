@@ -16,6 +16,14 @@ window.Basma = (() => {
       if (!config || JSON.stringify(config).includes('REPLACE_ME')) throw new Error('يلزم إكمال إعدادات النشر في ملف config.js');
       const appName = `secure-${selectedRole}`;
       app = firebase.apps.find(x => x.name === appName) || firebase.initializeApp(config.firebase, appName);
+      // E2E only: the local test server's config.js adds {emulators:{host,auth,database,functions}}. The published
+      // config.js never has it, and it is ignored unless the page itself is served from localhost/127.0.0.1.
+      const emu = config.emulators;
+      if (emu && typeof emu === 'object' && /^(localhost|127\.0\.0\.1)$/.test(window.location?.hostname || '')) {
+        app.auth().useEmulator(`http://${emu.host}:${emu.auth}`, { disableWarnings: true });
+        app.database().useEmulator(emu.host, emu.database);
+        app.functions(config.region).useEmulator(emu.host, emu.functions);
+      }
       app.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(config.appCheckSiteKey), true);
       // LOCAL for every role (owner's choice): the session survives closing and reopening the app. Explicit «خروج»
       // still signs out; sensitive actions stay protected server-side (changePassword needs a sign-in < 5 min old).

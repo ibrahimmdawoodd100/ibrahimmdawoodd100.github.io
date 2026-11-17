@@ -117,23 +117,17 @@ window.Basma = (() => {
     return Promise.race([Promise.resolve(promise), limit]).finally(() => clearTimeout(timer));
   }
   // ---- Database connection watchdog ----
-  // The SDK uses WebSocket ONLY when the browser supports it and it has not failed before. On some networks and
-  // browsers the WebSocket stalls without failing, so the connection never establishes and every read waits forever.
-  // If '.info/connected' is not true within CONNECT_MS, switch this tab to long polling (forceLongPolling, then a
-  // fresh connection via goOffline/goOnline creates a new transport choice) and remember it for this tab.
+  // Long polling is NOT used: the SDK's long-polling transport loads <script> tags and an iframe from
+  // *.firebaseio.com, which this site's CSP (script-src/frame-src) blocks on purpose. Forcing it (v5.7–v5.10) turned
+  // a slow first WebSocket into a tab that could never reach the database. Now: if '.info/connected' is not true
+  // within CONNECT_MS, try ONE fresh WebSocket (goOffline/goOnline). Page data comes from server calls anyway.
   const CONNECT_MS = 5000, POLL_KEY = 'basma_db_long_polling';
   const connection = { state: 'idle', transport: 'websocket', since: 0 };
   let watched = false;
-  function forcePolling(database) {
-    const internal = database?.INTERNAL || window.firebase?.database?.INTERNAL;
-    if (typeof internal?.forceLongPolling !== 'function') return false;
-    internal.forceLongPolling(); connection.transport = 'long-polling'; return true;
-  }
   function watchConnection(database) {
     if (watched) return; watched = true;
     const t0 = clock(); connection.state = 'connecting'; connection.since = Date.now();
-    let remembered = false; try { remembered = sessionStorage.getItem(POLL_KEY) === '1'; } catch {}
-    if (remembered) forcePolling(database);
+    try { sessionStorage.removeItem(POLL_KEY); } catch {}
     let done = false;
     const ref = database.ref('.info/connected');
     const handler = ref.on('value', snap => {
@@ -143,10 +137,9 @@ window.Basma = (() => {
     setTimeout(() => {
       if (done) return;
       trace('اتصال قاعدة البيانات (websocket) لم يكتمل', t0, false, 'db/connect-timeout');
-      if (connection.transport === 'long-polling' || !forcePolling(database)) { connection.state = 'stalled'; return; }
-      try { sessionStorage.setItem(POLL_KEY, '1'); } catch {}
-      const t1 = clock(); database.goOffline(); database.goOnline();
-      const stop = ref.on('value', snap => { if (snap.val() === true) { ref.off('value', stop); connection.state = 'connected'; trace('اتصال قاعدة البيانات (long-polling)', t1, true); } });
+      connection.state = 'reconnecting';
+      try { database.goOffline(); database.goOnline(); } catch {}
+      setTimeout(() => { if (!done) { connection.state = 'stalled'; trace('اتصال قاعدة البيانات (websocket، محاولة ثانية) لم يكتمل', t0, false, 'db/connect-timeout'); } }, CONNECT_MS);
     }, CONNECT_MS);
     void handler;
   }
@@ -339,5 +332,64 @@ window.Basma = (() => {
       return typeof value === 'function' ? value.bind(target) : value;
     } });
   }
-  return { stateBox, limitWrites, sweepSpinners, init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get signedIn() { return !!app?.auth().currentUser; }, reopenError, get persistenceMode() { return persistenceMode; } };
+  // ---- Server-routed database (v5.11) ----
+  // Pages keep their database-style code (ref().once/on/update/push/remove), but each ROUTED path is answered by a
+  // server call (HTTPS + App Check, 20 s limit) instead of the realtime connection, which stalls on some networks.
+  // route(path, op, {query, value}) returns {name, data} or null; null = the real database (traced as unrouted).
+  function snapshotOf(value, key = null) {
+    const list = value && Array.isArray(value.__order) ? value.__order : null;
+    const plainValue = list ? (list.length ? Object.fromEntries(list) : null) : (value === undefined ? null : value);
+    const entries = () => list || (plainValue && typeof plainValue === 'object' ? Object.entries(plainValue) : []);
+    return { key, val: () => plainValue, exists: () => plainValue !== null, numChildren: () => entries().length,
+      forEach(fn) { for (const [k, v] of entries()) if (fn(snapshotOf(v, k)) === true) return true; return false; },
+      child(part) { return snapshotOf(plainValue && typeof plainValue === 'object' ? plainValue[part] ?? null : null, part); } };
+  }
+  const resultValue = result => (result && Array.isArray(result.order) ? { __order: result.order.filter(k => result.items && Object.hasOwn(result.items, k)).map(k => [k, result.items[k]]) } : result?.value ?? null);
+  function serverDb(getReal, route, { ttl = 10000, pollMs = 120000, limitMs = () => Number(window.BASMA_LIST_TIMEOUT_MS) || 20000 } = {}) {
+    let real = null; const realDb = () => (real ||= getReal());
+    const cache = new Map(), listeners = new Set();
+    const fetchRoute = (plan, { fresh = false } = {}) => {
+      const key = plan.name + JSON.stringify(plan.data), hit = cache.get(key), now = Date.now();
+      if (!fresh && hit && now - hit.at < ttl) return hit.promise;
+      const t0 = clock(), promise = timeout(call(plan.name, plan.data), limitMs(), plan.name)
+        .then(value => { trace(`الدالة ${plan.name} ${plan.data.kind || plan.data.action || ''}`, t0, true); return value; },
+          error => { cache.delete(key); trace(`الدالة ${plan.name} ${plan.data.kind || plan.data.action || ''}`, t0, false, error?.code || 'error'); throw error; });
+      cache.set(key, { at: now, promise }); return promise;
+    };
+    const poll = () => { for (const l of listeners) l.poll(); };
+    window.addEventListener?.('focus', poll); window.addEventListener?.('basma-attendance-settled', () => { cache.clear(); });
+    window.addEventListener?.('basma-manager-mutated', () => { cache.clear(); });
+    document.addEventListener?.('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
+    if (typeof setInterval === 'function' && pollMs) setInterval(() => { if (document.visibilityState !== 'hidden' && listeners.size) { cache.clear(); poll(); } }, pollMs);
+    const QUERY = ['orderByChild', 'orderByKey', 'orderByValue', 'equalTo', 'startAt', 'startAfter', 'endAt', 'endBefore', 'limitToFirst', 'limitToLast'];
+    function makeRef(path, calls = []) {
+      const query = Object.fromEntries(calls.map(([m, a]) => [m, a.length > 1 ? a : a[0]]));
+      const plan = (op, value) => route(path, op, { query, value });
+      const realRef = () => { trace(`قراءة/كتابة مباشرة غير محوّلة: ${path.replace(/\/[A-Za-z0-9_-]{12,}/g, '/…')}`, clock(), true, 'unrouted'); let r = realDb().ref(path); for (const [m, a] of calls) r = r[m](...a); return r; };
+      const ref = { key: path.split('/').pop() || null, get ref() { return ref; },
+        child: part => makeRef(`${path}/${part}`), toString: () => path };
+      for (const m of QUERY) ref[m] = (...a) => makeRef(path, [...calls, [m, a]]);
+      const pickOf = (p, r) => resultValue(p.pick ? p.pick(r || {}) : r);
+      const read = () => { const p = plan('read'); return p ? fetchRoute(p).then(r => snapshotOf(pickOf(p, r))) : null; };
+      ref.once = (type = 'value', cb) => { const r = read(); if (!r) return realRef().once(type, cb); return r.then(snap => { cb?.(snap); return snap; }); };
+      ref.get = () => read() || realRef().get();
+      ref.on = (type, cb, errorCb) => {
+        const p = plan('read'); if (!p) return realRef().on(type, cb, errorCb);
+        let last;
+        const listener = { path, cb, poll: () => fetchRoute(p).then(r => { const value = pickOf(p, r), sig = JSON.stringify(value); if (sig === last) return; last = sig; cb(snapshotOf(value)); }).catch(error => { if (/permission-denied/.test(String(error?.code || ''))) errorCb?.(error); }) }; // network/timeout errors: kept, retried on the next refresh (no logout)
+        listeners.add(listener); listener.poll(); return cb;
+      };
+      ref.off = (type, cb) => { let routed = false; for (const l of [...listeners]) if (l.path === path && (!cb || l.cb === cb)) { listeners.delete(l); routed = true; } if (!routed && real) realRef().off(type, cb); };
+      for (const op of ['set', 'update', 'remove', 'push']) ref[op] = (...args) => {
+        const p = plan(op, args[0]);
+        if (!p) return realRef()[op](...args);
+        if (op === 'push' && args.length === 0) throw new Error('push() بدون قيمة غير مدعوم في المسار المحوّل');
+        return timeout(call(p.name, p.data), limitMs(), p.name).then(result => { cache.clear(); poll(); return result; });
+      };
+      return ref;
+    }
+    return { ref: path => makeRef(String(path || '').replace(/^\/+|\/+$/g, '')), prime(name, data, result) { cache.set(name + JSON.stringify(data), { at: Date.now(), promise: Promise.resolve(result) }); },
+      get real() { return real; }, goOffline() { real?.goOffline(); }, goOnline() { real?.goOnline(); } };
+  }
+  return { stateBox, limitWrites, serverDb, snapshotOf, sweepSpinners, init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get signedIn() { return !!app?.auth().currentUser; }, reopenError, get persistenceMode() { return persistenceMode; } };
 })();

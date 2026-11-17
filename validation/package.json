@@ -4,10 +4,13 @@
   "scripts": {
     "test": "node tests/policy.test.js && node tests/backend.test.js && node tests/frontend.test.js && node tests/report-model.test.js && node tests/ui.integration.test.js && node tests/attendance-clock.test.js && node tests/bootstrap.test.js && node tests/pages.test.js && node tests/measurement.test.js && node tests/manager-data.test.js && node tests/seller-ui.test.js && node tests/dialogs.test.js && node tests/manager-dialogs.test.js && node tests/diagnostics.test.js && node tests/strict-globals.test.js && node tests/v54-flows.test.js && node tests/foreach-lists.test.js && node tests/manager-home-ui.test.js && node tests/service-worker.test.js && node tests/account-menu.test.js && node tests/manager-lists.test.js && node tests/server-routing.test.js",
     "test:rules": "firebase emulators:exec --only database,auth --project demo-basma 'node --test tests/rules.integration.js tests/transactions.integration.js tests/server-transactions.integration.js'",
-    "check": "node scripts/check.js"
+    "check": "node scripts/check.js",
+    "e2e": "node tests/e2e-prepare.js && firebase emulators:exec --only auth,database,functions --project demo-basma 'node tests/e2e-run.js'",
+    "e2e:live": "E2E_MODE=live playwright test -c tests/e2e.config.js"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "4.0.1",
+    "@playwright/test": "1.52.0",
     "firebase": "11.10.0",
     "firebase-tools": "14.22.0"
   }

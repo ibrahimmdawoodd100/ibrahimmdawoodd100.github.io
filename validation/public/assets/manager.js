@@ -6,6 +6,8 @@ function managerRoute(path, op, { query, value }) {
   if (op === 'read') {
     const badges = pick => ({ ...list({ kind: 'badges' }), pick });
     if (path === `${base}/info/status`) return badges(b => ({ value: b.status ?? null }));
+    const today = path.match(new RegExp(`^${base}/today/([A-Za-z0-9_-]+)$`)); if (today) return list({ kind: 'employeeToday', employeeId: today[1] });
+    if (path === `${base}/warehouses` && !Object.keys(query).length) return list({ kind: 'warehouses' });
     const pay = path.match(new RegExp(`^privatePayroll/${COMPANY_ID}/([A-Za-z0-9_-]+)$`)); if (pay) return list({ kind: 'payroll', employeeId: pay[1] });
     const counted = path.match(new RegExp(`^${base}/(leaves|excuses|missions|notifications/admin)$`));
     const field = { 'leaves|pending': 'leaves', 'excuses|pending': 'excuses', 'missions|assigned': 'assigned', 'missions|started': 'started', 'notifications/admin|false': 'unread' }[`${counted?.[1]}|${query.equalTo}`];

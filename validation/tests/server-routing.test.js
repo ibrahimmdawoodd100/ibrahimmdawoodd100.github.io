@@ -97,6 +97,8 @@ test('route tables: every remaining employee, manager and seller database path m
   assert.deepEqual(plain(mgr('companies/c1/missions', 'read', { query: { orderByChild: 'status', equalTo: 'started' } }).pick({ started: ['m'] })).order, ['m']);
   assert.deepEqual(plain(mgr('companies/c1/info/status', 'read', none).pick({ status: 'active' })), { value: 'active' });
   assert.deepEqual(plain(mgr('privatePayroll/c1/e9', 'read', none).data), { kind: 'payroll', employeeId: 'e9' });
+  assert.deepEqual(plain(mgr('companies/c1/today/e9', 'read', none).data), { kind: 'employeeToday', employeeId: 'e9' }, 'employee modal');
+  assert.deepEqual(plain(mgr('companies/c1/warehouses', 'read', none).data), { kind: 'warehouses' }, 'add-employee branch list');
   const w = { from: '08:00', to: '09:00' };
   assert.deepEqual(plain(mgr('companies/c1/settings', 'update', { query: {}, value: { checkIn: w, checkOut: w } }).data), { action: 'timeWindows', checkIn: w, checkOut: w });
   assert.equal(mgr('companies/c1/settings', 'update', { query: {}, value: { other: 1 } }), null, 'unknown settings fields are not routed');

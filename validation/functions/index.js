@@ -124,6 +124,7 @@ exports.managerList = endpoint(['manager'], async ({ member, data }) => {
   if (data.kind === 'settings') return { settings: (await read(`companies/${cid}/settings`)) || {} };
   // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
   if (data.kind === 'status') return { value: (await read(`companies/${cid}/info/status`)) ?? null };
+  if (data.kind === 'employeeToday') return { value: (await read(`companies/${cid}/today/${p.key(data.employeeId)}`)) ?? null };
   if (data.kind === 'payroll') return { value: (await read(`privatePayroll/${cid}/${p.key(data.employeeId)}`)) ?? null };
   if (data.kind === 'badges') return badgesOf(cid);
   const spec = Object.hasOwn(LIST_PAGES, data.kind) ? LIST_PAGES[data.kind] : p.fail('قائمة غير معروفة', 'invalid-argument');

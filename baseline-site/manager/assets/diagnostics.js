@@ -107,15 +107,9 @@ window.BasmaDiagnostics = (() => {
       const handler = ref.on('value', snap => { if (snap.val() === true) { ref.off('value', handler); resolve({ detail: 'متصل' }); } });
     }), ms);
     const first = await connected('حالة اتصال قاعدة البيانات', 10000);
-    // 6b. If the normal (WebSocket) connection did not establish, try long polling the same way the pages do.
-    if (first.status === 'TIMEOUT' || first.status === 'FAIL') {
-      const internal = db.INTERNAL || firebase.database?.INTERNAL;
-      if (typeof internal?.forceLongPolling === 'function') {
-        internal.forceLongPolling(); db.goOffline(); db.goOnline();
-        const second = await connected('الاتصال بطريقة long polling', 15000);
-        if (second.status === 'OK') add('النتيجة', 'WARN', 0, 'الاتصال العادي متوقف في هذه الشبكة أو المتصفح، وطريقة long polling تعمل. الصفحات تتحول إليها تلقائيًا بعد 5 ثوانٍ.');
-      } else add('الاتصال بطريقة long polling', 'SKIP', 0, 'غير متاحة في هذه النسخة من المكتبة');
-    }
+    // 6b. Long polling is blocked by the site's security policy on purpose (it needs scripts from the database host),
+    // so it is not tried. A stalled realtime connection only affects live badges: page data comes from server calls.
+    if (first.status === 'TIMEOUT' || first.status === 'FAIL') add('النتيجة', 'WARN', 0, 'الاتصال المباشر بقاعدة البيانات (WebSocket) متوقف في هذه الشبكة. الصفحات تجلب بياناتها من الخادم، فقط التحديث الفوري للأرقام يتأخر.');
 
     // 6c. Step timings recorded by the pages after login (step name and ms only).
     try {

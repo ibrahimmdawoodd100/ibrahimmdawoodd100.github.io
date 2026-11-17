@@ -56,8 +56,58 @@ jobs:
             validation/rules-emulator-result.txt
             validation/*debug.log
           if-no-files-found: ignore
+  # Browser E2E (Playwright + Chromium) on LOCAL Firebase emulators: real pages from site/, real server code, real
+  # rules, App Check enforced with a local test token. No production accounts, data or secrets. Blocks the deploy.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm --prefix functions ci
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-1.52.0-${{ runner.os }}
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: E2E — full flow on the release candidate (site/)
+        env:
+          E2E_OUT: e2e-results
+        run: npm run e2e
+      - name: E2E — proof run on the previous release (baseline-site/, information only)
+        if: always()
+        continue-on-error: true
+        env:
+          E2E_OUT: e2e-baseline
+          E2E_SITE: ../baseline-site
+        run: node tests/e2e-prepare.js && npx firebase emulators:exec --only auth,database,functions --project demo-basma 'node tests/e2e-run.js --grep "opens cleanly|branch map"'
+      - name: Timing report
+        if: always()
+        run: cat e2e-results/timings-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no timing report" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save screenshots, timings and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            validation/e2e-results
+            validation/e2e-baseline
+          if-no-files-found: ignore
+          retention-days: 14
   deploy:
-    needs: verify
+    needs: [verify, e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -83,3 +133,39 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+  # After publishing: read-only checks of the LIVE site (no login, nothing written). A failure shows as a red run.
+  live-check:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-1.52.0-${{ runner.os }}
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Live read-only checks
+        env:
+          E2E_OUT: e2e-live
+        run: npm run e2e:live
+      - name: Timing report
+        if: always()
+        run: cat e2e-live/timings-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - name: Save live results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-live
+          path: validation/e2e-live
+          if-no-files-found: ignore
+          retention-days: 14

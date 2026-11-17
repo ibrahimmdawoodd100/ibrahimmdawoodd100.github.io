@@ -217,6 +217,10 @@ const scenarios = {
     assert.deepEqual(older.order, ['m001', 'm000']); assert.equal(older.next, null);
     assert.equal(JSON.stringify(newest).includes('uid-secret'), false);
     assert.deepEqual((await call({ kind: 'settings' })).settings.checkIn, settings.checkIn);
+    await seed.ref(`companies/${A}/today/e000`).set({ dateKey: '2026-11-17', checkIn: 'in-A' });
+    await seed.ref(`companies/${B}/today/e000`).set({ dateKey: '2026-11-17', checkIn: 'in-B' });
+    assert.equal((await call({ kind: 'employeeToday', employeeId: 'e000', companyId: B })).value.checkIn, 'in-A', 'own company only');
+    await assert.rejects(call({ kind: 'employeeToday', employeeId: '../x' }), e => e.code === 'invalid-argument');
     for (const bad of [{ kind: 'records' }, { kind: '../access' }, { kind: 'employees', cursor: '../x' }]) await assert.rejects(call(bad), e => e.code === 'invalid-argument');
     await seed.ref(`access/emp_${A}`).set({ role: 'employee', companyId: A, employeeId: 'e000', enabled: true, version: 1 });
     await seed.ref(`companies/${A}/employees/e000/status`).set('approved');
