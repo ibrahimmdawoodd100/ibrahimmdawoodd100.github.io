@@ -17,8 +17,16 @@ const BUDGET = { cold: Number(process.env.E2E_COLD_MS) || 6000, warm: Number(pro
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 // Hosts the pages need: a failed request or HTTP error to them fails the run.
 const REQUIRED = new RegExp(`^(${BASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}|http://127\\.0\\.0\\.1:(9099|9000|5001)|https://www\\.gstatic\\.com|https://server\\.arcgisonline\\.com)`);
-// Console errors that are not page faults: none by default. Add a pattern only with a written reason.
-const ALLOWED_CONSOLE = [];
+// Console messages that are NOT faults of our pages. Each entry: exact text, exact SOURCE (URL prefix), mode, reason.
+// Anything from our own origin still fails. Every ignored message is counted in the timing report (never hidden).
+const ALLOWED_CONSOLE = [
+  { text: /^requestStorageAccess: Permission denied\.$/, from: /^https:\/\/www\.google\.com\/recaptcha\/enterprise\/anchor\?/, modes: ['live'],
+    reason: "logged inside Google's reCAPTCHA iframe (third-party storage access is denied in headless Chrome); not our code" },
+  { text: /^Failed to load resource: the server responded with a status of 403 \(\)$/, from: /^https:\/\/content-firebaseappcheck\.googleapis\.com\/v1\/projects\/signature-7706e\/apps\/[^/]+:exchangeRecaptchaEnterpriseToken/, modes: ['live'],
+    reason: 'reCAPTCHA Enterprise refuses an automated headless browser on a GitHub data-centre IP, so App Check gives it no token; real phones get tokens (production calls pass App Check). Logged-in flows are covered by the emulator run' }
+];
+const ignored = [];
+const allowedConsole = m => { const hit = ALLOWED_CONSOLE.find(a => a.modes.includes(MODE) && a.text.test(m.text()) && a.from.test(m.location()?.url || '')); if (hit) ignored.push(hit.reason); return !!hit; };
 const timings = [], shots = [];
 fs.mkdirSync(path.join(OUT, 'screens'), { recursive: true });
 
@@ -50,7 +58,7 @@ async function guarded(browser, options = {}) {
     page.on('request', r => open.set(r, Date.now())); page.on('requestfinished', r => open.delete(r)); page.on('requestfailed', r => open.delete(r));
     page.on('console', m => { consoleTail.push(`${m.type()}: ${m.text().slice(0, 200)}`); if (consoleTail.length > 8) consoleTail.shift(); });
     // The source URL is part of the message: it tells our page apart from Google's frames and names a failed resource.
-    page.on('console', m => { if (m.type() === 'error' && !ALLOWED_CONSOLE.some(r => r.test(m.text()))) issues.push(`console error: ${m.text().slice(0, 240)} [from ${(m.location()?.url || '?').slice(0, 140)}]`); });
+    page.on('console', m => { if (m.type() === 'error' && !allowedConsole(m)) issues.push(`console error: ${m.text().slice(0, 240)} [from ${(m.location()?.url || '?').slice(0, 140)}]`); });
     page.on('pageerror', e => issues.push(`page error: ${String(e.message).slice(0, 300)}`));
     page.on('requestfailed', r => { const why = r.failure()?.errorText || ''; if (!/ERR_ABORTED/.test(why) && REQUIRED.test(r.url())) issues.push(`request failed: ${r.url().slice(0, 160)} (${why})`); });
     page.on('response', r => { if (r.status() >= 400 && REQUIRED.test(r.url())) issues.push(`HTTP ${r.status()}: ${r.url().slice(0, 160)}`); });
@@ -89,6 +97,8 @@ const show = (page, fn, arg) => page.evaluate(([f, a]) => window[f](a), [fn, arg
 test.afterAll(() => {
   fs.writeFileSync(path.join(OUT, `timings-${MODE}.json`), JSON.stringify(timings, null, 2));
   const lines = [`# E2E timings (${MODE}, ${BASE})`, '', '| step | ms | budget | ok |', '|---|---:|---:|---|', ...timings.map(t => `| ${t.name} | ${t.ms} | ${t.budget || '—'} | ${!t.budget || t.ms <= t.budget ? '✅' : '❌'} |`)];
+  const counts = ignored.reduce((c, r) => ({ ...c, [r]: (c[r] || 0) + 1 }), {});
+  if (Object.keys(counts).length) lines.push('', '**Ignored third-party console messages (counted, not hidden):**', '', ...Object.entries(counts).map(([r, n]) => `- ${n} × ${r}`));
   fs.writeFileSync(path.join(OUT, `timings-${MODE}.md`), lines.join('\n') + '\n');
 });
 

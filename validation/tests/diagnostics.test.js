@@ -5,7 +5,7 @@ const { createDom, plain } = require('./fake-dom');
 const source = fs.readFileSync(require.resolve('../public/assets/diagnostics.js'), 'utf8');
 const TOKEN = 'APPCHECK-TOKEN-SHOULD-NEVER-SHOW', SITE_KEY = 'SITE-KEY-SHOULD-NEVER-SHOW', UID = 'uidSeller123456';
 
-function fakeFirebase({ signedIn = 'seller', dbHang = false, connected = true, profileRole = 'seller' } = {}) {
+function fakeFirebase({ signedIn = 'seller', dbHang = false, connected = true, profileRole = 'seller', connectedSync = false } = {}) {
   const calls = [];
   const apps = [];
   const firebase = {
@@ -18,7 +18,8 @@ function fakeFirebase({ signedIn = 'seller', dbHang = false, connected = true, p
         functions: region => ({ httpsCallable: fn => async () => { calls.push(['call', fn, region]); return { data: fn === 'profile' ? { role: profileRole } : { companies: { a: {}, b: {} } } }; } }),
         database: () => ({ ref: path => ({
           once: () => dbHang ? new Promise(() => {}) : (path.startsWith('access/') ? Promise.reject(Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED' })) : Promise.resolve({ val: () => 0 })),
-          on(_, cb) { if (connected) setImmediate(() => cb({ val: () => true })); return cb; }, off() {}
+          // connectedSync: the real SDK calls back IMMEDIATELY when the value is cached (live E2E v5.13 found this).
+          on(_, cb) { if (connected) { if (connectedSync) cb({ val: () => true }); else setImmediate(() => cb({ val: () => true })); } return cb; }, off() {}
         }) })
       };
       apps.push(app); return app;
@@ -86,4 +87,10 @@ test('manager page step timings recorded after login are listed with their ms (n
   const rows = results.filter(r => r.step.startsWith('manager: '));
   assert.deepEqual(plain(rows.map(r => [r.step, r.status, r.ms])), [['manager: الدالة profile', 'OK', 812], ['manager: الدالة managerHome', 'FAIL', 25000]]);
   assert.match(rows[1].detail, /basma\/timeout/);
+});
+
+test('database connection step reports OK when the SDK calls back immediately (no "before initialization" error)', async () => {
+  const { results } = await runDiag({ connectedSync: true });
+  const step = results.find(r => r.step === 'حالة اتصال قاعدة البيانات');
+  assert.equal(step?.status, 'OK', JSON.stringify(step));
 });

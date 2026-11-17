@@ -104,7 +104,9 @@ window.BasmaDiagnostics = (() => {
     // 6. Realtime connection state.
     const connected = (label, ms) => step(label, () => new Promise(resolve => {
       const ref = db.ref('.info/connected');
-      const handler = ref.on('value', snap => { if (snap.val() === true) { ref.off('value', handler); resolve({ detail: 'متصل' }); } });
+      // The callback is defined BEFORE on(): the SDK may call it immediately (cached value), so it must be able to remove itself.
+      const handler = snap => { if (snap.val() === true) { ref.off('value', handler); resolve({ detail: 'متصل' }); } };
+      ref.on('value', handler);
     }), ms);
     const first = await connected('حالة اتصال قاعدة البيانات', 10000);
     // 6b. Long polling is blocked by the site's security policy on purpose (it needs scripts from the database host),
