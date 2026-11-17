@@ -185,3 +185,15 @@ test('write limit: direct writes reject after 20 s with an Arabic message; reads
   assert.equal(timer.ms, 20000); timer.fn();
   await assert.rejects(pending, e => e.code === 'basma/write-timeout' && /لم يُؤكَّد الحفظ خلال 20 ثانية/.test(e.message));
 });
+
+test('disabling an employee redraws the page the manager is on (the list does not keep the old row)', async () => {
+  const order = [], ctx = { window: {}, document: { getElementById: () => null }, currentPage: 'emps',
+    Basma: { call: async name => { order.push(name); return { ok: true }; } }, closeConfirm() {}, closeEmpModal() {}, showToast: (m, t) => order.push(`toast:${t}`),
+    loadAllData: async () => { order.push('loadAllData'); }, pageLoaders: { emps: async () => { order.push('emps page'); } } };
+  ctx.window = ctx;
+  try { vm.runInNewContext(read('manager.js'), ctx); } catch {}
+  await ctx.doDeleteEmp('e9');
+  assert.deepEqual(order, ['disableEmployee', 'loadAllData', 'emps page', 'toast:success']);
+  order.length = 0; ctx.currentPage = 'dash'; await ctx.doDeleteEmp('e9');
+  assert.deepEqual(order, ['disableEmployee', 'loadAllData', 'toast:success'], 'dashboard is already refreshed once');
+});

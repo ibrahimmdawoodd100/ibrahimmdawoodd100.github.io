@@ -75,7 +75,8 @@ resetEmployeeBio = async function(eid) {
 };
 confirmDeleteEmp = function(eid) { showConfirm('تعطيل الموظف', 'سيُمنع دخول الموظف مع الاحتفاظ بسجلاته للمراجعة.', () => doDeleteEmp(eid)); };
 doDeleteEmp = async function(eid) {
-  try { await Basma.call('disableEmployee', { employeeId: eid }); closeConfirm(); closeEmpModal(); await loadAllData(); showToast('تم تعطيل الحساب', 'success'); }
+  // After disabling, also redraw the page the manager is on (the employees list kept the old row: E2E v5.12).
+  try { await Basma.call('disableEmployee', { employeeId: eid }); closeConfirm(); closeEmpModal(); await loadAllData(); if (currentPage !== 'dash') await pageLoaders[currentPage]?.(); showToast('تم تعطيل الحساب', 'success'); }
   catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
 };
 overrideAttendance = async function(eid, status) {
