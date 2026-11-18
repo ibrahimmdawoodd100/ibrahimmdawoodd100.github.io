@@ -64,7 +64,7 @@
     "manager/assets/leaflet/leaflet.css": "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
     "manager/assets/leaflet/leaflet.js": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
     "manager/assets/manager-data.js": "7a91ada56dfeced57867d600c18687f1596b16e7322c57a0b0260cbbe40fbf7b",
-    "manager/assets/manager-views.js": "940d28466afd5573c44a49c0db7d3ab08c60a5dbad32803703edae85bb716c6b",
+    "manager/assets/manager-views.js": "a28fdeca0d06cfef4a5cc9dfcb84417ba779fdb54781b9a7227074b6272749cc",
     "manager/assets/manager.js": "c864227e9677a1eafd69cba74fa439cf5b29254b55d27b9417c4befb18f2bb85",
     "manager/assets/report-model.js": "3944e4125a5f4972754d897ec7a8750ee113de28c67b21abff97dde5816d4abc",
     "manager/assets/safe-dom.js": "a9347101b27d111e21ac579e19e676c3faff52988e51c496d39ac0aa78fadb66",
@@ -74,7 +74,7 @@
     "manager/icon-manager-512.png": "92c5f11bb6dd49761fd8b40b2bbded4823b28d601d2fd1ad70fbbff5b7eee22a",
     "manager/index.html": "43766424366d975905800ff5ae9f690a3d1764b79c93ee0a7a9152478c78d887",
     "manager/manifest.json": "432c2c3d035a405772782c947c413ba0ac607c514c37431a19f85c76fa737f98",
-    "manager/sw.js": "8e7e0d22971319e04be5c0b309fba7de2301f34cd75cc0048e4fcdedf5489ba8",
+    "manager/sw.js": "a3cef081d89243c622ac7d2f2b4765f7e519347d9b83c47e691a1eb5694e78e6",
     "seller.html": "2cbe1a4f3e55e6b179b286ed5fd06c962ac97b601cfbb20d1e87665134401d55"
   },
   "assetlinksHash": "9c91f947dd7bd94e34ca708e2db7a23e25981af8fbbb3fbbef7345668bb086f4"

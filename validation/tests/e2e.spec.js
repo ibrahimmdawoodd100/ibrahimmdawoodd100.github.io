@@ -67,6 +67,12 @@ async function guarded(browser, options = {}) {
   const stuck = (ms = 15000) => [...open].filter(([, at]) => Date.now() - at > ms).map(([r]) => r.url().slice(0, 160));
   return {
     context, issues, stuck, consoleTail,
+    // A refusal the test provoked ON PURPOSE and asserted itself: remove exactly those entries (and require they exist).
+    expectRefusal(url, status) {
+      const mine = issues.filter(i => i.includes(url) && (i.startsWith(`HTTP ${status}:`) || i.includes(`status of ${status}`)));
+      expect(mine.length, `the provoked refusal (HTTP ${status} from ${url}) reached the page`).toBeGreaterThan(0);
+      for (const i of mine) issues.splice(issues.indexOf(i), 1);
+    },
     // Open a page and wait for its ready control; on failure say exactly what was still loading.
     async open(page, url, ready, label) {
       try {
@@ -193,7 +199,7 @@ test.describe('full flow on local emulators', () => {
       await show(manager, 'showPage', 'attend'); await expect(manager.locator('#att-tbody')).toContainText('e2e موظف السجلات'); await shot(manager, 'manager-attendance');
       await show(manager, 'showPage', 'leaves'); await expect(manager.locator('#leaves-list')).toContainText('e2e إجازة'); await shot(manager, 'manager-leaves');
       await show(manager, 'showPage', 'excuses'); await expect(manager.locator('#excuses-list')).toContainText('e2e عذر');
-      await show(manager, 'showPage', 'payroll'); await manager.evaluate(() => calculatePayroll()); await expect(manager.locator('#pr-tbody')).toContainText('e2e موظف السجلات'); await shot(manager, 'manager-payroll');
+      await show(manager, 'showPage', 'payroll'); await manager.evaluate(() => calculatePayroll()); await expect(manager.locator('#pr-tbody')).toContainText('e2e موظف السجلات'); await expect(manager.locator('#pr-stats')).toContainText('لا توجد بيانات راتب لـ: e2e موظف الجدول'); await shot(manager, 'manager-payroll');
       await gm.verify(manager, 'manager lists');
     }, { timeout: 60000 });
     await test.step('manager: add, rename and delete a branch', async () => {
@@ -306,6 +312,7 @@ test.describe('account switch and open-app updates (local emulators)', () => {
       // The UI blocks it; call the real check-in path anyway (fingerprint + server) to prove the server refuses.
       const answer = await page.evaluate(async () => { try { await Basma.attendance('in', GPS_DATA); return 'ACCEPTED'; } catch (e) { return `${e.code} ${e.message}`; } });
       expect(answer).toMatch(/failed-precondition.*بانتظار اعتماد المدير/);
+      g.expectRefusal('/finishWebAuthn', 400); // the refusal we just asserted; any OTHER problem still fails
       const creds = await cdp.send('WebAuthn.getCredentials', { authenticatorId });
       expect(creds.credentials.length, 'A\'s and B\'s fingerprints are both on this phone; only B\'s own is accepted for B').toBe(2);
       await shot(page, 'switch-B-pending');
