@@ -16,7 +16,7 @@ function employeeRoute(path, op, { query, value }) {
   return null;
 }
 async function secureEmployeeOpen(profile) {
-  COMPANY_ID = profile.companyId; ACTIVATION_UID = profile.employeeId; DB = Basma.serverDb(() => Basma.db(), employeeRoute);
+  COMPANY_ID = profile.companyId; ACTIVATION_UID = profile.employeeId; DB = Basma.serverDb(() => Basma.db(), employeeRoute, { pollMs: 0 }); // v5.16: no 2-min listener polling (found by the CI cost budget: 41 idle calls / 30 min); focus, wake, writes and the 3-min version check refresh
   // The session already fetched employeeHome while opening (one call); reuse it instead of a second call.
   const home=Basma.takeHome?.('employeeHome')||await Basma.call('employeeHome');
   // Start the check-in functions' instances now, while the employee reads the screen (saves ~2 s per cold start).

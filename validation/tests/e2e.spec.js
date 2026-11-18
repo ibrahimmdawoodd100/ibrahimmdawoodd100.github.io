@@ -25,6 +25,8 @@ const ALLOWED_CONSOLE = [
   { text: /^Failed to load resource: the server responded with a status of 403 \(\)$/, from: /^https:\/\/content-firebaseappcheck\.googleapis\.com\/v1\/projects\/signature-7706e\/apps\/[^/]+:exchangeRecaptchaEnterpriseToken/, modes: ['live'],
     reason: 'reCAPTCHA Enterprise refuses an automated headless browser on a GitHub data-centre IP, so App Check gives it no token; real phones get tokens (production calls pass App Check). Logged-in flows are covered by the emulator run' }
 ];
+ALLOWED_CONSOLE.push({ text: /^\[Report Only\] Refused to frame 'https:\/\/www\.google\.com\/' because an ancestor violates the following Content Security Policy directive: "frame-ancestors 'self'"\.$/, from: /^$|^\?$/, modes: ['live', 'emulator'],
+  reason: "Chrome reporting Google's OWN report-only header for a www.google.com frame (reCAPTCHA); report-only never blocks, and our pages have no report-only policy" });
 const ignored = [];
 const allowedConsole = m => { const hit = ALLOWED_CONSOLE.find(a => a.modes.includes(MODE) && a.text.test(m.text()) && a.from.test(m.location()?.url || '')); if (hit) ignored.push(hit.reason); return !!hit; };
 const timings = [], shots = [];
@@ -184,7 +186,7 @@ test.describe('full flow on local emulators', () => {
       await g.open(page, '/seller.html', '#seller-email', 'seller login'); await page.fill('#seller-email', accounts.seller); await page.fill('#seller-password', password);
       const t = Date.now(); await page.click('#seller-login');
       // The dashboard counts the companies; the list itself is drawn when the companies page opens (as a user does).
-      await expect(page.locator('#ds-active')).toHaveText('1', { timeout: 20000 }); timing('seller: login → dashboard (cold)', Date.now() - t, BUDGET.cold);
+      await expect(page.locator('#ds-active')).toHaveText('333', { timeout: 20000 }); // the e2e company + 332 synthetic cost-budget companies timing('seller: login → dashboard (cold)', Date.now() - t, BUDGET.cold);
       await show(page, 'showPage', 'companies'); await expect(page.locator('#companies-list')).toContainText(companyName, { timeout: 15000 }); await shot(page, 'seller-companies'); await g.verify(page, 'seller'); await g.context.close();
     }, { timeout: 60000 });
 
