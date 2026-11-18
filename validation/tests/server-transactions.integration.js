@@ -24,7 +24,8 @@ function loadServer(file) {
   const webauthn = {
     async generateRegistrationOptions() { return { challenge: `challenge-${++serial}`, user: { id: 'dQ' } }; },
     async generateAuthenticationOptions() { return { challenge: `challenge-${++serial}` }; },
-    async verifyRegistrationResponse() { return { verified: true, registrationInfo: { credential: { id: 'cred-1', publicKey: Buffer.from('key'), counter: 0, transports: [] }, credentialDeviceType: 'singleDevice', credentialBackedUp: false } }; },
+    // The credential id comes from the browser response when given (a real authenticator's own id), else 'cred-1'.
+    async verifyRegistrationResponse(o) { return { verified: true, registrationInfo: { credential: { id: o?.response?.id || 'cred-1', publicKey: Buffer.from('key'), counter: 0, transports: [] }, credentialDeviceType: 'singleDevice', credentialBackedUp: false } }; },
     async verifyAuthenticationResponse(o) { return { verified: true, authenticationInfo: { newCounter: o.credential.counter + 1 } }; }
   };
   const modules = {
@@ -80,6 +81,52 @@ const scenarios = {
     await assert.rejects(loadServer(file).invoke('employeeAccount', managerUid, { employeeId: 'ghost' }), e => e.code === 'not-found');
     assert.deepEqual(await locksFor(`${created.companyId}_ghost`), [], 'operationLocks empty after error');
   },
+  'devices: a new fingerprint needs the manager\'s approval; another employee\'s credential and a pending device are refused server-side': async (file, tag) => {
+    const cid = `cDev${tag}`, A = `devA_${tag}`, B = `devB_${tag}`, mgr = `devM_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    for (const [uid, eid] of [[A, 'eA'], [B, 'eB']]) {
+      await seed.ref(`companies/${cid}/employees/${eid}`).set({ status: 'pending_activation', name: eid, warehouseId: 'w1', warehouseName: 'Branch' });
+      await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: eid, enabled: true, version: 1 });
+    }
+    const call = async (name, uid, data) => JSON.parse(JSON.stringify(await loadServer(file).invoke(name, uid, data)));
+    const register = async (uid, credId, deviceLabel) => { const start = await call('beginWebAuthn', uid, { mode: 'register' }); return call('finishWebAuthn', uid, { challengeId: start.challengeId, response: { id: credId, rawId: credId }, deviceLabel }); };
+    const authenticate = async (uid, credId, intent = 'in') => { const start = await call('beginWebAuthn', uid, { mode: 'authenticate', intent }); return call('finishWebAuthn', uid, { challengeId: start.challengeId, response: { id: credId, rawId: credId } }); };
+    const checkIn = (uid, proof) => call('recordAttendance', uid, { type: 'in', proof, location: { lat: 0, lng: 0 } });
+    const versionBefore = (await get(`scheduleVersions/${cid}`)) || 0;
+    // 1. A registers a fingerprint: device PENDING, manager notified, log written, version bumped.
+    assert.equal((await register(A, 'credA', 'Android · Chrome')).deviceStatus, 'pending');
+    assert.equal((await get(`deviceApprovals/${cid}/eA`)).status, 'pending');
+    const note = Object.values((await get(`companies/${cid}/notifications/admin`)) || {}).find(n => n.type === 'device_new');
+    assert.match(note.message, /eA.*Android · Chrome.*بانتظار اعتمادك/);
+    assert.deepEqual(Object.values(await get(`deviceLog/${cid}/eA`)).map(e => e.event), ['registered']);
+    assert.ok((await get(`scheduleVersions/${cid}`)) > versionBefore, 'open pages are told to refresh');
+    // 2. Pending device: no proof, and a forged proof cannot record attendance either.
+    await assert.rejects(authenticate(A, 'credA'), e => e.code === 'failed-precondition' && e.details?.reason === 'device-pending');
+    await seed.ref(`proofs/${A}/forged`).set({ intent: 'in', version: 1, expiresAt: Date.now() + 60000 });
+    await assert.rejects(checkIn(A, 'forged'), e => e.code === 'failed-precondition' && e.details?.reason === 'device-pending');
+    assert.equal(await get(`attendanceLedger/${cid}/eA`), null, 'nothing recorded');
+    const home = await call('employeeHome', A);
+    assert.equal(home.device.status, 'pending'); assert.ok(home.scheduleVersion > 0);
+    assert.deepEqual((await call('managerList', mgr, { kind: 'devices' })).order, ['eA']);
+    // 3. Only the manager of THIS company approves; then A records attendance.
+    await assert.rejects(call('managerDevice', A, { action: 'approve', employeeId: 'eA' }), e => e.code === 'permission-denied');
+    await assert.rejects(call('managerDevice', mgr, { action: 'approve', employeeId: 'eB' }), e => e.code === 'not-found', 'no pending device for B yet');
+    await call('managerDevice', mgr, { action: 'approve', employeeId: 'eA' });
+    assert.equal((await get(`deviceApprovals/${cid}/eA`)).status, 'approved');
+    assert.ok(Object.values(await get(`companies/${cid}/notifications/eA`)).some(n => n.type === 'device_ok'));
+    assert.equal((await checkIn(A, (await authenticate(A, 'credA')).proof)).ok, true);
+    // 4. Account switch on the same phone: B registers its OWN credential (pending) and cannot use A's credential.
+    assert.equal((await register(B, 'credB')).deviceStatus, 'pending');
+    await call('managerDevice', mgr, { action: 'approve', employeeId: 'eB' });
+    await assert.rejects(authenticate(B, 'credA'), e => e.code === 'permission-denied' && /ليست مسجلة لحسابك/.test(e.message), 'A\'s fingerprint is refused for B');
+    await assert.rejects(checkIn(B, 'forged'), e => e.code === 'permission-denied', 'A\'s proof is not B\'s');
+    // 5. Re-registering needs a manager reset (one device per employee); a rejected device is removed.
+    await assert.rejects(register(A, 'credA2'), e => /إعادة تعيين البصمة/.test(e.message));
+    await call('managerDevice', mgr, { action: 'reject', employeeId: 'eB' });
+    assert.equal(await get(`credentials/${B}`), null); assert.equal((await get(`companies/${cid}/employees/eB`)).status, 'pending_activation');
+    assert.deepEqual(Object.values(await get(`deviceLog/${cid}/eB`)).map(e => e.event), ['registered', 'approved', 'rejected']);
+  },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;
     await seedCompany(cid);
@@ -100,6 +147,7 @@ const scenarios = {
     await seedCompany(cid);
     await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
     await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`credentials/${uid}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] }); // the employee's own credential (registered before v5.15: no device entry = approved)
     const proof = id => seed.ref(`proofs/${uid}/${id}`).set({ intent: id.slice(0, -1), version: 1, expiresAt: Date.now() + 60000 });
     await proof('in1');
     const first = JSON.parse(JSON.stringify(await loadServer(file).invoke('recordAttendance', uid, { type: 'in', proof: 'in1', location: { lat: 0, lng: 0 } })));
@@ -122,6 +170,7 @@ const scenarios = {
     await seedCompany(cid);
     await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
     await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`credentials/${uid}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] }); // the employee's own credential (registered before v5.15: no device entry = approved)
     const proof = id => seed.ref(`proofs/${uid}/${id}`).set({ intent: 'in', version: 1, expiresAt: Date.now() + 60000 });
     await proof('p1');
     const first = await loadServer(file).invoke('recordAttendance', uid, { type: 'in', proof: 'p1', location: { lat: 0, lng: 0 } });
@@ -179,6 +228,7 @@ const scenarios = {
     await seedCompany(cid);
     await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
     await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`credentials/${uid}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] }); // the employee's own credential (registered before v5.15: no device entry = approved)
     for (const name of ['beginWebAuthn', 'finishWebAuthn', 'recordAttendance']) assert.deepEqual({ ...await loadServer(file).invoke(name, uid, { warm: true }) }, { warm: true }, name);
     for (const p of [`challenges/${uid}`, `proofs/${uid}`, `attendanceLedger/${cid}`, `operationLocks/${uid}`]) assert.equal(await get(p), null, `nothing written at ${p}`);
     await assert.rejects(loadServer(file).invoke('recordAttendance', 'seller', { warm: true }), e => e.code === 'permission-denied', 'role still checked');
@@ -314,7 +364,7 @@ const scenarios = {
     await seed.ref(`companies/${A}/leaves`).set({ l1: { empId: 'e1', date: '2026-11-17', status: 'pending' }, l2: { empId: 'e1', date: '2026-11-17', status: 'approved' } });
     await seed.ref(`companies/${A}/notifications/admin`).set({ u1: { message: 'secret-text', read: false } });
     const home = JSON.parse(JSON.stringify(await loadServer(file).invoke('managerHome', `mgr_${A}`)));
-    assert.deepEqual(home.badges, { status: 'active', leaves: ['l1'], excuses: [], assigned: [], started: [], unread: ['u1'] });
+    assert.deepEqual(home.badges, { status: 'active', leaves: ['l1'], excuses: [], assigned: [], started: [], unread: ['u1'], devices: [] });
     assert.deepEqual(JSON.parse(JSON.stringify(await loadServer(file).invoke('managerList', `mgr_${A}`, { kind: 'badges' }))), home.badges);
     assert.equal(JSON.stringify(home.badges).includes('secret-text'), false);
   },
@@ -390,6 +440,7 @@ test('EXCUSED CHECKOUT — no_checkin excuse approved, then check-out is recorde
   await seedCompany(cid);
   await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
   await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+  await seed.ref(`credentials/${emp}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] }); // the employee's own credential (registered before v5.15: no device entry = approved)
   await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
   const proof = (id, intent) => seed.ref(`proofs/${emp}/${id}`).set({ intent, version: 1, expiresAt: Date.now() + 60000 });
   const out = id => loadServer(CURRENT).invoke('recordAttendance', emp, { type: 'out', proof: id, location: { lat: 0, lng: 0 } });
@@ -441,6 +492,7 @@ test('FIXED — two concurrent check-ins with two valid proofs: exactly one reco
   await seedCompany('cAttC');
   await seed.ref('companies/cAttC/employees/e2').set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
   await seed.ref('access/emp_c').set({ role: 'employee', companyId: 'cAttC', employeeId: 'e2', enabled: true, version: 1 });
+  await seed.ref('credentials/emp_c').set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] }); // the employee's own credential (registered before v5.15: no device entry = approved)
   for (const p of ['q1', 'q2']) await seed.ref(`proofs/emp_c/${p}`).set({ intent: 'in', version: 1, expiresAt: Date.now() + 60000 });
   const results = await Promise.allSettled(['q1', 'q2'].map(p => loadServer(CURRENT).invoke('recordAttendance', 'emp_c', { type: 'in', proof: p, location: { lat: 0, lng: 0 } })));
   assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);

@@ -71,7 +71,7 @@ test('invalid verification cannot create credentials or attendance proofs',async
 });
 test('attendance requires matching one-use proof and derives employee identity server-side',async()=>{
   const h=harness();
-  h.set('companies/c1/employees/e1/status','approved');
+  h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
   h.set('proofs/employee/p1',{intent:'out',version:1,expiresAt:Date.now()+60000});
   await assert.rejects(()=>h.invoke('recordAttendance','employee',{type:'in',proof:'p1',location:{lat:0,lng:0}}));
   h.set('proofs/employee/p2',{intent:'in',version:1,expiresAt:Date.now()+60000});
@@ -100,7 +100,7 @@ test('company employee cap and unique IDs survive concurrent additions',async()=
 });
 test('excuse date comes from the server; approval grants checkout through the ledger',async()=>{
   for(const type of ['no_checkin','no_both']){
-    const h=harness();h.set('companies/c1/employees/e1/status','approved');
+    const h=harness();h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
     await h.invoke('submitRequest','employee',{kind:'excuse',type,reason:'سبب',date:'1900-01-01',companyId:'c2',empId:'victim'});
     const [id,request]=Object.entries(h.get('companies/c1/excuses'))[0];
     assert.equal(request.date,new Date(request.createdAt).toISOString().slice(0,10));assert.equal(request.dateSource,'server');
@@ -114,7 +114,7 @@ test('excuse date comes from the server; approval grants checkout through the le
   }
 });
 test('unapproved, rejected, malformed, and wrong-company excuses cannot grant checkout',async()=>{
-  const h=harness();h.set('companies/c1/employees/e1/status','approved');
+  const h=harness();h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
   await h.invoke('submitRequest','employee',{kind:'excuse',type:'no_checkin',reason:'سبب',date:'1900-01-01'});
   const [id]=Object.keys(h.get('companies/c1/excuses'));
   await h.invoke('reviewRequest','manager',{collection:'excuses',id,status:'rejected'});
@@ -172,7 +172,7 @@ for(const [name,zone,stamp,today,tomorrow] of [
   await assert.rejects(()=>h.invoke('submitRequest','employee',{kind:'leave',leaveType:'paid',date:'2027-02-30',reason:'سبب'}),/تاريخ/);
 });
 test('time rejection has a specific reason and server time without consuming biometric proof',async()=>{
-  const stamp=Date.parse('2026-10-15T12:00:00Z'),h=harness({now:stamp});h.set('companies/c1/employees/e1/status','approved');
+  const stamp=Date.parse('2026-10-15T12:00:00Z'),h=harness({now:stamp});h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
   h.set('companies/c1/settings/checkIn',{from:'14:00',to:'14:30'});
   h.set('proofs/employee/p1',{intent:'in',version:1,expiresAt:stamp+60000});
   await assert.rejects(()=>h.invoke('recordAttendance','employee',{type:'in',proof:'p1',location:{lat:0,lng:0}}),error=>error.details?.reason==='attendance-window'&&error.details.serverTime===stamp);
@@ -180,7 +180,7 @@ test('time rejection has a specific reason and server time without consuming bio
 });
 
 test('approved partial leave permits biometric departure then return only within its server window',async()=>{
-  const stamp=Date.parse('2026-10-15T12:10:00Z'),h=harness({now:stamp});h.set('companies/c1/employees/e1/status','approved');
+  const stamp=Date.parse('2026-10-15T12:10:00Z'),h=harness({now:stamp});h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
   await h.invoke('submitRequest','employee',{kind:'leave',leaveType:'partial',date:'2026-10-15',reason:'سبب',fromTime:'12:00',toTime:'12:30'});
   const id=Object.keys(h.get('companies/c1/leaves'))[0];await h.invoke('reviewRequest','manager',{collection:'leaves',id,status:'approved'});
   for(const [type,proof]of [['in','p1'],['departure','p2'],['return','p3']]){

@@ -47,19 +47,20 @@ const sessionOf = (member, info) => ({ role: member.role, companyId: member.comp
 exports.profile = endpoint(allRoles, async ({ member, info }) => ({ role: member.role, companyId: member.companyId || null, employeeId: member.employeeId || null, name: info?.nameAr || 'بصمة', timeZone:info?.timeZone || 'UTC', serverTime:Date.now() }));
 exports.serverClock = endpoint(allRoles, async () => ({ serverTime:Date.now() }));
 // Narrow home projection: never return coworkers, request history or notifications.
-exports.employeeHome = endpoint(['employee'], async ({member,info,employee}) => {
+exports.employeeHome = endpoint(['employee'], async ({uid,member,info,employee}) => {
   const cid=member.companyId,eid=member.employeeId,stamp=Date.now();
   const date=p.dateParts(new Date(stamp),info.timeZone).date;
-  const [settings,warehouse,today,fullLeave]=await Promise.all([
+  const [settings,warehouse,today,fullLeave,credential,scheduleVersion]=await Promise.all([
     read(`companies/${cid}/settings`),read(`companies/${cid}/warehouses/${p.key(employee.warehouseId)}`),read(`companies/${cid}/today/${eid}`),
-    read(`fullDayLeaveIndex/${cid}/${eid}/${date}`)
+    read(`fullDayLeaveIndex/${cid}/${eid}/${date}`),read(`credentials/${uid}`),read(`scheduleVersions/${cid}`)
   ]);
+  const device=credential?{status:await deviceState(cid,eid,credential.id)}:{status:'none'};
   const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value?.[key]!==undefined).map(key=>[key,value[key]]));
   return {serverTime:Date.now(),date,employee,
     info:pick(info,['nameAr','nameEn','name','logo','timeZone','status']),
     settings:pick(settings,['checkIn','checkOut','weekendDays','holidays','geoZone']),
     warehouse:pick(warehouse,['name','active','schedule','geoZone']),today:today?.dateKey===date?today:{},
-    onLeave:fullLeave === true,profile:sessionOf(member,info)};
+    onLeave:fullLeave === true,device,scheduleVersion:scheduleVersion??0,profile:sessionOf(member,info)};
 });
 // Manager dashboard in ONE call (like listCompanies for the seller): the page no longer depends on many direct
 // database reads, which stall forever on networks where the database connection does not establish.
@@ -70,7 +71,8 @@ const MANAGER_EMPLOYEE_FIELDS = ['name', 'empId', 'role', 'warehouseId', 'wareho
 async function badgesOf(cid) {
   const keys = (collection, field, value) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).equalTo(value).limitToFirst(5000).get().then(snap => { const order = []; snap.forEach(child => { order.push(child.key); }); return order; });
   const [leaves, excuses, assigned, started, unread, status] = await Promise.all([keys('leaves', 'status', 'pending'), keys('excuses', 'status', 'pending'), keys('missions', 'status', 'assigned'), keys('missions', 'status', 'started'), keys('notifications/admin', 'read', false), read(`companies/${cid}/info/status`)]);
-  return { status: status ?? null, leaves, excuses, assigned, started, unread };
+  const devices = Object.entries((await read(`deviceApprovals/${cid}`)) || {}).filter(([, d]) => d?.status === 'pending').map(([eid]) => eid);
+  return { status: status ?? null, leaves, excuses, assigned, started, unread, devices };
 }
 exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
   const cid = member.companyId, stamp = Date.now(), date = p.dateParts(new Date(stamp), info.timeZone).date;
@@ -124,6 +126,12 @@ exports.managerList = endpoint(['manager'], async ({ member, data }) => {
   if (data.kind === 'settings') return { settings: (await read(`companies/${cid}/settings`)) || {} };
   // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
   if (data.kind === 'status') return { value: (await read(`companies/${cid}/info/status`)) ?? null };
+  if (data.kind === 'devices') {
+    const all = (await read(`deviceApprovals/${cid}`)) || {};
+    const items = Object.fromEntries(Object.entries(all).filter(([, d]) => d?.status === 'pending').map(([eid, d]) => [eid, { status: d.status, label: d.label || '', registeredAt: d.registeredAt || null }]));
+    return { order: Object.keys(items), items };
+  }
+  if (data.kind === 'deviceLog') return ordered(db.ref(`deviceLog/${cid}/${p.key(data.employeeId)}`).orderByKey().limitToLast(20));
   if (data.kind === 'employeeToday') return { value: (await read(`companies/${cid}/today/${p.key(data.employeeId)}`)) ?? null };
   if (data.kind === 'payroll') return { value: (await read(`privatePayroll/${cid}/${p.key(data.employeeId)}`)) ?? null };
   if (data.kind === 'badges') return badgesOf(cid);
@@ -149,12 +157,36 @@ exports.managerList = endpoint(['manager'], async ({ member, data }) => {
 // Branch changes through the server: the realtime write channel stalls on the same networks as the reads.
 // Stricter than the database rules: own company, known branch, plain-text name, HH:MM times, real coordinates.
 const hhmm = value => (typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : p.fail('وقت غير صالح', 'invalid-argument'));
+// Manager approves or rejects a pending fingerprint device. Reject = remove the credential; the employee registers
+// again (and that new device again needs approval). The employee gets a notification either way.
+exports.managerDevice = endpoint(['manager'], async ({ uid, member, data }) => {
+  const cid = member.companyId, eid = p.key(data.employeeId);
+  const entry = await read(`deviceApprovals/${cid}/${eid}`), employee = await read(`companies/${cid}/employees/${eid}`);
+  if (!entry || !employee) p.fail('لا يوجد جهاز بانتظار الاعتماد لهذا الموظف', 'not-found');
+  if (data.action === 'approve') {
+    if (entry.status !== 'pending') p.fail('الجهاز معتمد مسبقًا', 'already-exists');
+    const credential = await read(`credentials/${entry.uid}`);
+    if (!credential || credential.id !== entry.credId) p.fail('تغيّرت بصمة الموظف؛ حدّث الصفحة', 'aborted');
+    await db.ref(`deviceApprovals/${cid}/${eid}`).update({ status: 'approved', approvedAt: Date.now(), approvedBy: uid });
+    await db.ref(`companies/${cid}/notifications/${eid}`).push({ type: 'device_ok', message: '✅ اعتمد المدير جهازك؛ يمكنك تسجيل الحضور الآن', timestamp: new Date().toISOString(), read: false });
+  } else if (data.action === 'reject') {
+    await db.ref(`credentials/${entry.uid}`).remove();
+    await db.ref(`deviceApprovals/${cid}/${eid}`).remove();
+    await db.ref(`companies/${cid}/employees/${eid}`).update({ status: 'pending_activation', credId: null });
+    await db.ref(`companies/${cid}/notifications/${eid}`).push({ type: 'device_rejected', message: '❌ رفض المدير الجهاز الجديد؛ سجّل البصمة من جهازك المعتمد أو راجع المدير', timestamp: new Date().toISOString(), read: false });
+  } else p.fail('عملية غير معروفة', 'invalid-argument');
+  await deviceLog(cid, eid, data.action === 'approve' ? 'approved' : 'rejected', { by: uid, label: entry.label || '' });
+  await bumpVersion(cid);
+  await audit(uid, `device.${data.action}`, `${cid}/${eid}`);
+  return { ok: true };
+});
 exports.managerBranch = endpoint(['manager'], async ({ uid, member, data }) => {
   const cid = member.companyId, all = db.ref(`companies/${cid}/warehouses`);
   if (data.action === 'add') {
     const ref = all.push();
     await ref.set({ name: p.text(data.name, 'اسم الفرع', 80), active: true });
     await audit(uid, 'branch.add', `${cid}/${ref.key}`);
+    await bumpVersion(cid);
     return { id: ref.key };
   }
   const id = p.key(data.id), ref = all.child(id);
@@ -169,6 +201,7 @@ exports.managerBranch = endpoint(['manager'], async ({ uid, member, data }) => {
     if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180 || !Number.isFinite(radius) || radius < 1 || radius > 100000) p.fail('موقع غير صالح', 'invalid-argument');
     await ref.child('geoZone').set({ lat, lng, radius: Math.round(radius), enabled: true });
   } else p.fail('عملية غير معروفة', 'invalid-argument');
+  await bumpVersion(cid);
   await audit(uid, `branch.${data.action}`, `${cid}/${id}`);
   return { id };
 });
@@ -210,6 +243,7 @@ exports.employeeList = endpoint(['employee'], async ({ member, info, employee, d
     }
     case 'notifications': return ordered(db.ref(`companies/${cid}/notifications/${eid}`).orderByKey().limitToLast(100));
     case 'notificationsUpdate': return markRead(db.ref(`companies/${cid}/notifications/${eid}`), data.updates, { allowCleanup: true });
+    case 'version': return { value: (await read(`scheduleVersions/${cid}`)) ?? 0 };
     case 'status': return { value: info?.status ?? null };
     case 'selfStatus': return { value: employee?.status ?? null };
     default: p.fail('قائمة غير معروفة', 'invalid-argument');
@@ -284,6 +318,7 @@ exports.managerSettings = endpoint(['manager'], async ({ uid, member, data }) =>
     case 'missionRemove': target = p.key(data.id); await db.ref(`companies/${cid}/missions/${target}`).remove(); break;
     default: p.fail('عملية غير معروفة', 'invalid-argument');
   }
+  if (['timeWindows', 'holidayAdd', 'holidayRemove', 'geoZone', 'employeeSchedule'].includes(data.action)) await bumpVersion(cid);
   await audit(uid, `settings.${data.action}`, `${cid}/${target}`);
   return { ok: true, id: target };
 });
@@ -437,6 +472,7 @@ exports.employeeAccount = endpoint(['manager'], async ({ uid, member, info, data
     if (data.resetBio === true) {
       await db.ref(`credentials/${target}`).remove();
       await db.ref(`companies/${cid}/employees/${eid}`).update({ status: 'pending_activation', credId: null, deviceFingerprint: null });
+      await db.ref(`deviceApprovals/${cid}/${eid}`).remove(); await deviceLog(cid, eid, 'reset', { by: uid }); await bumpVersion(cid);
     }
     await audit(uid, 'employee.reset', `${cid}/${eid}`, { resetBio: data.resetBio === true });
     return result;
@@ -501,6 +537,7 @@ exports.transferEmployee = endpoint(['manager'], async ({ uid, member, data }) =
   if (!before.exists()) p.fail('الموظف غير موجود', 'not-found');
   // Update only the live branch assignment. Attendance events retain their historical branch.
   await ref.update({ warehouseId, warehouseName:warehouse.name });
+  await bumpVersion(cid);
   await audit(uid, 'employee.transfer', `${cid}/${eid}`, { from:before.val().warehouseId, to:warehouseId });
   return { ok:true };
 });
@@ -534,6 +571,18 @@ async function employeeContext(uid, member) {
   if (!employee || !['approved', 'pending_activation'].includes(employee.status)) p.fail('الموظف غير مفعّل', 'permission-denied');
   return employee;
 }
+// ---- v5.15 devices and schedule version ----
+// A newly registered fingerprint credential needs the manager's approval before it can record attendance.
+// deviceApprovals/{cid}/{eid}: {status:'pending'|'approved', credId, uid, registeredAt, label, approvedAt, approvedBy}
+// (server-only path). Credentials registered before v5.15 have no entry and stay valid.
+async function deviceState(cid, eid, credId) {
+  const entry = await read(`deviceApprovals/${cid}/${eid}`);
+  if (!entry) return 'approved';
+  return entry.status === 'approved' && entry.credId === credId ? 'approved' : 'pending';
+}
+const deviceLog = (cid, eid, event, details = {}) => db.ref(`deviceLog/${cid}/${eid}`).push({ event, at: Date.now(), ...details });
+// One small value per company; open employee pages poll it (employeeList 'version') and re-read employeeHome on change.
+const bumpVersion = cid => db.ref(`scheduleVersions/${cid}`).set(Date.now());
 exports.beginWebAuthn = endpoint(['employee'], async ({ uid, member, data }) => {
   // Warm-up ping from the employee page: starts this instance before the fingerprint button is pressed.
   // Reached only after the endpoint's Auth, App Check, access and rate-limit checks; no reads, no side effects.
@@ -579,11 +628,20 @@ exports.finishWebAuthn = endpoint(['employee'], async ({ uid, member, data }) =>
       return { ...current, status: 'approved', credId: credential.id };
     });
     if (!activated.committed) { await db.ref(`credentials/${uid}`).remove(); p.fail('لم يعد التفعيل مسموحًا', 'permission-denied'); }
+    const cid = member.companyId, eid = member.employeeId, label = typeof data.deviceLabel === 'string' && data.deviceLabel.trim() ? p.text(data.deviceLabel, 'الجهاز', 80) : 'جهاز';
+    await db.ref(`deviceApprovals/${cid}/${eid}`).set({ status: 'pending', credId: credential.id, uid, registeredAt: Date.now(), label });
+    await deviceLog(cid, eid, 'registered', { label });
+    await db.ref(`companies/${cid}/notifications/admin`).push({ type: 'device_new', message: `📱 ${activated.snapshot.val()?.name || 'موظف'}: بصمة/جهاز جديد (${label}) بانتظار اعتمادك قبل تسجيل الحضور`, timestamp: new Date().toISOString(), read: false, employeeId: eid });
+    await bumpVersion(cid);
     await audit(uid, 'webauthn.register', member.companyId);
-    return { registered: true, credentialId: credential.id };
+    return { registered: true, credentialId: credential.id, deviceStatus: 'pending' };
   }
   const stored = await read(`credentials/${uid}`);
   if (!stored) p.fail('البصمة غير مسجلة');
+  // The credential used must be THIS employee's own (another person's fingerprint on the same phone is refused)...
+  if (data.response?.id !== stored.id || data.response?.rawId !== stored.id) p.fail('هذه البصمة ليست مسجلة لحسابك', 'permission-denied');
+  // ...and registered on a device the manager approved.
+  if (await deviceState(member.companyId, member.employeeId, stored.id) !== 'approved') throw new p.PolicyError('failed-precondition', 'الجهاز بانتظار اعتماد المدير؛ لا يمكن تسجيل الحضور قبل الاعتماد', { reason: 'device-pending' });
   const result = await webauthn.verifyAuthenticationResponse({ response: data.response, expectedChallenge: challenge.challenge, expectedOrigin: rp.origins, expectedRPID: rp.id, requireUserVerification: true, credential: { id: stored.id, publicKey: Buffer.from(stored.publicKey, 'base64'), counter: stored.counter, transports: stored.transports || [] } });
   if (!result.verified) p.fail('فشل التحقق', 'permission-denied');
   const advanced = await serverTransaction(db.ref(`credentials/${uid}`), current => {
@@ -602,6 +660,8 @@ exports.recordAttendance = endpoint(['employee'], async ({ uid, member, info, da
   if (data?.warm === true) return { warm: true };
   const cid = member.companyId, eid = member.employeeId, employee = await employeeContext(uid, member);
   if (employee.status !== 'approved') p.fail('سجّل البصمة أولًا');
+  const ownCredential = await read(`credentials/${uid}`);
+  if (!ownCredential || await deviceState(cid, eid, ownCredential.id) !== 'approved') throw new p.PolicyError('failed-precondition', 'الجهاز بانتظار اعتماد المدير؛ لا يمكن تسجيل الحضور قبل الاعتماد', { reason: 'device-pending' });
   const type = data.type;
   if (!['in', 'out', 'departure', 'return', 'mission_start', 'mission_end'].includes(type)) p.fail('نوع غير صالح', 'invalid-argument');
   const missionKey = data.missionKey ? p.key(data.missionKey) : null;

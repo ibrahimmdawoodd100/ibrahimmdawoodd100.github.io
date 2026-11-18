@@ -296,8 +296,33 @@ async function refreshStaff(){const [staff,branches]=await Promise.all([managerL
 loadEmployees=async function(){
   const grid=document.getElementById('emp-grid');
   const value=await managerListLoad('employees',grid,refreshStaff,{loading:'جاري تحميل الموظفين...'});
-  if(!value)return;populateWHSelects();filterEmps();
+  if(!value)return;populateWHSelects();filterEmps();loadPendingDevices();
 };
+// v5.15: fingerprints/devices waiting for the manager's approval (a new device cannot record attendance before).
+async function loadPendingDevices(){
+  const grid=document.getElementById('emp-grid');if(!grid?.parentElement)return;
+  let box=document.getElementById('pending-devices-section');
+  if(!box){box=document.createElement('div');box.id='pending-devices-section';grid.parentElement.insertBefore(box,grid);}
+  let value;try{value=await managerListPage('devices');}catch(error){box.replaceChildren(Basma.stateBox('error',{text:'تعذر تحميل الأجهزة بانتظار الاعتماد. '+managerErrorText(error),error,retry:()=>loadPendingDevices()}));return;}
+  const ids=value.order||[];
+  if(!ids.length){box.replaceChildren();return;}
+  const title=secureManagerView.text('div',`📱 أجهزة بانتظار الاعتماد (${ids.length})`);title.className='section-title';
+  box.replaceChildren(title,...ids.map(eid=>{
+    const d=value.items[eid]||{},row=document.createElement('div');row.className='approval-card';row.setAttribute?.('data-employee-id',eid);const buttons=[];
+    row.append(secureManagerView.text('div',ALL_EMPLOYEES[eid]?.name||eid),secureManagerView.text('div',`${d.label||'جهاز'} — ${d.registeredAt?new Date(d.registeredAt).toLocaleString('ar'):''}`));
+    for(const [label,action,cls] of [['اعتماد الجهاز','approve','btn-green'],['رفض','reject','btn-red']]){
+      const button=secureManagerView.text('button',label);button.className=`modal-btn ${cls}`;
+      button.addEventListener('click',async()=>{
+        if(action==='reject'&&!await BasmaDialogs.confirm('رفض الجهاز','سيُحذف هذا الجهاز وعلى الموظف تسجيل البصمة من جديد (وتحتاج اعتمادك).','رفض'))return;
+        for(const b of buttons)b.disabled=true;
+        try{await Basma.timeout(Basma.call('managerDevice',{action,employeeId:eid}),managerListTimeout(),'managerDevice');showToast(action==='approve'?'تم اعتماد الجهاز':'تم رفض الجهاز','success');}
+        catch(error){showToast('تعذر الحفظ. '+managerErrorText(error),'error');}
+        loadPendingDevices();
+      });buttons.push(button);row.appendChild(button);
+    }
+    return row;
+  }));
+}
 loadApprovals=async function(){
   const list=document.getElementById('approvals-list');if(!list)return;
   const value=await managerListLoad('approvals',list,()=>managerListAll('employees'));if(!value)return;

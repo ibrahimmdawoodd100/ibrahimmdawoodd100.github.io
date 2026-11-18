@@ -4,7 +4,9 @@ const fs = require('node:fs'), path = require('node:path');
 const req = require('node:module').createRequire(require.resolve('../functions/package.json'));
 const { initializeApp } = req('firebase-admin/app'), { getAuth } = req('firebase-admin/auth'), { getDatabase } = req('firebase-admin/database');
 const PASSWORD = 'e2e-Local-Only-1!';
-const ACCOUNTS = { seller: 'e2e-seller', manager: 'e2e-manager', employee: 'e2e-employee' };
+const ACCOUNTS = { seller: 'e2e-seller', manager: 'e2e-manager', employee: 'e2e-employee', employeeA: 'e2e-employee3', employeeB: 'e2e-employee4', employeeC: 'e2e-employee5' };
+// Employee record per account (A/B: account-switch test on one phone; C: approved, for the open-app update test).
+const EMPLOYEE_OF = { employee: 'e2e-emp1', employeeA: 'e2e-emp3', employeeB: 'e2e-emp4', employeeC: 'e2e-emp5' };
 const BRANCH = { lat: 24.7136, lng: 46.6753, radius: 300 };
 async function seed() {
   const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
@@ -22,13 +24,18 @@ async function seed() {
   const data = {
     [`access/${uid.seller}`]: { role: 'seller', enabled: true, version: 1 },
     [`access/${uid.manager}`]: { role: 'manager', companyId: cid, enabled: true, version: 1 },
-    [`access/${uid.employee}`]: { role: 'employee', companyId: cid, employeeId: 'e2e-emp1', enabled: true, version: 1 },
-    [`accountLinks/${cid}/manager`]: uid.manager, [`companyDirectory/${cid}`]: info, [`employeeIndex/${cid}/count`]: 2,
+    ...Object.fromEntries(Object.entries(EMPLOYEE_OF).map(([role, eid]) => [`access/${uid[role]}`, { role: 'employee', companyId: cid, employeeId: eid, enabled: true, version: 1 }])),
+    // C registered a fingerprint before v5.15 (no device entry = approved): it can check in at once.
+    [`credentials/${uid.employeeC}`]: { id: 'e2e-cred5', publicKey: 'a2V5', counter: 0, transports: [] },
+    [`accountLinks/${cid}/manager`]: uid.manager, [`companyDirectory/${cid}`]: info, [`employeeIndex/${cid}/count`]: 5,
     [`companies/${cid}`]: {
       info, settings: { checkIn: { from: '00:00', to: '23:59' }, checkOut: { from: '00:00', to: '23:59' }, weekendDays: [9] },
       warehouses: { 'e2e-w1': { name: 'e2e الفرع الرئيسي', active: true, geoZone: { ...BRANCH, enabled: true } } },
       employees: {
         'e2e-emp1': { name: 'e2e موظف البصمة', empId: 'E2E-1', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },
+        'e2e-emp3': { name: 'e2e موظف أ', empId: 'E2E-3', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },
+        'e2e-emp4': { name: 'e2e موظف ب', empId: 'E2E-4', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },
+        'e2e-emp5': { name: 'e2e موظف الجدول', empId: 'E2E-5', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'approved', credId: 'e2e-cred5', createdAt: now },
         'e2e-emp2': { name: 'e2e موظف السجلات', empId: 'E2E-2', role: 'محاسب', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'approved', credId: 'e2e-cred', createdAt: now }
       },
       records: { 'e2e-r1': { empId: 'e2e-emp2', empName: 'e2e موظف السجلات', type: 'in', timestamp: new Date(now - 36e5).toISOString(), dateKey: today, warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', locStatus: 'approved', delayMins: 0 } },
@@ -42,4 +49,4 @@ async function seed() {
   for (const ns of namespaces) await getDatabase(initializeApp({ projectId: 'demo-basma', databaseURL: `http://${host}/?ns=${ns}` }, `e2e-${ns}`)).ref().update(data);
   return { password: PASSWORD, accounts: ACCOUNTS, branch: BRANCH, companyName: info.nameAr, today };
 }
-module.exports = { seed, PASSWORD, ACCOUNTS, BRANCH };
+module.exports = { seed, PASSWORD, ACCOUNTS, BRANCH, EMPLOYEE_OF };

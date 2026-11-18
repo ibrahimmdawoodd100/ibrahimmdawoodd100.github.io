@@ -42,6 +42,7 @@ const defaultServer = (name, data) => {
   if (name === 'managerList' && data.kind === 'settings') return { settings: { checkIn: { from: '07:30', to: '08:30' } } };
   if (name === 'managerList' && data.kind === 'messages') return data.cursor ? { order: ['m1'], items: { m1: { empId: 'e1', message: 'قديمة', read: true } }, next: null } : { order: ['m2'], items: { m2: { empId: 'e1', message: 'جديدة', read: false } }, next: 'm2' };
   if (name === 'managerList' && data.kind === 'notifications') return { order: ['n2', 'n1'], items: { n2: { type: 'checkin', message: 'حضور', read: false }, n1: { type: 'checkout', message: 'انصراف', read: true } }, next: null };
+  if (name === 'managerList' && data.kind === 'devices') return { order: [], items: {} };
   if (name === 'managerBranch') return { id: data.id || 'w9' };
   throw Error('unexpected call ' + name);
 };
@@ -196,4 +197,22 @@ test('disabling an employee redraws the page the manager is on (the list does no
   assert.deepEqual(order, ['disableEmployee', 'loadAllData', 'emps page', 'toast:success']);
   order.length = 0; ctx.currentPage = 'dash'; await ctx.doDeleteEmp('e9');
   assert.deepEqual(order, ['disableEmployee', 'loadAllData', 'toast:success'], 'dashboard is already refreshed once');
+});
+
+test('employees page: a pending fingerprint device is listed; approving calls managerDevice and redraws the list', async () => {
+  let pending = true;
+  const h = managerHarness((n, d) => {
+    if (n === 'managerList' && d.kind === 'devices') return pending ? { order: ['e1'], items: { e1: { status: 'pending', label: 'Android · Chrome', registeredAt: 1 } } } : { order: [], items: {} };
+    if (n === 'managerDevice') { pending = false; return { ok: true }; }
+    return defaultServer(n, d);
+  });
+  h.el('page-emps').appendChild(h.el('emp-grid')); h.el('emp-grid').parentElement = h.el('page-emps'); // fake DOM: real browsers have parentElement
+  h.el('page-emps').insertBefore = (node, ref) => { node.parent = h.el('page-emps'); h.el('page-emps').children.unshift(node); };
+  await h.ctx.pageLoaders.emps(); await settle(20);
+  const box = h.el('pending-devices-section');
+  assert.match(h.texts(box), /أجهزة بانتظار الاعتماد \(1\).*أحمد.*Android · Chrome/);
+  h.button(box, 'اعتماد الجهاز').listeners.click(); await settle(30);
+  assert.deepEqual(h.list('managerDevice'), [{ action: 'approve', employeeId: 'e1' }]);
+  assert.equal(box.children.length, 0, 'list redrawn: nothing pending');
+  assert.ok(h.timeouts.some(([label, ms]) => label === 'managerDevice' && ms === 20000));
 });

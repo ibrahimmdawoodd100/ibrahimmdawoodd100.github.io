@@ -51,7 +51,7 @@ async function guarded(browser, options = {}) {
     }, 500);
   }, BUDGET.spinner);
   if (MODE === 'emulator') {
-    await context.addInitScript(() => { self.FIREBASE_APPCHECK_DEBUG_TOKEN = 'e2e-local-debug-token'; });
+    await context.addInitScript(() => { self.FIREBASE_APPCHECK_DEBUG_TOKEN = 'e2e-local-debug-token'; window.BASMA_VERSION_POLL_MS = 2000; }); // production: 30 s
     await context.route(/firebaseappcheck\.googleapis\.com/, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: testAppCheckToken(), ttl: '3600s' }) }));
   }
   context.on('page', page => {
@@ -135,6 +135,36 @@ test(`${MODE}: branch map — satellite tiles and the marker image load, no brok
   await g.verify(page, 'map'); await g.context.close();
 });
 
+// ---------------- helpers for the logged-in tests ----------------
+// An employee's phone: one browser profile with a virtual platform authenticator and GPS at the branch.
+async function employeePhone(browser) {
+  const { branch } = FIX;
+  const g = await guarded(browser, { permissions: ['geolocation'], geolocation: { latitude: branch.lat, longitude: branch.lng, accuracy: 15 } }), page = await g.context.newPage();
+  const cdp = await g.context.newCDPSession(page); await cdp.send('WebAuthn.enable');
+  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+  return { g, page, cdp, authenticatorId };
+}
+async function employeeLogin({ g, page }, account, ready = '#act-bio-btn') {
+  await g.open(page, '/employee/', '#dl-emp-username', `employee login ${account}`);
+  await page.fill('#dl-emp-username', account); await page.fill('#dl-emp-password', FIX.password); await page.click('#dl-emp-submit');
+  await expect(page.locator(ready)).toBeVisible({ timeout: 20000 });
+}
+async function managerSession(browser) {
+  const g = await guarded(browser), page = await g.context.newPage();
+  await g.open(page, '/manager/', '#dl-username', 'manager login'); await page.fill('#dl-username', FIX.accounts.manager); await page.fill('#dl-password', FIX.password); await page.click('#dl-submit-btn');
+  await expect(page.locator('#dash-tbody')).toContainText('e2e موظف السجلات', { timeout: 20000 });
+  return { g, page };
+}
+// The manager approves a pending device from the employees page (the real button, the real server call).
+async function approveDevice({ page }, employeeName) {
+  await show(page, 'showPage', 'emps');
+  const row = page.locator('#pending-devices-section .approval-card', { hasText: employeeName });
+  await expect(row).toBeVisible({ timeout: 15000 });
+  await row.getByRole('button', { name: 'اعتماد الجهاز' }).click();
+  await expect(page.locator('#pending-devices-section')).not.toContainText(employeeName, { timeout: 15000 });
+}
+const hhmm = minutes => `${String(Math.floor(((minutes % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String((((minutes % 1440) + 1440) % 1440) % 60).padStart(2, '0')}`;
+
 // ---------------- full logged-in flow (emulator only) ----------------
 test.describe('full flow on local emulators', () => {
   test.skip(MODE !== 'emulator', 'logged-in flow runs only against the local emulators (no production accounts)');
@@ -212,13 +242,19 @@ test.describe('full flow on local emulators', () => {
       await ge.open(page, '/employee/', '#dl-emp-username', 'employee login'); await page.fill('#dl-emp-username', accounts.employee); await page.fill('#dl-emp-password', password);
       const t = Date.now(); await page.click('#dl-emp-submit'); await expect(page.locator('#act-bio-btn')).toBeVisible({ timeout: 20000 }); timing('employee: login → activation screen (cold)', Date.now() - t, BUDGET.cold);
       await page.click('#act-bio-btn');
-      try { await expect(page.locator('#btn-checkin')).toBeVisible({ timeout: 30000 }); }
+      try { await expect(page.locator('#btn-checkin')).toBeVisible({ timeout: 30000 }); await expect(page.locator('#win-msg')).toContainText('بانتظار اعتماد المدير', { timeout: 15000 }); await expect(page.locator('#btn-checkin')).toBeDisabled(); }
       catch (error) {
         const status = await page.locator('#act-bio-status').innerText({ timeout: 2000 }).catch(() => '?');
         const creds = await cdp.send('WebAuthn.getCredentials', { authenticatorId }).then(r => r.credentials.length).catch(e => `error ${e.message}`);
         throw new Error(`fingerprint registration did not reach the home screen in 30 s. Page status: "${status}". Credentials on the virtual authenticator: ${creds}. Last console: ${JSON.stringify(ge.consoleTail)}`);
       }
       await shot(page, 'employee-home');
+    }, { timeout: 60000 });
+    await test.step('manager: sees the new-device notice and approves; the OPEN employee page enables check-in by itself', async () => {
+      const m = await managerSession(browser);
+      await show(m.page, 'showPage', 'admin-notifs'); await expect(m.page.locator('#admin-notif-list')).toContainText('بانتظار اعتمادك', { timeout: 15000 });
+      await approveDevice(m, 'e2e موظف البصمة'); await shot(m.page, 'manager-device-approved'); await m.g.verify(m.page, 'manager device approval'); await m.g.context.close();
+      const t = Date.now(); await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 20000 }); timing('employee page updated after manager approval (no reload)', Date.now() - t);
     }, { timeout: 60000 });
     await test.step('employee: notifications, leave and excuse pages', async () => {
       await show(page, 'showTab', 'notifs'); await expect(page.locator('#main-tab-notifs')).toContainText('e2e إشعار للموظف'); await shot(page, 'employee-notifications');
@@ -239,5 +275,66 @@ test.describe('full flow on local emulators', () => {
       await show(page, 'showTab', 'hist'); await expect(page.locator('#main-tab-hist')).toContainText('حضور'); await expect(page.locator('#main-tab-hist')).toContainText('انصراف'); await shot(page, 'employee-records');
       await ge.verify(page, 'employee'); await ge.context.close();
     }, { timeout: 60000 });
+  });
+});
+
+test.describe('account switch and open-app updates (local emulators)', () => {
+  test.skip(MODE !== 'emulator', 'logged-in tests run only against the local emulators');
+
+  test('account switch on one phone: B cannot use A\'s fingerprint, and B\'s new device is refused until the manager approves', async ({ browser }) => {
+    const phone = await employeePhone(browser), { page, cdp, authenticatorId, g } = phone, { accounts } = FIX;
+    const m = await managerSession(browser);
+    await test.step('A registers on this phone, the manager approves, A checks in', async () => {
+      await employeeLogin(phone, accounts.employeeA); await expect(page.locator('#act-emp-name')).toHaveText('e2e موظف أ');
+      await page.click('#act-bio-btn'); await expect(page.locator('#win-msg')).toContainText('بانتظار اعتماد المدير', { timeout: 30000 }); await expect(page.locator('#btn-checkin')).toBeDisabled();
+      await approveDevice(m, 'e2e موظف أ');
+      await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 20000 });
+      await page.click('#btn-checkin'); await expect(page.locator('#stat-in')).not.toHaveText('—', { timeout: 30000 }); await shot(page, 'switch-A-checked-in');
+    }, { timeout: 60000 });
+    await test.step('A logs out: no session and none of A\'s data stays in the browser', async () => {
+      await page.evaluate(() => Basma.logout()); await page.locator('#dl-emp-username').waitFor({ state: 'visible', timeout: 30000 });
+      const left = await page.evaluate(async () => {
+        const storage = [localStorage, sessionStorage].flatMap(s => Object.keys(s).map(k => [k, s.getItem(k)])).filter(([k, v]) => /^basma_/.test(k) && /e2e-employee3|e2e-emp3|e2e موظف أ/.test(v || ''));
+        const users = await new Promise(resolve => { const r = indexedDB.open('firebaseLocalStorageDb'); r.onerror = () => resolve(-1); r.onsuccess = () => { const db = r.result; if (!db.objectStoreNames.contains('firebaseLocalStorage')) { resolve(0); return; } const q = db.transaction('firebaseLocalStorage').objectStore('firebaseLocalStorage').getAll(); q.onsuccess = () => resolve(q.result.filter(x => /authUser/.test(x.fbase_key || '')).length); q.onerror = () => resolve(-1); }; });
+        return { storage, users, signedIn: Basma.signedIn };
+      });
+      expect(left).toEqual({ storage: [], users: 0, signedIn: false });
+    }, { timeout: 60000 });
+    await test.step('B logs in on the same phone: B\'s own activation; B\'s new device is pending; the SERVER refuses B\'s check-in', async () => {
+      await employeeLogin(phone, accounts.employeeB); await expect(page.locator('#act-emp-name')).toHaveText('e2e موظف ب');
+      await page.click('#act-bio-btn'); await expect(page.locator('#win-msg')).toContainText('بانتظار اعتماد المدير', { timeout: 30000 }); await expect(page.locator('#btn-checkin')).toBeDisabled();
+      // The UI blocks it; call the real check-in path anyway (fingerprint + server) to prove the server refuses.
+      const answer = await page.evaluate(async () => { try { await Basma.attendance('in', GPS_DATA); return 'ACCEPTED'; } catch (e) { return `${e.code} ${e.message}`; } });
+      expect(answer).toMatch(/failed-precondition.*بانتظار اعتماد المدير/);
+      const creds = await cdp.send('WebAuthn.getCredentials', { authenticatorId });
+      expect(creds.credentials.length, 'A\'s and B\'s fingerprints are both on this phone; only B\'s own is accepted for B').toBe(2);
+      await shot(page, 'switch-B-pending');
+    }, { timeout: 60000 });
+    await test.step('manager: A\'s check-in is recorded, nothing for B', async () => {
+      await show(m.page, 'showPage', 'attend'); await expect(m.page.locator('#att-tbody')).toContainText('e2e موظف أ', { timeout: 15000 });
+      const rows = await m.page.locator('#att-tbody tr', { hasText: 'e2e موظف ب' }).allInnerTexts();
+      expect(rows.join(' '), 'B has no check-in time').not.toMatch(/\d{1,2}:\d{2}/);
+    }, { timeout: 60000 });
+    await g.verify(page, 'account switch'); await m.g.verify(m.page, 'account switch manager'); await g.context.close(); await m.g.context.close();
+  });
+
+  test('open employee app updates by itself: a manager schedule change arrives, and the window boundary flips the button (mocked clock, no reload)', async ({ browser }) => {
+    const phone = await employeePhone(browser), { page, g } = phone, { accounts } = FIX;
+    await page.clock.install(); // fake timers; time keeps flowing until fastForward
+    await employeeLogin(phone, accounts.employeeC, '#btn-checkin');
+    await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 25000 });
+    const m = await managerSession(browser);
+    const now = Math.floor(Date.now() / 60000), from = hhmm(now - 20), to = hhmm(now + 3);
+    await test.step('the manager changes C\'s schedule; the open page shows it within seconds', async () => {
+      await m.page.evaluate(({ from, to }) => DB.ref(`companies/${COMPANY_ID}/employees/e2e-emp5/schedule`).set({ checkIn: { from, to }, checkOut: { from: '00:00', to: '23:59' } }), { from, to });
+      const t = Date.now(); await expect(page.locator('#tw-in-range')).toHaveText(`${from} — ${to}`, { timeout: 20000 }); timing('open employee page shows a manager schedule change', Date.now() - t);
+      await expect(page.locator('#tw-in-status')).toContainText('مفتوح'); await expect(page.locator('#btn-checkin')).toBeEnabled();
+    }, { timeout: 60000 });
+    await test.step('time passes the end of the check-in window: the button disables by itself', async () => {
+      await page.clock.fastForward('05:00');
+      await expect(page.locator('#tw-in-status')).toContainText('يبدأ بعد', { timeout: 10000 }); await expect(page.locator('#btn-checkin')).toBeDisabled();
+      await shot(page, 'window-closed-by-itself');
+    }, { timeout: 60000 });
+    await g.verify(page, 'open-app updates'); await m.g.verify(m.page, 'open-app manager'); await g.context.close(); await m.g.context.close();
   });
 });

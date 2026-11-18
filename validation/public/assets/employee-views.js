@@ -24,7 +24,7 @@ getGPS=async function(){
 };
 checkHoliday=function(date,settings){const day=BasmaReports.dateAt(date,COMPANY_INFO.timeZone||'UTC');return Object.values(settings?.weekendDays??[5]).includes(new Date(`${day}T12:00:00Z`).getUTCDay())||Object.values(settings?.holidays||{}).some(h=>h.date===day&&h.active!==false);};
 const secureAttendanceWindows=(()=>{
-  let anchor=null,clockPending=null,view=null,seeded=null,current=null;
+  let anchor=null,clockPending=null,view=null,seeded=null,current=null,knownVersion=null;
   const mono=()=>performance.now();
   function now(){return anchor&&mono()-anchor.at<600000?anchor.server+mono()-anchor.at:NaN;}
   async function sync(){
@@ -41,7 +41,8 @@ const secureAttendanceWindows=(()=>{
     anchor={server:home.serverTime+(after-before)/2,at:after};SERVER_TIME_OFFSET=anchor.server-Date.now();
     COMPANY_INFO=home.info;SETTINGS=home.settings||{};EMP={...home.employee,id:ACTIVATION_UID||EMP.id};
     const wh=home.warehouse||{};WAREHOUSE_GEO_ZONE=wh.geoZone||null;WAREHOUSE_SCHEDULE=wh.schedule||null;
-    current={today:newer(current?.today,home.today),date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS};
+    current={today:newer(current?.today,home.today),date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS,device:home.device||{status:'none'}};
+    knownVersion=home.scheduleVersion??knownVersion;
     for(const id of ['main-wh-name','profile-wh'])document.getElementById(id).textContent=wh.name||EMP.warehouseName||'';
     for(const id of ['splash-company-name','wh-company-name','reg-company-name','main-company-name']){const el=document.getElementById(id);if(el)el.textContent=COMPANY_INFO.nameAr||COMPANY_INFO.name||'الشركة';}
     for(const id of ['splash-logo','wh-logo','reg-logo','login-logo','main-logo']){const el=document.getElementById(id);if(el)el.textContent=COMPANY_INFO.logo||'🏭';}
@@ -69,13 +70,26 @@ const secureAttendanceWindows=(()=>{
     document.getElementById('win-msg').textContent=state.checkInExcused&&!state.checkOut?'العذر معتمد؛ يمكنك تسجيل الانصراف ضمن وقته وبالتحقق من البصمة والموقع':state.statusLabel||'سجّل حضورك ضمن نافذة الدوام';
     document.getElementById('tw-in-range').textContent=`${schedule.checkIn.from} — ${schedule.checkIn.to}`;document.getElementById('tw-out-range').textContent=`${schedule.checkOut.from} — ${schedule.checkOut.to}`;
     document.getElementById('tw-in-status').textContent=incoming.label;document.getElementById('tw-out-status').textContent=outgoing.label;
+    // v5.15: a fingerprint/device the manager has not approved yet cannot record attendance (the server refuses too).
+    if(cache.device?.status==='pending'){inButton.disabled=true;outButton.disabled=true;document.getElementById('win-msg').textContent='بصمتك أو جهازك الجديد بانتظار اعتماد المدير؛ لا يمكن تسجيل الحضور قبل الاعتماد. ستتحدث الصفحة وحدها بعد الاعتماد.';}
     window.basmaRenderPartial?.();
     return Math.min(incoming.nextMs,outgoing.nextMs);
   }
   function get(){if(!view)view=BasmaClock.controller({now,load,render,onError:error=>{document.getElementById('btn-checkin').disabled=true;document.getElementById('btn-checkout').disabled=true;document.getElementById('win-msg').textContent=window.BasmaErrors?.message(error)??error.message;}});return view;}
   function foreground(){if(EMP?.id&&view)get().foreground();}
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')foreground();});
-  for(const event of ['focus','pageshow','basma-attendance-settled'])window.addEventListener(event,foreground);
+  for(const event of ['focus','pageshow','online','basma-attendance-settled'])window.addEventListener(event,foreground);
+  // v5.15: manager changes (schedules, branches, holidays, device approval) reach an open page within ~30 s: one tiny
+  // server call returns the company's schedule version; only a CHANGED version re-reads employeeHome.
+  async function checkVersion(){
+    if(!EMP?.id||!view||document.visibilityState==='hidden')return;
+    try{const value=(await Basma.timeout(Basma.call('employeeList',{kind:'version'}),20000,'employeeList')).value??0;if(knownVersion!==null&&value!==knownVersion){knownVersion=value;get().refresh();}else knownVersion=value;}catch{}
+  }
+  if(typeof setInterval==='function')setInterval(checkVersion,Number(window.BASMA_VERSION_POLL_MS)||30000);
+  // Phone sleep: performance.now() may stop while asleep, so the server-anchored clock would lag. If wall-clock time
+  // jumped well past the monotonic clock, re-read (new server-time anchor) before showing any window state.
+  let wall=Date.now(),monoAt=mono();
+  if(typeof setInterval==='function')setInterval(()=>{const w=Date.now(),m=mono();if((w-wall)-(m-monoAt)>5000)foreground();wall=w;monoAt=m;},2000);
   return {seed:home=>{seeded=home;apply(home);},updateToday,get today(){return current?.today||{};},start:()=>get().start(),refresh:()=>get().foreground(),evaluate:()=>view?.evaluate(),sync,now};
 })();
 loadWinStatus=()=>secureAttendanceWindows.start();
