@@ -127,6 +127,35 @@ const scenarios = {
     assert.equal(await get(`credentials/${B}`), null); assert.equal((await get(`companies/${cid}/employees/eB`)).status, 'pending_activation');
     assert.deepEqual(Object.values(await get(`deviceLog/${cid}/eB`)).map(e => e.event), ['registered', 'approved', 'rejected']);
   },
+  'cost guards: one-call payroll, month versions change on every month write, hourly cap per login': async (file, tag) => {
+    const cid = `cCost${tag}`, mgr = `costM_${tag}`, emp = `costE_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'E', empId: 'N1', warehouseId: 'w1', warehouseName: 'Branch', credId: 'cred-1', deviceFingerprint: 'secret-device' });
+    await seed.ref(`privatePayroll/${cid}`).set({ e1: { salary: 900, deductionPercent: 50, iban: 'secret-iban' } });
+    const call = async (name, uid, data) => JSON.parse(JSON.stringify(await loadServer(file).invoke(name, uid, data)));
+    assert.deepEqual(await call('managerList', mgr, { kind: 'payrollAll' }), { items: { e1: { salary: 900, deductionPercent: 50 } } }, 'all salaries, only the two fields');
+    const month = new Date().toISOString().slice(0, 7), versions = async () => (await call('managerList', mgr, { kind: 'monthVersions', months: [month] })).versions[month];
+    assert.equal(await versions(), 0);
+    await call('submitRequest', emp, { kind: 'excuse', type: 'no_checkout', reason: 'نسيت' });
+    const v1 = await versions(); assert.ok(v1 > 0, 'a new request changes its month');
+    const today = new Date().toISOString().slice(0, 10);
+    await seed.ref(`companies/${cid}/leaves/L1`).set({ empId: 'e1', date: today, status: 'pending', leaveType: 'paid', createdAt: Date.now() });
+    await new Promise(r => setTimeout(r, 5));
+    await call('reviewRequest', mgr, { collection: 'leaves', id: 'L1', status: 'rejected' });
+    const v2 = await versions(); assert.ok(v2 > v1, 'a decision changes its month');
+    await seed.ref(`attendanceLedger/${cid}/e1/${today}`).set({ revision: 1, events: { in: { empId: 'e1', type: 'in', timestamp: new Date().toISOString(), dateKey: today, actor: emp } } }); // as recordAttendance writes it
+    await new Promise(r => setTimeout(r, 5));
+    await loadServer(file).exports.projectAttendance({ params: { cid, eid: 'e1', date: today } });
+    assert.ok((await versions()) > v2, 'a projected attendance record changes its month');
+    for (const bad of [[], ['2026-13'], Array(13).fill(month)]) await assert.rejects(call('managerList', mgr, { kind: 'monthVersions', months: bad }), e => e.code === 'invalid-argument');
+    const home = await call('employeeHome', emp);
+    assert.equal(home.employee.deviceFingerprint, undefined, 'employeeHome sends only the fields the page uses');
+    // Hourly cap: a login that already made 600 calls this hour is refused (90/minute still applies).
+    await seed.ref(`rateLimits/${emp}`).set({ bucket: Math.floor(Date.now() / 60000), count: 1, hour: Math.floor(Date.now() / 3600000), hourCount: 600, expiresAt: Date.now() + 3600000 });
+    await assert.rejects(call('employeeList', emp, { kind: 'version' }), e => e.code === 'resource-exhausted');
+  },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;
     await seedCompany(cid);

@@ -46,7 +46,23 @@ async function seed() {
     },
     [`privatePayroll/${cid}/e2e-emp2`]: { salary: 1000, deductionPercent: 100 }
   };
-  for (const ns of namespaces) await getDatabase(initializeApp({ projectId: 'demo-basma', databaseURL: `http://${host}/?ns=${ns}` }, `e2e-${ns}`)).ref().update(data);
+  // Cost-budget volume (v5.16): 332 more companies x 30 employees (10,000 employees in total) and, in the test company,
+  // 25 more employees with attendance records for this month and the previous month (for day/month/payroll views).
+  const bulk = {}, day = d => new Date(now - d * 864e5).toISOString().slice(0, 10);
+  for (let c = 1; c <= 332; c++) {
+    const id = `e2e-bulk-${String(c).padStart(3, '0')}`, bulkInfo = { nameAr: `e2e شركة ${c}`, status: 'active', expiresAt: now + 30 * 864e5, timeZone: 'UTC', maxEmployees: 30, plan: 'pro' };
+    bulk[`companyDirectory/${id}`] = bulkInfo; bulk[`companies/${id}/info`] = bulkInfo; bulk[`employeeIndex/${id}/count`] = 30;
+    bulk[`companies/${id}/employees`] = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`e${i}`, { name: `موظف ${i}`, empId: `B${c}-${i}`, warehouseId: 'w1', warehouseName: 'فرع', status: 'approved', createdAt: now }]));
+  }
+  const records = {};
+  for (let i = 0; i < 25; i++) {
+    const eid = `e2e-vol-${i}`;
+    bulk[`companies/${cid}/employees/${eid}`] = { name: `e2e حجم ${i}`, empId: `V${i}`, role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'approved', createdAt: now - 90 * 864e5 };
+    bulk[`privatePayroll/${cid}/${eid}`] = { salary: 1000 + i, deductionPercent: 100 };
+    for (let d = 1; d <= 45; d++) { const key = day(d); for (const type of ['in', 'out']) records[`e2e-v-${eid}-${key}-${type}`] = { empId: eid, empName: `e2e حجم ${i}`, type, timestamp: `${key}T${type === 'in' ? '08' : '16'}:00:00.000Z`, dateKey: key, warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', locStatus: 'approved', delayMins: 0, lat: 24.7136, lng: 46.6753, accuracy: 12, locationName: 'e2e', actor: `uid-${eid}` }; }
+  }
+  for (const [k, v] of Object.entries(records)) bulk[`companies/${cid}/records/${k}`] = v;
+  for (const ns of namespaces) { const db = getDatabase(initializeApp({ projectId: 'demo-basma', databaseURL: `http://${host}/?ns=${ns}` }, `e2e-${ns}`)); await db.ref().update(data); await db.ref().update(bulk); }
   return { password: PASSWORD, accounts: ACCOUNTS, branch: BRANCH, companyName: info.nameAr, today };
 }
 module.exports = { seed, PASSWORD, ACCOUNTS, BRANCH, EMPLOYEE_OF };

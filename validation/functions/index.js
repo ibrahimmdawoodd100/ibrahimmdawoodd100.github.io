@@ -19,7 +19,9 @@ const region = 'us-central1';
 const read = async path => (await db.ref(path).get()).val();
 const audit = (actor, action, target, details = {}) => db.ref('audit').push({ actor, action, target, details, at: Date.now() });
 function endpoint(roles, handler) {
-  return onCall({ region, enforceAppCheck: true, maxInstances: 10, timeoutSeconds: 60 }, async req => {
+  // v5.16 cost guards: explicit 1 vCPU / 256 MiB / 80 concurrent requests (as live), max 10 instances, no min
+  // instances, 30 s timeout (calls take 30-500 ms; a stuck call no longer bills 60 s).
+  return onCall({ region, enforceAppCheck: true, maxInstances: 10, concurrency: 80, cpu: 1, memory: '256MiB', timeoutSeconds: 30 }, async req => {
     try {
       if (!req.auth) p.fail('سجّل الدخول', 'unauthenticated');
       const member = await read(`access/${req.auth.uid}`);
@@ -27,9 +29,12 @@ function endpoint(roles, handler) {
       p.authorize(member, req.auth.token, info, roles);
       const employee = member.role === 'employee' ? await employeeContext(req.auth.uid, member) : null;
       const now = Date.now(), bucket = Math.floor(now / 60000);
+      // Per login: 90 calls per minute AND 600 per hour (same counter record), so a stolen account cannot run up costs.
+      const hour = Math.floor(now / 3600000);
       const rate = await db.ref(`rateLimits/${req.auth.uid}`).transaction(old => {
-        const state = old?.bucket === bucket ? old : { bucket, count: 0, expiresAt: now + 120000 };
-        return state.count >= 90 ? undefined : { ...state, count: state.count + 1 };
+        const state = old?.bucket === bucket ? old : { bucket, count: 0, hour: old?.hour, hourCount: old?.hourCount, expiresAt: now + 3700000 };
+        const hourCount = state.hour === hour ? state.hourCount || 0 : 0;
+        return state.count >= 90 || hourCount >= 600 ? undefined : { ...state, count: state.count + 1, hour, hourCount: hourCount + 1, expiresAt: now + 3700000 };
       });
       if (!rate.committed) p.fail('طلبات كثيرة، حاول لاحقًا', 'resource-exhausted');
       return await handler({ uid: req.auth.uid, token: req.auth.token, member, info, employee, data: req.data || {} });
@@ -56,7 +61,7 @@ exports.employeeHome = endpoint(['employee'], async ({uid,member,info,employee})
   ]);
   const device=credential?{status:await deviceState(cid,eid,credential.id)}:{status:'none'};
   const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value?.[key]!==undefined).map(key=>[key,value[key]]));
-  return {serverTime:Date.now(),date,employee,
+  return {serverTime:Date.now(),date,employee:pick(employee,['name','empId','role','warehouseId','warehouseName','status','credId','schedule']),
     info:pick(info,['nameAr','nameEn','name','logo','timeZone','status']),
     settings:pick(settings,['checkIn','checkOut','weekendDays','holidays','geoZone']),
     warehouse:pick(warehouse,['name','active','schedule','geoZone']),today:today?.dateKey===date?today:{},
@@ -85,7 +90,7 @@ exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
   const staff = Object.fromEntries(Object.entries(employees || {}).map(([eid, e]) => [eid, pick(e, MANAGER_EMPLOYEE_FIELDS)]));
   return { serverTime: Date.now(), date, companyId: cid,
     info: pick(info, ['nameAr', 'nameEn', 'logo', 'industry', 'timeZone', 'status', 'expiresAt', 'maxEmployees', 'plan']),
-    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records, leaves, excuses, badges, profile: sessionOf(member, info) };
+    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records: Object.fromEntries(Object.entries(records || {}).map(([id, r]) => [id, pick(r, RECORD_FIELDS)])), leaves, excuses, badges, profile: sessionOf(member, info) };
 });
 // Manager attendance records, reports, payroll and request lists through ONE call per range (no direct database
 // reads, which stall on networks where the realtime connection does not establish). Indexed queries only
@@ -126,6 +131,16 @@ exports.managerList = endpoint(['manager'], async ({ member, data }) => {
   if (data.kind === 'settings') return { settings: (await read(`companies/${cid}/settings`)) || {} };
   // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
   if (data.kind === 'status') return { value: (await read(`companies/${cid}/info/status`)) ?? null };
+  if (data.kind === 'payrollAll') {
+    const all = (await read(`privatePayroll/${cid}`)) || {};
+    return { items: Object.fromEntries(Object.entries(all).map(([eid, v]) => [eid, { salary: v?.salary ?? null, deductionPercent: v?.deductionPercent ?? null }])) };
+  }
+  if (data.kind === 'monthVersions') {
+    const months = Array.isArray(data.months) ? data.months : [];
+    if (!months.length || months.length > 12 || months.some(m => typeof m !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(m))) p.fail('أشهر غير صالحة', 'invalid-argument');
+    const values = await Promise.all(months.map(m => read(`recordsVersions/${cid}/${m}`)));
+    return { versions: Object.fromEntries(months.map((m, i) => [m, values[i] ?? 0])) };
+  }
   if (data.kind === 'devices') {
     const all = (await read(`deviceApprovals/${cid}`)) || {};
     const items = Object.fromEntries(Object.entries(all).filter(([, d]) => d?.status === 'pending').map(([eid, d]) => [eid, { status: d.status, label: d.label || '', registeredAt: d.registeredAt || null }]));
@@ -361,7 +376,7 @@ exports.listCompanies = endpoint(['seller'], async ({ data }) => {
   }));
   return { companies, cursor: snapshot.numChildren() === 100 ? cursor : null };
 });
-exports.projectCompanyDirectory = onValueWritten({ ref:'/companies/{cid}/info', region, retry:true }, async event => {
+exports.projectCompanyDirectory = onValueWritten({ ref:'/companies/{cid}/info', region, retry:true, maxInstances: 2, timeoutSeconds: 60 }, async event => {
   const info = await read(`companies/${event.params.cid}/info`);
   await db.ref(`companyDirectory/${event.params.cid}`).set(info);
 });
@@ -583,6 +598,9 @@ async function deviceState(cid, eid, credId) {
 const deviceLog = (cid, eid, event, details = {}) => db.ref(`deviceLog/${cid}/${eid}`).push({ event, at: Date.now(), ...details });
 // One small value per company; open employee pages poll it (employeeList 'version') and re-read employeeHome on change.
 const bumpVersion = cid => db.ref(`scheduleVersions/${cid}`).set(Date.now());
+// Per company and month: changes whenever records/leaves/excuses of that month change. The manager page caches CLOSED
+// months on the phone and re-downloads a month only when this number differs (v5.16 cost).
+const bumpMonth = (cid, date) => (typeof date === 'string' && /^\d{4}-\d{2}/.test(date) ? db.ref(`recordsVersions/${cid}/${date.slice(0, 7)}`).set(Date.now()) : null);
 exports.beginWebAuthn = endpoint(['employee'], async ({ uid, member, data }) => {
   // Warm-up ping from the employee page: starts this instance before the fingerprint button is pressed.
   // Reached only after the endpoint's Auth, App Check, access and rate-limit checks; no reads, no side effects.
@@ -719,7 +737,7 @@ function todaySummary(state, eid, date) {
   // Same shape as the stored node (the database drops null/undefined fields).
   return Object.fromEntries(Object.entries(today).filter(([, v]) => v !== null && v !== undefined));
 }
-exports.projectAttendance = onValueWritten({ ref: '/attendanceLedger/{cid}/{eid}/{date}', region, retry: true }, async event => {
+exports.projectAttendance = onValueWritten({ ref: '/attendanceLedger/{cid}/{eid}/{date}', region, retry: true, maxInstances: 5, timeoutSeconds: 60 }, async event => {
   const { cid, eid, date } = event.params;
   const state = await read(`attendanceLedger/${cid}/${eid}/${date}`);
   if (!state) return;
@@ -746,6 +764,7 @@ exports.projectAttendance = onValueWritten({ ref: '/attendanceLedger/{cid}/{eid}
     return today;
   });
   await db.ref().update(updates);
+  await bumpMonth(cid, date);
 });
 exports.submitRequest = endpoint(['employee'], async ({ uid, member, info, data }) => {
   const employee = await employeeContext(uid, member), cid = member.companyId, eid = member.employeeId;
@@ -767,6 +786,7 @@ exports.submitRequest = endpoint(['employee'], async ({ uid, member, info, data 
     const created = await db.ref(`companies/${cid}/${collection}/${id}`).transaction(old => old ? undefined : record);
     if (!created.committed) p.fail('لديك طلب عذر لهذا اليوم بالفعل', 'already-exists');
   } else await db.ref(`companies/${cid}/${collection}/${id}`).set(record);
+  await bumpMonth(cid, record.date);
   await audit(uid, `request.${collection}`, `${cid}/${id}`);
   return { ok: true };
 });
@@ -847,6 +867,7 @@ exports.reviewRequest = endpoint(['manager'], async ({ uid, member, data }) => {
   const note = { type: `${data.collection}_res`, message: data.status === 'approved' ? 'تم قبول طلبك' : 'تم رفض طلبك', read: false, timestamp: new Date().toISOString() };
   updates[`companies/${cid}/notifications/${request.empId}/${db.ref().push().key}`] = note;
   await db.ref().update(updates);
+  await bumpMonth(cid, request.date);
   await audit(uid, 'request.review', `${cid}/${id}`, { status: data.status });
   return { ok: true };
   });
@@ -861,7 +882,7 @@ exports.manualAttendance = endpoint(['manager'], async ({ uid, member, info, dat
   await audit(uid, 'attendance.adjust', `${cid}/${eid}/${date}`, { status: data.status, reason });
   return { ok: true };
 });
-exports.cleanupSecurityState = onSchedule({ schedule: 'every 24 hours', region }, async () => {
+exports.cleanupSecurityState = onSchedule({ schedule: 'every 24 hours', region, maxInstances: 1, timeoutSeconds: 300 }, async () => {
   for (const root of ['challenges', 'proofs']) {
     // Cursor batches bound memory. Expired proofs are retained briefly for diagnosing replay attempts.
     let cursor;

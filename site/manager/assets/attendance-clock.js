@@ -13,7 +13,7 @@
     return {open,remaining,nextMs:remaining*1000-(now%1000),label:open?`مفتوح؛ يغلق بعد ${duration(remaining)}`:`يبدأ بعد ${duration(remaining)}`};
   }
   function duration(seconds){return `${Math.floor(seconds/3600).toString().padStart(2,'0')}:${Math.floor(seconds%3600/60).toString().padStart(2,'0')}:${Math.floor(seconds%60).toString().padStart(2,'0')}`;}
-  function controller({now,load,render,onError=()=>{},timers=globalThis}){
+  function controller({now,load,render,onError=()=>{},timers=globalThis,refreshMs=300000}){
     let state=null,pending=null,boundary=null,tick=null,refreshTimer=null,started=false,generation=0;
     function evaluate(){
       if(!started)return;
@@ -28,7 +28,7 @@
       pending=(async()=>{try{const value=await load();if(started&&current===generation)state=value;}catch(error){if(current===generation){state=null;onError(error);}}finally{pending=null;evaluate();}})();
       return pending;
     }
-    function start(){if(started)return refresh();started=true;generation++;evaluate();tick=timers.setInterval(evaluate,1000);refreshTimer=timers.setInterval(refresh,300000);return refresh();}
+    function start(){if(started)return refresh();started=true;generation++;evaluate();tick=timers.setInterval(evaluate,1000);refreshTimer=timers.setInterval(refresh,refreshMs);return refresh();}
     function foreground(){evaluate();return refresh();}
     function stop(){started=false;generation++;timers.clearInterval(tick);timers.clearInterval(refreshTimer);timers.clearTimeout(boundary);state=null;}
     return {start,stop,refresh,evaluate,foreground};

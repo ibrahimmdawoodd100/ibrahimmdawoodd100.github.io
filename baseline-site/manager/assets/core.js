@@ -64,6 +64,7 @@ window.Basma = (() => {
   async function session(role) {
     await init(role);
     if (!app.auth().currentUser) return null;
+    rememberUser(app.auth().currentUser.uid);
     try {
       traceStart(`فتح صفحة ${role}`);
       // App Check token and the forced ID-token refresh (fresh claims) are independent: run them in parallel.
@@ -96,16 +97,28 @@ window.Basma = (() => {
   async function login(username, password, role) {
     await init(role);
     const email = username.includes('@') ? username.trim() : `${username.trim()}@basma.app`;
-    await app.auth().signInWithEmailAndPassword(email, password);
+    const signed = await app.auth().signInWithEmailAndPassword(email, password);
+    rememberUser(signed.user.uid);
     return session(role);
   }
   async function logout() {
     window.dispatchEvent?.(new CustomEvent('basma-session-ended'));
     if (app) { app.database().goOffline(); await app.auth().signOut(); }
-    for (const storage of [localStorage, sessionStorage]) {
-      for (const key of Object.keys(storage)) if (/^basma_shared_/.test(key)) storage.removeItem(key);
-    }
+    clearLocalState();
     location.reload();
+  }
+  // v5.15: every Basma value this browser keeps for a user (session hints, step timings, cached flags) is removed on
+  // logout AND when a different account signs in on the same phone, so employee B never sees employee A's state.
+  // Firebase's own sign-in record is removed by signOut(); page memory is cleared by the reload.
+  function clearLocalState(keep = []) {
+    for (const storage of [localStorage, sessionStorage]) {
+      try { for (const key of Object.keys(storage)) if (/^basma_/.test(key) && !keep.includes(key)) storage.removeItem(key); } catch {}
+    }
+  }
+  function rememberUser(uid) {
+    let last = null; try { last = localStorage.getItem('basma_last_uid'); } catch {}
+    if (last && last !== uid) clearLocalState();
+    try { localStorage.setItem('basma_last_uid', uid); } catch {}
   }
   // ---- Step timings for /manager/diagnostics.html: step name, ms, ok/code only. Never data or credentials. ----
   const TRACE_KEY = 'basma_diag_trace';
@@ -165,6 +178,11 @@ window.Basma = (() => {
   }
   // Only one fingerprint operation at a time: a double tap must never start a second begin/finish.
   let biometricRunning = false;
+  function deviceLabel() {
+    const ua = navigator.userAgent || '', os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : 'جهاز';
+    const browser = /SamsungBrowser/.test(ua) ? 'Samsung' : /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : /Firefox\//.test(ua) ? 'Firefox' : 'متصفح';
+    return `${os} · ${browser}`;
+  }
   async function biometric(mode, intent = 'login', missionKey) {
     if (biometricRunning) throw Object.assign(new Error('عملية بصمة جارية بالفعل'), { code: 'basma/busy' });
     biometricRunning = true;
@@ -182,7 +200,8 @@ window.Basma = (() => {
     const response = { id: credential.id, rawId: encode(credential.rawId), type: credential.type, clientExtensionResults: credential.getClientExtensionResults(), response: { clientDataJSON: encode(credential.response.clientDataJSON) } };
     if (mode === 'register') Object.assign(response.response, { attestationObject: encode(credential.response.attestationObject), transports: credential.response.getTransports ? credential.response.getTransports() : [] });
     else Object.assign(response.response, { authenticatorData: encode(credential.response.authenticatorData), signature: encode(credential.response.signature), userHandle: credential.response.userHandle ? encode(credential.response.userHandle) : null });
-    return callRetryingAborted('finishWebAuthn', { challengeId: start.challengeId, response });
+    // Registration sends a short device label for the manager's approval notice (display only; the server checks the credential).
+    return callRetryingAborted('finishWebAuthn', { challengeId: start.challengeId, response, ...(mode === 'register' ? { deviceLabel: deviceLabel() } : {}) });
   }
   async function attendance(type, locationData, missionKey) {
     const point = await getGPS();

@@ -2,13 +2,32 @@
 // Final adapters for the three HTML files explicitly supplied on 15 October.
 // Base data (staff, settings, branches) comes from the managerHome server call, never from direct database reads.
 const managerData=BasmaManagerData.create(()=>({db:DB,cid:COMPANY_ID,session:Basma.profile||DB}),{loadBase:()=>Basma.timeout(Basma.call('managerHome'),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,'managerHome')});
+// v5.16 cost: CLOSED months cached on this phone (IndexedDB, read-only). Before using a cached month, one tiny call asks
+// for the month's version (changed by any record/leave/excuse/approval in that month); only a changed month is
+// downloaded again. Firebase stays the source of truth; logout deletes this cache. No IndexedDB = no cache.
+const monthCache=(()=>{
+  let dbp=null;
+  const open=()=>dbp||(dbp=new Promise(resolve=>{try{const r=indexedDB.open('basma-month-cache',1);r.onupgradeneeded=()=>r.result.createObjectStore('months');r.onsuccess=()=>resolve(r.result);r.onerror=()=>resolve(null);}catch{resolve(null);}}));
+  const run=async(mode,fn)=>{const db=await open();if(!db)return null;return new Promise(resolve=>{try{const t=db.transaction('months',mode),req=fn(t.objectStore('months'));t.oncomplete=()=>resolve(req?.result??null);t.onerror=()=>resolve(null);}catch{resolve(null);}});};
+  return {get:key=>run('readonly',st=>st.get(key)),put:(key,value)=>run('readwrite',st=>st.put(value,key))};
+})();
+const lastDay=month=>{const [y,m]=month.split('-').map(Number);return new Date(Date.UTC(y,m,0)).toISOString().slice(0,10);};
+async function closedMonth(a,b,fetchPart){
+  const month=a.slice(0,7);
+  if(a!==`${month}-01`||b!==lastDay(month)||month>=secureManagerView.today().slice(0,7))return fetchPart();
+  const key=`${COMPANY_ID}:${month}`;
+  let version=null;try{version=(await Basma.timeout(Basma.call('managerList',{kind:'monthVersions',months:[month]}),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,'managerList')).versions?.[month]??null;}catch{return fetchPart();}
+  const cached=await monthCache.get(key);
+  if(cached&&version!==null&&cached.version===version)return cached.data;
+  const data=await fetchPart();if(version!==null)monthCache.put(key,{version,data});return data;
+}
 // Records, leaves and excuses for any range: managerRecords, at most 31 days per call (reports split longer ranges).
 async function managerRange(from,to){
   const merged={records:{},leaves:{},excuses:{}};let start=Date.parse(`${from}T00:00:00Z`);const end=Date.parse(`${to}T00:00:00Z`);
   if(!Number.isFinite(start)||!Number.isFinite(end)||start>end)throw Error('نطاق التاريخ غير صالح');
   while(start<=end){
     const stop=Math.min(end,start+30*86400000),a=new Date(start).toISOString().slice(0,10),b=new Date(stop).toISOString().slice(0,10),t0=Basma.clock();
-    try{const part=await Basma.timeout(Basma.call('managerRecords',{from:a,to:b}),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,'managerRecords');Basma.trace(`الدالة managerRecords ${a}…${b}`,t0,true);for(const key of ['records','leaves','excuses'])Object.assign(merged[key],part[key]||{});}
+    try{const part=await closedMonth(a,b,()=>Basma.timeout(Basma.call('managerRecords',{from:a,to:b}),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,'managerRecords'));Basma.trace(`الدالة managerRecords ${a}…${b}`,t0,true);for(const key of ['records','leaves','excuses'])Object.assign(merged[key],part[key]||{});}
     catch(error){Basma.trace(`الدالة managerRecords ${a}…${b}`,t0,false,error?.code||'error');throw error;}
     start=stop+86400000;
   }
@@ -74,7 +93,7 @@ function applyManagerHome(home){
   COMPANY_INFO={...(COMPANY_INFO||{}),...(home.info||{})};
   managerData.prime(home);ALL_EMPLOYEES=home.employees||{};ALL_WAREHOUSES=home.warehouses||{};
   // Badges and company status arrive inside managerHome: the badge listeners start from them (no extra call).
-  if(home.badges&&typeof DB?.prime==='function')DB.prime('managerList',{kind:'badges'},home.badges);
+  if(home.badges&&typeof DB?.prime==='function'){DB.prime('managerList',{kind:'badges'},home.badges);DB.poll?.();} // badge listeners update from this answer (no extra call)
   const name=document.getElementById('sb-company'),logo=document.getElementById('sb-logo');
   if(name&&COMPANY_INFO.nameAr)name.textContent=COMPANY_INFO.nameAr;if(logo)logo.textContent=COMPANY_INFO.logo||'🏭';
 }
@@ -144,8 +163,10 @@ calculatePayroll=async function(){
     days=days.filter(r=>(eid==='all'||r.employeeId===eid)&&(wh==='all'||ALL_EMPLOYEES[r.employeeId].warehouseId===wh));
     // One employee without salary data no longer cancels everyone's payroll (found by E2E v5.15): the others are
     // calculated and the missing ones are named. Lookups run in parallel (independent calls).
+    // v5.16: all salaries in ONE call (was one call per employee).
+    const all=(await Basma.timeout(Basma.call('managerList',{kind:'payrollAll'}),Number(window.BASMA_LIST_TIMEOUT_MS)||20000,'managerList')).items||{};
     const financial={},missing=[];
-    await Promise.all([...new Set(days.map(r=>r.employeeId))].map(async id=>{const value=await secureManagerView.financial(id,{optional:true});if(value)financial[id]=value;else missing.push(id);}));
+    for(const id of new Set(days.map(r=>r.employeeId))){const value=all[id];if(value&&value.salary!=null)financial[id]=value;else missing.push(id);}
     days=days.filter(r=>!missing.includes(r.employeeId));
     if(ticket!==payrollTicket)return;
     const rows=BasmaReports.payroll(days,ALL_EMPLOYEES,financial);payrollData={rows,monthVal:month,workingDays:rows[0]?.workingDays||0};
@@ -261,7 +282,7 @@ async function refreshVisibleManager(){
 refreshCurrentPage=()=>refreshVisibleManager();
 window.addEventListener?.('focus',refreshVisibleManager);window.addEventListener?.('pageshow',refreshVisibleManager);
 document.addEventListener?.('visibilitychange',()=>{if(document.visibilityState==='visible')refreshVisibleManager();});
-setInterval(()=>{if(document.visibilityState!=='hidden')refreshVisibleManager();},300000);
+setInterval(()=>{if(document.visibilityState!=='hidden')refreshVisibleManager();},600000); // v5.16: 10 min (was 5); focus/visibility still refresh
 window.addEventListener?.('basma-session-ended',clearManagerData);
 window.addEventListener?.('basma-manager-mutated',()=>{managerData.invalidate();});
 if(typeof pageLoaders!=='undefined'){pageLoaders.leaves=()=>loadLeaves();pageLoaders.excuses=()=>loadExcuses();}

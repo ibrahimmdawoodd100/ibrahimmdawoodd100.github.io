@@ -3,29 +3,49 @@
 // App-shell cache for /manager/ only (never the site root, never another app on this site).
 // Cache-first for the files listed in SHELL; everything else (Firebase, data, other origins, POST) goes to the
 // network untouched. A new release changes VERSION, so the browser installs a fresh cache and deletes the old one.
-const VERSION = '8201da6f4f95ca7b';
+// v5.16: each file has its own content hash; on a new release UNCHANGED files are copied from the previous cache and
+// only changed files are downloaded (a typical release: a few KB per phone instead of the whole app).
+const VERSION = 'd46c145573719f67';
 const SCOPE = '/manager/';
-const SHELL = [
-  "/manager/",
-  "/manager/assets/actions.js",
-  "/manager/assets/config.js",
-  "/manager/assets/core.js",
-  "/manager/assets/dialogs.js",
-  "/manager/assets/leaflet/leaflet.css",
-  "/manager/assets/leaflet/leaflet.js",
-  "/manager/assets/manager-data.js",
-  "/manager/assets/manager-views.js",
-  "/manager/assets/manager.js",
-  "/manager/assets/report-model.js",
-  "/manager/assets/safe-dom.js",
-  "/manager/icon-manager-192.png",
-  "/manager/icon-manager-512.png",
-  "/manager/manifest.json"
-];
+const FILES = {
+  "/manager/": "43766424366d",
+  "/manager/assets/actions.js": "2ee09ee897fc",
+  "/manager/assets/config.js": "01501064d14f",
+  "/manager/assets/core.js": "6fdd649e82d8",
+  "/manager/assets/dialogs.js": "027614ad19b1",
+  "/manager/assets/leaflet/leaflet.css": "a78371028241",
+  "/manager/assets/leaflet/leaflet.js": "db49d009c841",
+  "/manager/assets/manager-data.js": "7a91ada56dfe",
+  "/manager/assets/manager-views.js": "bffea56fd947",
+  "/manager/assets/manager.js": "534f95470f04",
+  "/manager/assets/report-model.js": "3944e4125a5f",
+  "/manager/assets/safe-dom.js": "a9347101b27d",
+  "/manager/icon-manager-192.png": "432358d6f141",
+  "/manager/icon-manager-512.png": "92c5f11bb6dd",
+  "/manager/manifest.json": "432c2c3d035a"
+};
+const SHELL = Object.keys(FILES);
 const CACHE = 'basma-shell-manager-' + VERSION;
+async function previous(url, hash) {
+  for (const name of await caches.keys()) {
+    if (!name.startsWith('basma-shell-manager-') || name === CACHE) continue;
+    const hit = await (await caches.open(name)).match(url);
+    if (hit && hit.headers.get('x-basma-hash') === hash) return hit;
+  }
+  return null;
+}
 self.addEventListener('install', event => event.waitUntil((async () => {
   const cache = await caches.open(CACHE);
-  await cache.addAll(SHELL.map(url => new Request(url, { cache: 'reload' })));
+  await Promise.all(SHELL.map(async url => {
+    let response = await previous(url, FILES[url]);
+    if (!response) {
+      const fresh = await fetch(new Request(url, { cache: 'reload' }));
+      if (!fresh.ok) throw new Error('shell file failed: ' + url);
+      const headers = new Headers(fresh.headers); headers.set('x-basma-hash', FILES[url]);
+      response = new Response(await fresh.blob(), { status: fresh.status, statusText: fresh.statusText, headers });
+    }
+    await cache.put(url, response);
+  }));
   await self.skipWaiting();
 })()));
 self.addEventListener('activate', event => event.waitUntil((async () => {

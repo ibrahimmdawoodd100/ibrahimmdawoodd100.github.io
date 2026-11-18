@@ -38,7 +38,7 @@ test('every role uses LOCAL persistence (the session survives closing the app), 
   assert.deepEqual(employee.attempts,['local']);assert.deepEqual(manager.attempts,['local']);assert.notEqual(employee.app.name,manager.app.name);
   assert.equal(employee.Basma.persistenceMode,'LOCAL');assert.equal(manager.Basma.persistenceMode,'LOCAL');
   const seller=authHarness('seller');await seller.Basma.session('seller');assert.deepEqual(seller.attempts,['local']);
-  for(const h of [employee,manager,seller]){assert.equal(h.providers.length,1);assert.equal(h.providers[0].provider.kind,'enterprise');assert.equal(h.providers[0].provider.siteKey,'public-test');assert.equal(h.providers[0].autoRefresh,true);}
+  for(const h of [employee,manager,seller]){assert.equal(h.providers.length,1);assert.equal(h.providers[0].provider.kind,'enterprise');assert.equal(h.providers[0].provider.siteKey,'public-test');/* v5.16 cost: no background refresh (each refresh = a paid reCAPTCHA assessment); tokens are fetched on demand */assert.equal(h.providers[0].autoRefresh,false);}
 });
 test('blocked local storage falls back explicitly; a transient network failure does not clear persistent Auth',async()=>{
   const h=authHarness('employee',{blockLocal:true});await h.Basma.session('employee');

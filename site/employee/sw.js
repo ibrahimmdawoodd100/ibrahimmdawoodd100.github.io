@@ -3,27 +3,47 @@
 // App-shell cache for /employee/ only (never the site root, never another app on this site).
 // Cache-first for the files listed in SHELL; everything else (Firebase, data, other origins, POST) goes to the
 // network untouched. A new release changes VERSION, so the browser installs a fresh cache and deletes the old one.
-const VERSION = 'a4650e375bda79aa';
+// v5.16: each file has its own content hash; on a new release UNCHANGED files are copied from the previous cache and
+// only changed files are downloaded (a typical release: a few KB per phone instead of the whole app).
+const VERSION = '641402b3c30ae1bb';
 const SCOPE = '/employee/';
-const SHELL = [
-  "/employee/",
-  "/employee/icon-employee-192.png",
-  "/employee/icon-employee-512.png",
-  "/employee/manifest.json",
-  "/manager/assets/actions.js",
-  "/manager/assets/attendance-clock.js",
-  "/manager/assets/config.js",
-  "/manager/assets/core.js",
-  "/manager/assets/dialogs.js",
-  "/manager/assets/employee-views.js",
-  "/manager/assets/employee.js",
-  "/manager/assets/report-model.js",
-  "/manager/assets/safe-dom.js"
-];
+const FILES = {
+  "/employee/": "ba99e782ba16",
+  "/employee/icon-employee-192.png": "315df644e081",
+  "/employee/icon-employee-512.png": "6ce95559c4db",
+  "/employee/manifest.json": "48143bdece32",
+  "/manager/assets/actions.js": "2ee09ee897fc",
+  "/manager/assets/attendance-clock.js": "2598d20e2917",
+  "/manager/assets/config.js": "01501064d14f",
+  "/manager/assets/core.js": "6fdd649e82d8",
+  "/manager/assets/dialogs.js": "027614ad19b1",
+  "/manager/assets/employee-views.js": "2345b0bbbb9c",
+  "/manager/assets/employee.js": "819aa0f5e5e6",
+  "/manager/assets/report-model.js": "3944e4125a5f",
+  "/manager/assets/safe-dom.js": "a9347101b27d"
+};
+const SHELL = Object.keys(FILES);
 const CACHE = 'basma-shell-employee-' + VERSION;
+async function previous(url, hash) {
+  for (const name of await caches.keys()) {
+    if (!name.startsWith('basma-shell-employee-') || name === CACHE) continue;
+    const hit = await (await caches.open(name)).match(url);
+    if (hit && hit.headers.get('x-basma-hash') === hash) return hit;
+  }
+  return null;
+}
 self.addEventListener('install', event => event.waitUntil((async () => {
   const cache = await caches.open(CACHE);
-  await cache.addAll(SHELL.map(url => new Request(url, { cache: 'reload' })));
+  await Promise.all(SHELL.map(async url => {
+    let response = await previous(url, FILES[url]);
+    if (!response) {
+      const fresh = await fetch(new Request(url, { cache: 'reload' }));
+      if (!fresh.ok) throw new Error('shell file failed: ' + url);
+      const headers = new Headers(fresh.headers); headers.set('x-basma-hash', FILES[url]);
+      response = new Response(await fresh.blob(), { status: fresh.status, statusText: fresh.statusText, headers });
+    }
+    await cache.put(url, response);
+  }));
   await self.skipWaiting();
 })()));
 self.addEventListener('activate', event => event.waitUntil((async () => {

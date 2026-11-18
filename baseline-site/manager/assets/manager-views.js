@@ -52,10 +52,10 @@ const secureManagerView = (()=>{
     options(el('pr-wh'),Object.entries(ALL_WAREHOUSES).map(([id,w])=>[id,w.name]),'كل الفروع الحالية');
     options(el('pr-emp'),Object.entries(ALL_EMPLOYEES).filter(([,e])=>e.status==='approved').map(([id,e])=>[id,e.name]),'كل الموظفين');
   }
-  async function financial(eid) {
+  async function financial(eid,{optional=false}={}) {
     const token=managerData.capture(false);
     const value=(await token.db.ref(`privatePayroll/${token.cid}/${eid}`).once('value')).val();token.check();
-    if(!value)throw Error('أدخل بيانات الراتب من ملف الموظف أولًا');return value;
+    if(!value){if(optional)return null;throw Error('أدخل بيانات الراتب من ملف الموظف أولًا');}return value;
   }
   function details(rows,title) {
     el('daily-details-title').textContent=title;
@@ -142,12 +142,17 @@ calculatePayroll=async function(){
     let days=await secureManagerView.dataset(from,to);
     const wh=document.getElementById('pr-wh').value,eid=document.getElementById('pr-emp').value;
     days=days.filter(r=>(eid==='all'||r.employeeId===eid)&&(wh==='all'||ALL_EMPLOYEES[r.employeeId].warehouseId===wh));
-    const financial={};for(const id of new Set(days.map(r=>r.employeeId)))financial[id]=await secureManagerView.financial(id);
+    // One employee without salary data no longer cancels everyone's payroll (found by E2E v5.15): the others are
+    // calculated and the missing ones are named. Lookups run in parallel (independent calls).
+    const financial={},missing=[];
+    await Promise.all([...new Set(days.map(r=>r.employeeId))].map(async id=>{const value=await secureManagerView.financial(id,{optional:true});if(value)financial[id]=value;else missing.push(id);}));
+    days=days.filter(r=>!missing.includes(r.employeeId));
     if(ticket!==payrollTicket)return;
     const rows=BasmaReports.payroll(days,ALL_EMPLOYEES,financial);payrollData={rows,monthVal:month,workingDays:rows[0]?.workingDays||0};
     secureManagerView.table('pr-tbody',rows,r=>[r.name,r.empId,r.salary.toLocaleString(),r.absentDays,`${r.deductPct}%`,r.deduction.toLocaleString(),r.net.toLocaleString(),'عرض الأيام'],r=>secureManagerView.details(r.days,`${r.name} — ${month}`));
     const stats=document.getElementById('pr-stats');stats.replaceChildren();
     for(const [label,key]of [['إجمالي الرواتب','salary'],['الاستقطاع','deduction'],['الصافي','net']])stats.appendChild(secureManagerView.text('div',`${label}: ${rows.reduce((sum,r)=>sum+r[key],0).toLocaleString()}`));
+    if(missing.length)stats.appendChild(secureManagerView.text('div',`⚠️ لا توجد بيانات راتب لـ: ${missing.map(id=>ALL_EMPLOYEES[id]?.name||id).join('، ')}. أدخلها من ملف الموظف ليظهر في الرواتب.`));
     document.getElementById('payroll-output').style.display='block';
   }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();}
 };
@@ -296,8 +301,33 @@ async function refreshStaff(){const [staff,branches]=await Promise.all([managerL
 loadEmployees=async function(){
   const grid=document.getElementById('emp-grid');
   const value=await managerListLoad('employees',grid,refreshStaff,{loading:'جاري تحميل الموظفين...'});
-  if(!value)return;populateWHSelects();filterEmps();
+  if(!value)return;populateWHSelects();filterEmps();loadPendingDevices();
 };
+// v5.15: fingerprints/devices waiting for the manager's approval (a new device cannot record attendance before).
+async function loadPendingDevices(){
+  const grid=document.getElementById('emp-grid');if(!grid?.parentElement)return;
+  let box=document.getElementById('pending-devices-section');
+  if(!box){box=document.createElement('div');box.id='pending-devices-section';grid.parentElement.insertBefore(box,grid);}
+  let value;try{value=await managerListPage('devices');}catch(error){box.replaceChildren(Basma.stateBox('error',{text:'تعذر تحميل الأجهزة بانتظار الاعتماد. '+managerErrorText(error),error,retry:()=>loadPendingDevices()}));return;}
+  const ids=value.order||[];
+  if(!ids.length){box.replaceChildren();return;}
+  const title=secureManagerView.text('div',`📱 أجهزة بانتظار الاعتماد (${ids.length})`);title.className='section-title';
+  box.replaceChildren(title,...ids.map(eid=>{
+    const d=value.items[eid]||{},row=document.createElement('div');row.className='approval-card';row.setAttribute?.('data-employee-id',eid);const buttons=[];
+    row.append(secureManagerView.text('div',ALL_EMPLOYEES[eid]?.name||eid),secureManagerView.text('div',`${d.label||'جهاز'} — ${d.registeredAt?new Date(d.registeredAt).toLocaleString('ar'):''}`));
+    for(const [label,action,cls] of [['اعتماد الجهاز','approve','btn-green'],['رفض','reject','btn-red']]){
+      const button=secureManagerView.text('button',label);button.className=`modal-btn ${cls}`;
+      button.addEventListener('click',async()=>{
+        if(action==='reject'&&!await BasmaDialogs.confirm('رفض الجهاز','سيُحذف هذا الجهاز وعلى الموظف تسجيل البصمة من جديد (وتحتاج اعتمادك).','رفض'))return;
+        for(const b of buttons)b.disabled=true;
+        try{await Basma.timeout(Basma.call('managerDevice',{action,employeeId:eid}),managerListTimeout(),'managerDevice');showToast(action==='approve'?'تم اعتماد الجهاز':'تم رفض الجهاز','success');}
+        catch(error){showToast('تعذر الحفظ. '+managerErrorText(error),'error');}
+        loadPendingDevices();
+      });buttons.push(button);row.appendChild(button);
+    }
+    return row;
+  }));
+}
 loadApprovals=async function(){
   const list=document.getElementById('approvals-list');if(!list)return;
   const value=await managerListLoad('approvals',list,()=>managerListAll('employees'));if(!value)return;

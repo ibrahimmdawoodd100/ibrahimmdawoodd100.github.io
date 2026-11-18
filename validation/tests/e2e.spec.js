@@ -33,8 +33,8 @@ fs.mkdirSync(path.join(OUT, 'screens'), { recursive: true });
 const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
 const testAppCheckToken = () => `${b64({ alg: 'none', typ: 'JWT' })}.${b64({ app_id: '1:0:web:e2e', sub: '1:0:web:e2e', exp: Math.floor(Date.now() / 1000) + 3600 })}.e2e`;
 
-async function guarded(browser, options = {}) {
-  const context = await browser.newContext(options), issues = [], open = new Map(), consoleTail = [];
+async function guarded(browser, options = {}, { realPoll = false } = {}) {
+  const context = await browser.newContext(options), issues = [], open = new Map(), consoleTail = [], calls = [];
   await context.addInitScript(spinnerMs => {
     window.__e2e = { csp: [], spinners: [] };
     document.addEventListener('securitypolicyviolation', e => window.__e2e.csp.push(`${e.effectiveDirective || e.violatedDirective} ${e.blockedURI}`));
@@ -51,10 +51,12 @@ async function guarded(browser, options = {}) {
     }, 500);
   }, BUDGET.spinner);
   if (MODE === 'emulator') {
-    await context.addInitScript(() => { self.FIREBASE_APPCHECK_DEBUG_TOKEN = 'e2e-local-debug-token'; window.BASMA_VERSION_POLL_MS = 2000; }); // production: 30 s
+    await context.addInitScript(fast => { self.FIREBASE_APPCHECK_DEBUG_TOKEN = 'e2e-local-debug-token'; if (fast) window.BASMA_VERSION_POLL_MS = 2000; }, !realPoll); // production: 3 min; realPoll = budget tests
     await context.route(/firebaseappcheck\.googleapis\.com/, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: testAppCheckToken(), ttl: '3600s' }) }));
   }
   context.on('page', page => {
+    // Every server (callable) answer: function name + response bytes, for the cost budgets.
+    page.on('response', r => { const m = r.url().match(/:5001\/demo-basma\/us-central1\/([A-Za-z]+)/); if (m && r.request().method() === 'POST') r.body().then(b => calls.push({ name: m[1], bytes: b.length })).catch(() => calls.push({ name: m[1], bytes: 0 })); });
     page.on('request', r => open.set(r, Date.now())); page.on('requestfinished', r => open.delete(r)); page.on('requestfailed', r => open.delete(r));
     page.on('console', m => { consoleTail.push(`${m.type()}: ${m.text().slice(0, 200)}`); if (consoleTail.length > 8) consoleTail.shift(); });
     // The source URL is part of the message: it tells our page apart from Google's frames and names a failed resource.
@@ -66,7 +68,7 @@ async function guarded(browser, options = {}) {
   // Requests still open after `ms` (a resource that never finishes is a finding, not something to wait on forever).
   const stuck = (ms = 15000) => [...open].filter(([, at]) => Date.now() - at > ms).map(([r]) => r.url().slice(0, 160));
   return {
-    context, issues, stuck, consoleTail,
+    context, issues, stuck, consoleTail, calls, resetCalls() { calls.length = 0; },
     // A refusal the test provoked ON PURPOSE and asserted itself: remove exactly those entries (and require they exist).
     expectRefusal(url, status) {
       const mine = issues.filter(i => i.includes(url) && (i.startsWith(`HTTP ${status}:`) || i.includes(`status of ${status}`)));
@@ -143,9 +145,9 @@ test(`${MODE}: branch map — satellite tiles and the marker image load, no brok
 
 // ---------------- helpers for the logged-in tests ----------------
 // An employee's phone: one browser profile with a virtual platform authenticator and GPS at the branch.
-async function employeePhone(browser) {
+async function employeePhone(browser, flags = {}) {
   const { branch } = FIX;
-  const g = await guarded(browser, { permissions: ['geolocation'], geolocation: { latitude: branch.lat, longitude: branch.lng, accuracy: 15 } }), page = await g.context.newPage();
+  const g = await guarded(browser, { permissions: ['geolocation'], geolocation: { latitude: branch.lat, longitude: branch.lng, accuracy: 15 } }, flags), page = await g.context.newPage();
   const cdp = await g.context.newCDPSession(page); await cdp.send('WebAuthn.enable');
   const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   return { g, page, cdp, authenticatorId };
@@ -343,5 +345,58 @@ test.describe('account switch and open-app updates (local emulators)', () => {
       await shot(page, 'window-closed-by-itself');
     }, { timeout: 60000 });
     await g.verify(page, 'open-app updates'); await m.g.verify(m.page, 'open-app manager'); await g.context.close(); await m.g.context.close();
+  });
+});
+
+// ---------------- cost budgets (CI guard, v5.16) ----------------
+// Calls and response bytes per page open and while idle, on 10,000-employee data (333 companies x 30). The server's own
+// database reads are not visible to the browser; response bytes are the measured stand-in.
+const BUDGET_COST = {
+  employeeOpen: { calls: 4, kb: 8 }, employeeIdle30min: { calls: 15 }, managerOpen: { calls: 2, kb: 120 }, managerIdle30min: { calls: 15 },
+  dayView: { calls: 1, kb: 60 }, monthPayroll: { calls: 2, kb: 900 }, closedMonthFirst: { calls: 3, kb: 1200 }, closedMonthRepeat: { calls: 2, kb: 12 }
+};
+function costCheck(label, calls, budget) {
+  const n = calls.length, kb = Math.round(calls.reduce((t, c) => t + c.bytes, 0) / 102.4) / 10;
+  timings.push({ mode: MODE, name: `COST ${label}: ${n} calls, ${kb} KB [${[...new Set(calls.map(c => c.name))].join(', ')}]`, ms: n, budget: budget.calls });
+  expect.soft(n, `${label}: ${n} calls (budget ${budget.calls}): ${calls.map(c => c.name).join(', ')}`).toBeLessThanOrEqual(budget.calls);
+  if (budget.kb) expect.soft(kb, `${label}: ${kb} KB (budget ${budget.kb} KB)`).toBeLessThanOrEqual(budget.kb);
+}
+const settleCalls = page => page.waitForTimeout(2500);
+test.describe('cost budgets (local emulators, 10,000 employees)', () => {
+  test.skip(MODE !== 'emulator', 'cost budgets run against the local emulators');
+  test('employee and manager: calls and bytes per open, idle pages, day/month/payroll, closed-month cache', async ({ browser }) => {
+    const { accounts } = FIX;
+    await test.step('employee: open, then 30 idle minutes (mocked clock)', async () => {
+      const phone = await employeePhone(browser, { realPoll: true }); await phone.page.clock.install();
+      await employeeLogin(phone, accounts.employeeC, '#btn-checkin'); await settleCalls(phone.page);
+      costCheck('employee open', phone.g.calls, BUDGET_COST.employeeOpen);
+      phone.g.resetCalls(); await phone.page.clock.runFor(30 * 60000); await settleCalls(phone.page);
+      costCheck('employee idle 30 min', phone.g.calls, BUDGET_COST.employeeIdle30min);
+      await phone.g.context.close();
+    }, { timeout: 60000 });
+    const g = await guarded(browser, {}, { realPoll: true }), page = await g.context.newPage();
+    await test.step('manager: open the dashboard, then 30 idle minutes (mocked clock)', async () => {
+      await page.clock.install();
+      await g.open(page, '/manager/', '#dl-username', 'manager login'); await page.fill('#dl-username', accounts.manager); await page.fill('#dl-password', FIX.password);
+      g.resetCalls(); await page.click('#dl-submit-btn'); await expect(page.locator('#dash-tbody')).toContainText('e2e حجم 3', { timeout: 20000 }); await settleCalls(page);
+      costCheck('manager open', g.calls, BUDGET_COST.managerOpen);
+      g.resetCalls(); await page.clock.runFor(30 * 60000); await settleCalls(page);
+      costCheck('manager idle 30 min', g.calls, BUDGET_COST.managerIdle30min);
+    }, { timeout: 60000 });
+    await test.step('manager: day view, this month\'s payroll, a closed month twice (second time from the phone cache)', async () => {
+      g.resetCalls(); await show(page, 'showPage', 'attend'); await expect(page.locator('#att-tbody')).toContainText('e2e حجم 3', { timeout: 15000 }); await settleCalls(page);
+      costCheck('day view', g.calls, BUDGET_COST.dayView);
+      await show(page, 'showPage', 'payroll');
+      g.resetCalls(); await page.evaluate(() => calculatePayroll()); await expect(page.locator('#pr-tbody')).toContainText('e2e حجم 3', { timeout: 20000 }); await settleCalls(page);
+      costCheck('payroll this month', g.calls, BUDGET_COST.monthPayroll);
+      const previous = await page.evaluate(() => { const d = new Date(Date.now() - 28 * 864e5); return d.toISOString().slice(0, 7) === new Date().toISOString().slice(0, 7) ? new Date(Date.now() - 40 * 864e5).toISOString().slice(0, 7) : d.toISOString().slice(0, 7); });
+      await page.fill('#pr-month', previous);
+      g.resetCalls(); await page.evaluate(() => calculatePayroll()); await expect(page.locator('#pr-tbody')).toContainText('e2e حجم 3', { timeout: 20000 }); await settleCalls(page);
+      costCheck('closed month, first time', g.calls, BUDGET_COST.closedMonthFirst);
+      g.resetCalls(); await page.evaluate(() => calculatePayroll()); await expect(page.locator('#pr-tbody')).toContainText('e2e حجم 3', { timeout: 20000 }); await settleCalls(page);
+      costCheck('closed month, again (phone cache)', g.calls, BUDGET_COST.closedMonthRepeat);
+      expect(g.calls.some(c => c.name === 'managerRecords'), 'a closed month is not downloaded again').toBe(false);
+    }, { timeout: 60000 });
+    await g.verify(page, 'cost budgets'); await g.context.close();
   });
 });
