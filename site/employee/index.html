@@ -2,8 +2,12 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com 'sha256-+EW/M4recP1gKNLKfecdlBfWtEeBFrmVgBFQTChWu2M=' 'sha256-a/IzCMNXGQu0kUO97r2RQoD/nvkekn3kX7/HnK/z5Jc=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://www.google.com/recaptcha/; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com 'sha256-XYkjsFu8PxVLwbktMDx3U1Ahco6nUC1iHSDEyZnyn+0=' 'sha256-eH65mNLmi1QJMveJhF4q9ie4ax0SGbNT8mgJei2omu0=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://www.google.com/recaptcha/; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
 
 
 
@@ -573,7 +577,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
       <!-- Holiday / Leave banners -->
       <div class="holiday-banner" id="holiday-banner" style="display:none">
         <div class="hb-icon">🎉</div>
-        <div class="hb-text" id="holiday-text">اليوم عطلة</div>
+        <div class="hb-text" id="holiday-text">اليوم عطلة — ليس يوم عمل لك</div>
       </div>
       <div class="leave-banner" id="leave-banner" style="display:none">
         <div class="lb-icon">🌴</div>
@@ -1327,9 +1331,8 @@ async function loadExcusePage() {
       <h3>إرسال عذر جديد</h3>
       <div class="form-group"><label class="form-label">نوع العذر</label>
         <div class="radio-group">
-          <div class="radio-opt"><input type="radio" name="excuse-type" id="et1" value="no_checkin"><label for="et1">❌ لم أسجل حضوراً</label></div>
-          <div class="radio-opt"><input type="radio" name="excuse-type" id="et2" value="no_checkout"><label for="et2">🚪 سجلت حضوراً ولم أسجل انصرافاً</label></div>
-          <div class="radio-opt"><input type="radio" name="excuse-type" id="et3" value="no_both"><label for="et3">⚠️ لم أسجل الحضور ولا الانصراف</label></div>
+          <div class="radio-opt"><input type="radio" name="excuse-type" id="et1" value="late" checked><label for="et1">⏰ تأخرت اليوم عن بداية الدوام</label></div>
+          <div style="font-size:12px;color:var(--text2);margin-top:6px">العذر للتأخير فقط، ولليوم نفسه بعد تسجيل الحضور. الغياب لا يُبرَّر بعذر؛ اطلب إجازة قبل يومها بيوم على الأقل.</div>
         </div>
       </div>
       <div class="form-group"><label class="form-label">سبب العذر</label><textarea class="form-textarea" id="excuse-reason" placeholder="اكتب سبب عذرك هنا..."></textarea></div>
@@ -1342,7 +1345,8 @@ async function loadExcusePage() {
     const td = todaySnap.val() || {};
     let tsText = 'غائب', tsColor = 'var(--red)';
     if (td.checkIn && td.checkOut) { tsText = 'حاضر — سجّل حضوراً وانصرافاً'; tsColor = 'var(--green)'; }
-    else if (td.checkIn && !td.checkOut) { tsText = 'حضر بدون تسجيل انصراف'; tsColor = 'var(--gold)'; }
+    else if (td.checkIn && !td.checkOut) { tsText = 'حاضر — لم يسجل انصرافًا بعد'; tsColor = 'var(--gold)'; }
+    if (td.checkIn && td.delayMins > 0) tsText += ` — متأخر ${td.delayMins} دقيقة`;
     document.getElementById('excuse-ts-val').textContent = tsText;
     document.getElementById('excuse-ts-val').style.color = tsColor;
     const excSnap = await DB.ref(`companies/${COMPANY_ID}/excuses`).orderByChild('empId').equalTo(EMP.id).limitToLast(200).once('value');
@@ -1355,7 +1359,7 @@ async function loadExcusePage() {
     excuses.forEach(ex => {
       const el = document.createElement('div');
       el.className = 'excuse-item';
-      const typeMap = { no_checkin: '❌ لم أسجل حضوراً', no_checkout: '🚪 لم أسجل انصرافاً', no_both: '⚠️ لم أسجل الحضور ولا الانصراف' };
+      const typeMap = { late: '⏰ عذر تأخير', no_checkin: '❌ لم أسجل حضوراً (نوع قديم)', no_checkout: '🚪 لم أسجل انصرافاً (نوع قديم)', no_both: '⚠️ لم أسجل الحضور ولا الانصراف (نوع قديم)' };
       const stMap = { pending: 'status-pending', approved: 'status-approved', rejected: 'status-rejected' };
       const stText = { pending: '⏳ بانتظار المراجعة', approved: '✅ مقبول', rejected: '❌ مرفوض' };
       el.innerHTML = `<div class="excuse-item-head"><span class="excuse-item-type">${typeMap[ex.type]||ex.type}</span><span class="${stMap[ex.status]||''}">${stText[ex.status]||ex.status}</span></div><div class="excuse-item-msg">${ex.reason||''}</div>`;
@@ -1542,8 +1546,9 @@ function togglePartialFields() {
   document.getElementById('partial-fields').style.display = lt === 'partial' ? 'block' : 'none';
   const today = secureEmployeeDate();
   const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86400000).toISOString().slice(0,10);
-  document.getElementById('leave-date').min = lt === 'partial' ? today : tomorrow;
-  if (lt !== 'partial' && document.getElementById('leave-date').value < tomorrow) {
+  // v5.17: every leave (full or timed) is requested at least 1 day before.
+  document.getElementById('leave-date').min = tomorrow;
+  if (document.getElementById('leave-date').value < tomorrow) {
     document.getElementById('leave-date').value = '';
   }
 }

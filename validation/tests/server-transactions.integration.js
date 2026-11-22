@@ -19,7 +19,9 @@ const apps = [];
 function adminApp() { const app = initializeApp({ projectId: 'demo-basma', databaseURL: DB_URL }, `srv-${++serial}`); apps.push(app); return app; }
 
 class HttpsError extends Error { constructor(code, message, details) { super(message); this.code = code; this.details = details; } }
-function loadServer(file) {
+// Optional fixed server clock for date rules (closed months, grace days): the REAL server code runs as if it were `now`.
+function fakeDate(nowMs) { return class extends Date { constructor(...a) { if (a.length) super(...a); else super(nowMs); } static now() { return nowMs; } }; }
+function loadServer(file, { now } = {}) {
   const app = adminApp();
   const webauthn = {
     async generateRegistrationOptions() { return { challenge: `challenge-${++serial}`, user: { id: 'dQ' } }; },
@@ -39,9 +41,10 @@ function loadServer(file) {
     'firebase-functions/v2/scheduler': { onSchedule: (options, fn) => fn },
     'firebase-functions/params': { defineString: name => ({ value: () => name === 'WEBAUTHN_RP_ID' ? 'basma.example.org' : 'https://basma.example.org' }) },
     '@simplewebauthn/server': webauthn,
-    './policy': fromFunctions('./policy.js')
+    './policy': fromFunctions('./policy.js'),
+    './report-model': fromFunctions('./report-model.js')
   };
-  const context = { exports: {}, require: name => { if (!modules[name]) throw Error('unexpected module ' + name); return modules[name]; }, Buffer, console: process.env.BASMA_DEBUG_SERVER ? console : { error() {}, log() {} }, Date, URL, setTimeout, clearTimeout, structuredClone };
+  const context = { exports: {}, require: name => { if (!modules[name]) throw Error('unexpected module ' + name); return modules[name]; }, Buffer, console: process.env.BASMA_DEBUG_SERVER ? console : { error() {}, log() {} }, Date: now ? fakeDate(now) : Date, URL, setTimeout, clearTimeout, structuredClone };
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
   return { exports: context.exports, invoke: (name, uid, data = {}, version = 1) => context.exports[name]({ auth: { uid, token: { version, auth_time: Date.now() / 1000 } }, app: { alreadyConsumed: false }, data }) };
 }
@@ -138,13 +141,15 @@ const scenarios = {
     assert.deepEqual(await call('managerList', mgr, { kind: 'payrollAll' }), { items: { e1: { salary: 900, deductionPercent: 50 } } }, 'all salaries, only the two fields');
     const month = new Date().toISOString().slice(0, 7), versions = async () => (await call('managerList', mgr, { kind: 'monthVersions', months: [month] })).versions[month];
     assert.equal(await versions(), 0);
-    await call('submitRequest', emp, { kind: 'excuse', type: 'no_checkout', reason: 'نسيت' });
-    const v1 = await versions(); assert.ok(v1 > 0, 'a new request changes its month');
+    // (v5.17: excuses are for lateness only; a leave request is the month write here.)
+    const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10), leaveMonth = tomorrow.slice(0, 7);
+    await call('submitRequest', emp, { kind: 'leave', leaveType: 'paid', date: tomorrow, reason: 'سفر' });
+    const v1 = (await call('managerList', mgr, { kind: 'monthVersions', months: [leaveMonth] })).versions[leaveMonth]; assert.ok(v1 > 0, 'a new request changes its month');
     const today = new Date().toISOString().slice(0, 10);
     await seed.ref(`companies/${cid}/leaves/L1`).set({ empId: 'e1', date: today, status: 'pending', leaveType: 'paid', createdAt: Date.now() });
     await new Promise(r => setTimeout(r, 5));
     await call('reviewRequest', mgr, { collection: 'leaves', id: 'L1', status: 'rejected' });
-    const v2 = await versions(); assert.ok(v2 > v1, 'a decision changes its month');
+    const v2 = await versions(); assert.ok(v2 > 0, 'a decision changes its month');
     await seed.ref(`attendanceLedger/${cid}/e1/${today}`).set({ revision: 1, events: { in: { empId: 'e1', type: 'in', timestamp: new Date().toISOString(), dateKey: today, actor: emp } } }); // as recordAttendance writes it
     await new Promise(r => setTimeout(r, 5));
     await loadServer(file).exports.projectAttendance({ params: { cid, eid: 'e1', date: today } });
@@ -155,6 +160,69 @@ const scenarios = {
     // Hourly cap: a login that already made 600 calls this hour is refused (90/minute still applies).
     await seed.ref(`rateLimits/${emp}`).set({ bucket: Math.floor(Date.now() / 60000), count: 1, hour: Math.floor(Date.now() / 3600000), hourCount: 600, expiresAt: Date.now() + 3600000 });
     await assert.rejects(call('employeeList', emp, { kind: 'version' }), e => e.code === 'resource-exhausted');
+  },
+  'business rules (owner, 22 Nov 2026): leave notice, lateness, work days, leave day, no night windows, branch delete, seat freed, no manual edits, closed month + grace, frozen payroll': async (file, tag) => {
+    const cid = `cBiz${tag}`, mgr = `bizM_${tag}`, emp = `bizE_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`credentials/${emp}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] });
+    await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-06-01T00:00:00Z'));
+    await seed.ref(`companies/${cid}/employees`).set({ e1: { status: 'approved', name: 'E1', empId: 'N1', credId: 'cred-1', warehouseId: 'w1', warehouseName: 'Branch', createdAt: Date.parse('2026-11-01T00:00:00Z') },
+      e2: { status: 'approved', name: 'E2', empId: 'N2', warehouseId: 'w1', warehouseName: 'Branch', createdAt: Date.parse('2026-11-01T00:00:00Z') } });
+    await seed.ref(`employeeIndex/${cid}`).set({ count: 2, ids: { h1: 'e1', h2: 'e2' } });
+    await seed.ref(`privatePayroll/${cid}`).set({ e1: { salary: 2200, deductionPercent: 100 } });
+    const at = iso => loadServer(file, { now: Date.parse(iso) });
+    const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await at(iso).invoke(name, uid, data)));
+    const W = { from: '00:00', to: '23:59' };
+    // Leave notice: full AND timed leave at least 1 day before; the manager is notified.
+    await assert.rejects(call('2026-12-15T09:00:00Z', 'submitRequest', emp, { kind: 'leave', leaveType: 'partial', date: '2026-12-15', fromTime: '10:00', toTime: '11:00', reason: 'x' }), e => /قبل يومها/.test(e.message));
+    await assert.rejects(call('2026-12-15T09:00:00Z', 'submitRequest', emp, { kind: 'leave', leaveType: 'paid', date: '2026-12-15', reason: 'x' }), e => /قبل يومها/.test(e.message));
+    await call('2026-12-15T09:00:00Z', 'submitRequest', emp, { kind: 'leave', leaveType: 'paid', date: '2026-12-16', reason: 'سفر' });
+    assert.ok(Object.values(await get(`companies/${cid}/notifications/admin`)).some(n => n.type === 'leave_new'), 'manager notified of the new leave');
+    // No window may cross midnight (company, branch, employee).
+    await assert.rejects(call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'timeWindows', checkIn: { from: '22:00', to: '02:00' }, checkOut: W }), e => /منتصف الليل/.test(e.message));
+    await assert.rejects(call('2026-12-15T09:00:00Z', 'managerBranch', mgr, { action: 'schedule', id: 'w1', schedule: { checkIn: W, checkOut: { from: '23:00', to: '06:00' } } }), e => /منتصف الليل/.test(e.message));
+    // Start time (company) and work days (employee override Mon-Fri).
+    await call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'timeWindows', checkIn: W, checkOut: W, startTime: '08:00' });
+    await call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, workDays: [1, 2, 3, 4, 5] } });
+    assert.deepEqual(await get(`companies/${cid}/employees/e1/workDays`), [1, 2, 3, 4, 5]);
+    await assert.rejects(call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, workDays: [7] } }), e => e.code === 'invalid-argument');
+    const proof = id => seed.ref(`proofs/${emp}/${id}`).set({ intent: 'in', version: 1, expiresAt: Date.parse('2027-06-01T00:00:00Z') });
+    await proof('sun'); await assert.rejects(call('2026-12-13T09:30:00Z', 'recordAttendance', emp, { type: 'in', proof: 'sun', location: { lat: 0, lng: 0 } }), e => /ليس يوم عمل/.test(e.message), 'Sunday is not his work day');
+    await proof('mon'); await call('2026-12-14T09:30:00Z', 'recordAttendance', emp, { type: 'in', proof: 'mon', location: { lat: 0, lng: 0 } });
+    assert.equal((await get(`attendanceLedger/${cid}/e1/2026-12-14`)).events.in.delayMins, 90, 'late = minutes after the start time 08:00 (display only)');
+    await at('2026-12-14T09:31:00Z').exports.projectAttendance({ params: { cid, eid: 'e1', date: '2026-12-14' } });
+    // An approved full-day leave blocks check-in on that day (server, not only the page).
+    const leaveId = Object.keys(await get(`companies/${cid}/leaves`))[0];
+    await call('2026-12-15T10:00:00Z', 'reviewRequest', mgr, { collection: 'leaves', id: leaveId, status: 'approved' });
+    await proof('leave'); await assert.rejects(call('2026-12-16T09:00:00Z', 'recordAttendance', emp, { type: 'in', proof: 'leave', location: { lat: 0, lng: 0 } }), e => /إجازة معتمدة/.test(e.message));
+    // No manual attendance editing at all.
+    await assert.rejects(call('2026-12-15T10:00:00Z', 'manualAttendance', mgr, { employeeId: 'e1', status: 'present', reason: 'x' }), e => /غير متاح/.test(e.message));
+    // A branch with employees cannot be deleted; an empty one can.
+    await assert.rejects(call('2026-12-15T10:00:00Z', 'managerBranch', mgr, { action: 'delete', id: 'w1' }), e => /انقلهم/.test(e.message));
+    const { id: empty } = await call('2026-12-15T10:00:00Z', 'managerBranch', mgr, { action: 'add', name: 'فارغ' });
+    await call('2026-12-15T10:00:00Z', 'managerBranch', mgr, { action: 'delete', id: empty });
+    // Disabling frees the plan seat and records the date (for mid-month pay).
+    await call('2026-12-15T10:00:00Z', 'disableEmployee', mgr, { employeeId: 'e2' });
+    assert.equal((await get(`employeeIndex/${cid}`)).count, 1); assert.equal((await get(`companies/${cid}/employees/e2`)).disabledAt, Date.parse('2026-12-15T10:00:00Z'));
+    // Closed months: no holiday for a past month; leave decisions only for on-time requests during 5 grace days.
+    await assert.rejects(call('2026-12-15T10:00:00Z', 'managerSettings', mgr, { action: 'holidayAdd', date: '2026-11-20', name: 'x' }), e => /الشهر مغلق/.test(e.message));
+    await call('2026-12-15T10:00:00Z', 'managerSettings', mgr, { action: 'holidayAdd', date: '2026-12-25', name: 'عيد' });
+    await seed.ref(`companies/${cid}/leaves/onTime`).set({ empId: 'e1', date: '2026-12-28', status: 'pending', leaveType: 'paid', createdAt: Date.parse('2026-12-01T08:00:00Z') });
+    await seed.ref(`companies/${cid}/leaves/late`).set({ empId: 'e1', date: '2026-12-29', status: 'pending', leaveType: 'paid', createdAt: Date.parse('2026-12-29T08:00:00Z') });
+    await seed.ref(`companies/${cid}/leaves/afterGrace`).set({ empId: 'e1', date: '2026-12-30', status: 'pending', leaveType: 'paid', createdAt: Date.parse('2026-12-01T08:00:00Z') });
+    await call('2027-01-03T10:00:00Z', 'reviewRequest', mgr, { collection: 'leaves', id: 'onTime', status: 'approved' });
+    await assert.rejects(call('2027-01-03T10:00:00Z', 'reviewRequest', mgr, { collection: 'leaves', id: 'late', status: 'approved' }), e => /الشهر مغلق/.test(e.message), 'not submitted on time');
+    await assert.rejects(call('2027-01-08T10:00:00Z', 'reviewRequest', mgr, { collection: 'leaves', id: 'afterGrace', status: 'approved' }), e => /الشهر مغلق/.test(e.message), 'after the 5 grace days');
+    // Payroll: November = old rules (pages), December = new rules on the server; frozen after the grace, never recalculated.
+    await assert.rejects(call('2026-12-20T10:00:00Z', 'managerList', mgr, { kind: 'payrollMonth', month: '2026-11' }), e => e.details?.reason === 'v1-month');
+    const open = await call('2026-12-20T10:00:00Z', 'managerList', mgr, { kind: 'payrollMonth', month: '2026-12' });
+    assert.equal(open.frozen, false); assert.equal(open.rows[0].workingDays, 22, 'Mon-Fri of December minus the 25th: whole month, not days so far');
+    const final = await call('2027-01-10T10:00:00Z', 'managerList', mgr, { kind: 'payrollMonth', month: '2026-12' });
+    assert.equal(final.frozen, true); assert.equal(final.rows[0].absentDays, 19); assert.equal(final.rows[0].deduction, 1900); assert.equal(final.rows[0].net, 300);
+    await seed.ref(`privatePayroll/${cid}/e1/salary`).set(9999);
+    assert.equal((await call('2027-02-10T10:00:00Z', 'managerList', mgr, { kind: 'payrollMonth', month: '2026-12' })).rows[0].net, 300, 'a frozen month is never recalculated');
   },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;
@@ -464,51 +532,36 @@ for (const [name, run] of Object.entries(scenarios)) {
 }
 
 // Full flow on the current code: no_checkin excuse → manager approves → employee checks out → «انصرف (بعذر)».
-test('EXCUSED CHECKOUT — no_checkin excuse approved, then check-out is recorded as «انصرف (بعذر)»', async () => {
-  const cid = 'cExcOut', emp = 'emp_exc_out', mgr = 'mgr_exc_out';
+// Owner decision (22 Nov 2026): an excuse exists for LATENESS only; absence cannot be excused (only an approved leave covers it).
+test('EXCUSES — absence excuses are refused; a lateness excuse after a late check-in is accepted, approved, and does not touch the ledger', async () => {
+  const cid = 'cExcLate', emp = 'emp_exc_late', mgr = 'mgr_exc_late';
   await seedCompany(cid);
+  await seed.ref(`companies/${cid}/settings/startTime`).set('00:00'); // a start time is set, so a check-in after it is late
   await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
   await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
   await seed.ref(`credentials/${emp}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] }); // the employee's own credential (registered before v5.15: no device entry = approved)
   await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
-  const proof = (id, intent) => seed.ref(`proofs/${emp}/${id}`).set({ intent, version: 1, expiresAt: Date.now() + 60000 });
-  const out = id => loadServer(CURRENT).invoke('recordAttendance', emp, { type: 'out', proof: id, location: { lat: 0, lng: 0 } });
-  // 1) Before any excuse, check-out without check-in is refused.
-  await proof('x0', 'out');
-  await assert.rejects(out('x0'), e => /سجّل الحضور أو احصل على موافقة العذر/.test(e.message));
-  // 2) Employee sends the excuse; the manager approves it (each on a cold instance).
-  assert.equal((await loadServer(CURRENT).invoke('submitRequest', emp, { kind: 'excuse', type: 'no_checkin', reason: 'نسيت تسجيل الحضور' })).ok, true);
-  const [excuseId, excuse] = Object.entries(await get(`companies/${cid}/excuses`))[0];
-  assert.equal(excuse.status, 'pending');
-  assert.equal((await loadServer(CURRENT).invoke('reviewRequest', mgr, { collection: 'excuses', id: excuseId, status: 'approved' })).ok, true);
-  assert.equal(await get(`companies/${cid}/excuses/${excuseId}/status`), 'approved');
-  const date = excuse.date, ledgerPath = `attendanceLedger/${cid}/e1/${date}`;
-  assert.equal((await get(ledgerPath)).events.excused.excuseType, 'no_checkin');
-  // 3) The real projection trigger writes what the employee page reads: «حاضر (بعذر)».
-  const project = () => loadServer(CURRENT).exports.projectAttendance({ params: { cid, eid: 'e1', date } });
-  await project();
-  const before = await get(`companies/${cid}/today/e1`);
-  assert.equal(before.checkInExcused, true);
-  assert.equal(before.statusLabel, 'حاضر (بعذر)');
-  // 4) Employee checks out with a valid fingerprint proof.
-  await proof('x1', 'out');
-  const result = await out('x1');
-  assert.equal(result.ok, true);
-  const events = (await get(ledgerPath)).events;
-  assert.deepEqual(Object.keys(events).sort(), ['excused', 'out']);
-  // 5) A second check-out is refused.
-  await proof('x2', 'out');
-  await assert.rejects(out('x2'), e => e.code === 'already-exists');
-  // 6) The status shown to the employee (today projection) and in the manager report.
-  await project();
-  const after = await get(`companies/${cid}/today/e1`);
-  assert.equal(after.attendanceStatus, 'excused_out');
-  assert.equal(after.statusLabel, 'انصرف (بعذر)');
-  assert.ok(after.checkOut);
-  const report = require('../public/assets/report-model.js').summary(events);
-  assert.equal(report.statusLabel, 'انصرف (بعذر)');
+  const call = (name, uid, data) => loadServer(CURRENT).invoke(name, uid, data);
+  for (const type of ['no_checkin', 'no_checkout', 'no_both']) await assert.rejects(call('submitRequest', emp, { kind: 'excuse', type, reason: 'x' }), e => /للتأخير فقط/.test(e.message), type);
+  await assert.rejects(call('submitRequest', emp, { kind: 'excuse', type: 'late', reason: 'زحمة' }), e => /بعد تسجيل حضور متأخر/.test(e.message), 'no check-in yet');
+  await seed.ref(`proofs/${emp}/p1`).set({ intent: 'in', version: 1, expiresAt: Date.now() + 60000 });
+  const checkIn = await call('recordAttendance', emp, { type: 'in', proof: 'p1', location: { lat: 0, lng: 0 } });
+  const ledgerPath = `attendanceLedger/${cid}/e1/${checkIn.date}`, delay = (await get(ledgerPath)).events.in.delayMins;
+  assert.ok(delay > 0 || new Date().getUTCHours() * 60 + new Date().getUTCMinutes() === 0, 'late = minutes after the start time');
+  if (delay > 0) {
+    assert.equal((await call('submitRequest', emp, { kind: 'excuse', type: 'late', reason: 'زحمة' })).ok, true);
+    const [id, excuse] = Object.entries(await get(`companies/${cid}/excuses`))[0];
+    assert.equal(excuse.type, 'late'); assert.equal(excuse.delayMins, delay);
+    const note = Object.values(await get(`companies/${cid}/notifications/admin`)).find(n => n.type === 'excuse_new'); assert.ok(note, 'the manager is notified');
+    const before = JSON.stringify(await get(ledgerPath));
+    assert.equal((await call('reviewRequest', mgr, { collection: 'excuses', id, status: 'approved' })).ok, true);
+    assert.equal(JSON.stringify(await get(ledgerPath)), before, 'approval changes only the label, never the attendance ledger');
+  }
+  // An old-style absence excuse still pending from before cannot be approved (only rejected).
+  await seed.ref(`companies/${cid}/excuses/old1`).set({ empId: 'e1', type: 'no_both', status: 'pending', date: checkIn.date, dateSource: 'server', createdAt: Date.now(), dateTimeZone: 'UTC' });
+  await assert.rejects(call('reviewRequest', mgr, { collection: 'excuses', id: 'old1', status: 'approved' }), e => /لم يعد معتمدًا/.test(e.message));
+  assert.equal((await call('reviewRequest', mgr, { collection: 'excuses', id: 'old1', status: 'rejected' })).ok, true);
 });
-
 test('FIXED — a link to an account without access is refused before rotation, no lock left', async () => {
   await seedCompany('cGhost');
   await seed.ref('accountLinks/cGhost/manager').set('uid-without-access');

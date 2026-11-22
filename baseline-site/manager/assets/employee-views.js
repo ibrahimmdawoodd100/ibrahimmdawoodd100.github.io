@@ -26,7 +26,7 @@ checkHoliday=function(date,settings){const day=BasmaReports.dateAt(date,COMPANY_
 const secureAttendanceWindows=(()=>{
   let anchor=null,clockPending=null,view=null,seeded=null,current=null,knownVersion=null;
   const mono=()=>performance.now();
-  function now(){return anchor&&mono()-anchor.at<600000?anchor.server+mono()-anchor.at:NaN;}
+  function now(){return anchor&&mono()-anchor.at<1800000?anchor.server+mono()-anchor.at:NaN;} // 30 min (sleep detector re-anchors after sleep)
   async function sync(){
     if(clockPending)return clockPending;
     clockPending=(async()=>{const before=mono(),result=await Basma.call('serverClock'),after=mono();if(!Number.isFinite(result.serverTime))throw Error('تعذرت مزامنة وقت الخادم');anchor={server:result.serverTime+(after-before)/2,at:after};SERVER_TIME_OFFSET=anchor.server-Date.now();})();
@@ -75,7 +75,7 @@ const secureAttendanceWindows=(()=>{
     window.basmaRenderPartial?.();
     return Math.min(incoming.nextMs,outgoing.nextMs);
   }
-  function get(){if(!view)view=BasmaClock.controller({now,load,render,onError:error=>{document.getElementById('btn-checkin').disabled=true;document.getElementById('btn-checkout').disabled=true;document.getElementById('win-msg').textContent=window.BasmaErrors?.message(error)??error.message;}});return view;}
+  function get(){if(!view)view=BasmaClock.controller({now,load,render,refreshMs:900000,onError:error=>{document.getElementById('btn-checkin').disabled=true;document.getElementById('btn-checkout').disabled=true;document.getElementById('win-msg').textContent=window.BasmaErrors?.message(error)??error.message;}});return view;}
   function foreground(){if(EMP?.id&&view)get().foreground();}
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')foreground();});
   for(const event of ['focus','pageshow','online','basma-attendance-settled'])window.addEventListener(event,foreground);
@@ -85,7 +85,10 @@ const secureAttendanceWindows=(()=>{
     if(!EMP?.id||!view||document.visibilityState==='hidden')return;
     try{const value=(await Basma.timeout(Basma.call('employeeList',{kind:'version'}),20000,'employeeList')).value??0;if(knownVersion!==null&&value!==knownVersion){knownVersion=value;get().refresh();}else knownVersion=value;}catch{}
   }
-  if(typeof setInterval==='function')setInterval(checkVersion,Number(window.BASMA_VERSION_POLL_MS)||30000);
+  // v5.16 cost: every 3 min +-30 s (jitter spreads load), only while visible; focus/online/wake re-read at once.
+  const pollEvery=()=>{const base=Number(window.BASMA_VERSION_POLL_MS)||180000;return base+(window.BASMA_VERSION_POLL_MS?0:Math.round((Math.random()-0.5)*60000));};
+  const schedulePoll=()=>{if(typeof setTimeout==='function')setTimeout(async()=>{await checkVersion();schedulePoll();},pollEvery());};
+  schedulePoll();
   // Phone sleep: performance.now() may stop while asleep, so the server-anchored clock would lag. If wall-clock time
   // jumped well past the monotonic clock, re-read (new server-time anchor) before showing any window state.
   let wall=Date.now(),monoAt=mono();

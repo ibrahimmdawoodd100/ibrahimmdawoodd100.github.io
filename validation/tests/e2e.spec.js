@@ -203,6 +203,12 @@ test.describe('full flow on local emulators', () => {
       await show(manager, 'showPage', 'attend'); await expect(manager.locator('#att-tbody')).toContainText('e2e موظف السجلات'); await shot(manager, 'manager-attendance');
       await show(manager, 'showPage', 'leaves'); await expect(manager.locator('#leaves-list')).toContainText('e2e إجازة'); await shot(manager, 'manager-leaves');
       await show(manager, 'showPage', 'excuses'); await expect(manager.locator('#excuses-list')).toContainText('e2e عذر');
+      await expect(manager.locator('#excuses-list')).toContainText('عذر تأخير'); // v5.17: excuses are for lateness only
+      // v5.17 (owner decision 1): the employee window has NO manual attendance editing.
+      await show(manager, 'showPage', 'emps'); await show(manager, 'showEmpModal', 'e2e-emp2');
+      await expect(manager.locator('#emp-modal')).toHaveClass(/active/, { timeout: 15000 });
+      await expect(manager.locator('#emp-modal [data-basma-click^="overrideAttendance"]')).toHaveCount(0);
+      await expect(manager.locator('#emp-modal')).not.toContainText('تعديل → حاضر'); await manager.evaluate(() => closeEmpModal());
       await show(manager, 'showPage', 'payroll'); await manager.evaluate(() => calculatePayroll()); await expect(manager.locator('#pr-tbody')).toContainText('e2e موظف السجلات'); await expect(manager.locator('#pr-stats')).toContainText('لا توجد بيانات راتب لـ: e2e موظف الجدول'); await shot(manager, 'manager-payroll');
       await gm.verify(manager, 'manager lists');
     }, { timeout: 60000 });
@@ -270,6 +276,11 @@ test.describe('full flow on local emulators', () => {
       await show(page, 'showTab', 'notifs'); await expect(page.locator('#main-tab-notifs')).toContainText('e2e إشعار للموظف'); await shot(page, 'employee-notifications');
       await show(page, 'showTab', 'leave'); await page.waitForTimeout(1500); await shot(page, 'employee-leave');
       await show(page, 'showTab', 'excuse'); await page.waitForTimeout(1500); await shot(page, 'employee-excuse');
+      // v5.17: one excuse type only (lateness); timed leave is also from tomorrow at the earliest.
+      await expect(page.locator('input[name="excuse-type"]')).toHaveCount(1); await expect(page.locator('input[name="excuse-type"]')).toHaveValue('late');
+      await show(page, 'showTab', 'leave'); await page.waitForTimeout(800);
+      const minDates = await page.evaluate(() => { const type = document.getElementById('leave-type'), date = document.getElementById('leave-date'); if (!type || !date) return null; type.value = 'partial'; togglePartialFields(); const partial = date.min; type.value = 'paid'; togglePartialFields(); return [partial, date.min]; });
+      if (minDates) { expect(minDates[0]).toBe(minDates[1]); expect(minDates[0] > await page.evaluate(() => secureEmployeeDate())).toBe(true); }
       await ge.verify(page, 'employee pages');
     }, { timeout: 60000 });
     await test.step('employee: fingerprint check-in inside the branch radius', async () => {

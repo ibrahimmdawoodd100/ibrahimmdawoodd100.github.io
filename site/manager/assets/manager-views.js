@@ -61,7 +61,7 @@ const secureManagerView = (()=>{
     // Two server calls at most (base is cached from managerHome); no direct database read, no clock read.
     const [base,range]=await Promise.all([managerData.base(),managerRange(from,to)]);
     token.check();ALL_EMPLOYEES=base.employees;ALL_WAREHOUSES=base.warehouses;
-    return BasmaReports.build({employees:base.employees,records:range.records,leaves:range.leaves,excuses:range.excuses,settings:base.settings,from,to,employeeId,warehouseId,timeZone:COMPANY_INFO.timeZone||'UTC'});
+    return BasmaReports.build({employees:base.employees,records:range.records,leaves:range.leaves,excuses:range.excuses,settings:base.settings,warehouses:typeof ALL_WAREHOUSES==='object'?ALL_WAREHOUSES:{},today:today(),from,to,employeeId,warehouseId,timeZone:COMPANY_INFO.timeZone||'UTC'});
   }
   function options(select,values,first) {
     const selected=select.value;select.replaceChildren();const all=text('option',first);all.value='all';select.appendChild(all);
@@ -114,7 +114,7 @@ loadDashboard=async function(){
   const t1=Basma.clock();
   try{
     applyManagerHome(home);
-    const rows=BasmaReports.build({employees:home.employees||{},records:home.records||{},leaves:home.leaves||{},excuses:home.excuses||{},settings:home.settings||{},from:home.date,to:home.date,warehouseId:dashWHFilter,timeZone:COMPANY_INFO.timeZone||'UTC'});
+    const rows=BasmaReports.build({employees:home.employees||{},records:home.records||{},leaves:home.leaves||{},excuses:home.excuses||{},settings:home.settings||{},warehouses:typeof ALL_WAREHOUSES==='object'?ALL_WAREHOUSES:{},today:home.date,from:home.date,to:home.date,warehouseId:dashWHFilter,timeZone:COMPANY_INFO.timeZone||'UTC'});
     const count=kind=>rows.filter(r=>r.classification===kind).length;
     document.getElementById('ds-total').textContent=rows.length;
     document.getElementById('ds-present').textContent=count('present')+count('excused');
@@ -157,6 +157,25 @@ calculatePayroll=async function(){
   const end=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10),to=end<secureManagerView.today()?end:secureManagerView.today();
   if(from>to){showToast('لا يمكن احتساب شهر مستقبلي','error');return;}
   showLoading('جاري احتساب الرواتب...');
+  // v5.17: months from December 2026 use the new rules, computed on the server (same rules file). A closed month is
+  // saved after its 5-day grace and never recalculated. Earlier months keep the old calculation below, unchanged.
+  if(from>=BasmaReports.RULES_FROM){
+    try{
+      const result=await Basma.timeout(Basma.call('managerList',{kind:'payrollMonth',month}),Number(window.BASMA_LIST_TIMEOUT_MS)||30000,'managerList');
+      if(ticket!==payrollTicket)return;
+      const wh=document.getElementById('pr-wh').value,eid=document.getElementById('pr-emp').value;
+      const rows=(result.rows||[]).filter(r=>(eid==='all'||r.employeeId===eid)&&(wh==='all'||ALL_EMPLOYEES[r.employeeId]?.warehouseId===wh));
+      payrollData={rows,monthVal:month,workingDays:rows[0]?.workingDays||0};
+      secureManagerView.table('pr-tbody',rows,r=>[r.name,r.empId,r.salary.toLocaleString(),r.absentDays,`${r.deductPct}%`,r.deduction.toLocaleString(),r.net.toLocaleString(),'عرض الأيام'],
+        r=>secureManagerView.details(r.days.map(d=>({...d,name:r.name,warehouseName:'',checkIn:null,checkOut:null,actualWorkMinutes:null})),`${r.name} — ${month}`));
+      const stats=document.getElementById('pr-stats');stats.replaceChildren();
+      for(const [label,key]of [['الرواتب المستحقة','due'],['الاستقطاع','deduction'],['الصافي','net']])stats.appendChild(secureManagerView.text('div',`${label}: ${rows.reduce((sum,r)=>sum+r[key],0).toLocaleString()}`));
+      stats.appendChild(secureManagerView.text('div',result.frozen?'🔒 شهر مغلق ومحفوظ؛ لا يُعاد احتسابه.':result.closed?`⏳ الشهر مغلق؛ تُحفظ الرواتب نهائيًا بعد ${result.graceUntil} (مهلة قرارات الإجازات).`:'📅 الشهر الحالي: الخصم على أيام عمل الشهر كله، والتأخير للعرض فقط.'));
+      if(result.missing?.length)stats.appendChild(secureManagerView.text('div',`⚠️ لا توجد بيانات راتب لـ: ${result.missing.join('، ')}. أدخلها من ملف الموظف ليظهر في الرواتب.`));
+      document.getElementById('payroll-output').style.display='block';
+    }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();}
+    return;
+  }
   try{
     let days=await secureManagerView.dataset(from,to);
     const wh=document.getElementById('pr-wh').value,eid=document.getElementById('pr-emp').value;
@@ -235,7 +254,7 @@ async function loadManagerRequests(collection){
     const draw=()=>{list.replaceChildren();
       for(const row of items.slice(page*size,(page+1)*size)){
         const card=document.createElement('div');card.className='approval-card';
-        const type=collection==='leaves'?({paid:'مدفوعة',unpaid:'غير مدفوعة',sick:'مرضية',emergency:'طارئة',partial:'زمنية'}[row.leaveType]||row.leaveType):({no_checkin:'لم يسجل حضورًا',no_checkout:'لم يسجل انصرافًا',no_both:'لم يسجل الحضور والانصراف'}[row.type]||row.type);
+        const type=collection==='leaves'?({paid:'مدفوعة',unpaid:'غير مدفوعة',sick:'مرضية',emergency:'طارئة',partial:'زمنية'}[row.leaveType]||row.leaveType):(row.type==='late'?`عذر تأخير${row.delayMins?` (${row.delayMins} دقيقة)`:''}`:({no_checkin:'لم يسجل حضورًا (نوع قديم)',no_checkout:'لم يسجل انصرافًا (نوع قديم)',no_both:'لم يسجل الحضور والانصراف (نوع قديم)'}[row.type]||row.type));
         for(const line of [row.empName,row.warehouseName,row.date,type,row.isPartial||row.leaveType==='partial'?`${row.fromTime||''} – ${row.toTime||''}`:'',row.reason,({approved:'مقبول',rejected:'مرفوض',pending:'معلق'}[row.status]||row.status)])if(line)card.appendChild(secureManagerView.text('div',line));
         if(row.status==='pending')for(const [label,status]of [['قبول','approved'],['رفض','rejected']]){
           const button=secureManagerView.text('button',label);button.className='modal-btn';button.addEventListener('click',async()=>{
@@ -286,6 +305,24 @@ setInterval(()=>{if(document.visibilityState!=='hidden')refreshVisibleManager();
 window.addEventListener?.('basma-session-ended',clearManagerData);
 window.addEventListener?.('basma-manager-mutated',()=>{managerData.invalidate();});
 if(typeof pageLoaders!=='undefined'){pageLoaders.leaves=()=>loadLeaves();pageLoaders.excuses=()=>loadExcuses();}
+
+saveTimeWindows=async function(){
+  const v=id=>document.getElementById(id).value,checkIn={from:v('ci-from'),to:v('ci-to')},checkOut={from:v('co-from'),to:v('co-to')};
+  if(crossesMidnight(checkIn,checkOut)){showToast(MIDNIGHT_MSG,'error');return;}
+  try{await Basma.call('managerSettings',{action:'timeWindows',checkIn,checkOut,startTime:v('start-time')||null});showToast('تم حفظ نوافذ الوقت','success');}
+  catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
+};
+if(typeof loadEmpSchedule==='function'){const originalLoad=loadEmpSchedule;loadEmpSchedule=function(...args){const result=originalLoad.apply(this,args);const emp=ALL_EMPLOYEES[document.getElementById('sched-emp-sel')?.value]||{};
+  const start=document.getElementById('sched-start');if(start)start.value=emp.schedule?.startTime||'';renderDays('sched-days',emp.workDays);return result;};}
+saveEmpSchedule=async function(){
+  const eid=document.getElementById('sched-emp-sel').value;if(!eid)return;const v=id=>document.getElementById(id).value;
+  const schedule={checkIn:{from:v('sched-ci-from'),to:v('sched-ci-to')},checkOut:{from:v('sched-co-from'),to:v('sched-co-to')},startTime:v('sched-start')||null,workDays:readDays('sched-days')};
+  if(!schedule.checkIn.from||!schedule.checkIn.to||!schedule.checkOut.from||!schedule.checkOut.to){showToast('أدخل جميع الأوقات','error');return;}
+  if(crossesMidnight(schedule.checkIn,schedule.checkOut)){showToast(MIDNIGHT_MSG,'error');return;}
+  try{await Basma.call('managerSettings',{action:'employeeSchedule',employeeId:eid,schedule});
+    ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],schedule:{checkIn:schedule.checkIn,checkOut:schedule.checkOut,...(schedule.startTime?{startTime:schedule.startTime}:{})},workDays:schedule.workDays};showToast('تم حفظ جدول الموظف ✅','success');}
+  catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
+};
 
 // Direct database mutations in the original manager UI must also evict cached metadata.
 for(const name of ['saveEmpSchedule','clearEmpSchedule','addWarehouse','editWH','saveWhSchedule','clearWhSchedule','whGzSave','saveTimeWindows','addHoliday','deleteHoliday','saveGeoZone','approveEmp','rejectEmp']){
@@ -399,8 +436,20 @@ deleteWH=async function(id){
   if(!await BasmaDialogs.confirm('حذف الفرع',`هل تريد حذف الفرع «${ALL_WAREHOUSES[id]?.name||''}»؟`,'حذف'))return;
   await branchChange({action:'delete',id},'تم الحذف');
 };
+// v5.17 (owner Q3 = A): work days per branch, optional override per employee; start time decides lateness (Q2 = B).
+const DAY_NAMES=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+function renderDays(id,values){
+  const box=document.getElementById(id);dayInputs[id]=[];if(!box)return;const chosen=new Set(Object.values(values||{}).map(Number));box.replaceChildren();
+  DAY_NAMES.forEach((name,day)=>{const label=document.createElement('label');label.style.cssText='display:flex;gap:4px;align-items:center;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px';
+    const input=document.createElement('input');input.type='checkbox';input.value=String(day);input.checked=chosen.has(day);dayInputs[id].push(input);label.append(input,document.createTextNode(name));box.append(label);});
+}
+const dayInputs={};
+const readDays=id=>{const list=(dayInputs[id]||[]).filter(x=>x.checked).map(x=>Number(x.value));return list.length?list:null;};
+const crossesMidnight=(...windows)=>windows.some(w=>w.from&&w.to&&w.from>=w.to);
+const MIDNIGHT_MSG='كل نافذة يجب أن تبدأ وتنتهي في اليوم نفسه (مثل 08:00 إلى 09:00)';
 showWhScheduleModal=function(id){
   whSchedCurrentId=id;const sc=ALL_WAREHOUSES[id]?.schedule||{};
+  document.getElementById('wh-start').value=sc.startTime||'';renderDays('wh-days',ALL_WAREHOUSES[id]?.workDays);
   document.getElementById('wh-sched-modal-title').textContent='⏰ دوام: '+(ALL_WAREHOUSES[id]?.name||'');
   for(const [field,value]of [['wh-ci-from',sc.checkIn?.from],['wh-ci-to',sc.checkIn?.to],['wh-co-from',sc.checkOut?.from],['wh-co-to',sc.checkOut?.to]])document.getElementById(field).value=value||'';
   document.getElementById('wh-sched-modal').style.display='flex';
@@ -408,7 +457,10 @@ showWhScheduleModal=function(id){
 saveWhSchedule=async function(){
   const v=id=>document.getElementById(id).value,schedule={checkIn:{from:v('wh-ci-from'),to:v('wh-ci-to')},checkOut:{from:v('wh-co-from'),to:v('wh-co-to')}};
   if(!schedule.checkIn.from||!schedule.checkIn.to||!schedule.checkOut.from||!schedule.checkOut.to){showToast('أدخل جميع الأوقات','error');return;}
-  if(await branchChange({action:'schedule',id:whSchedCurrentId,schedule},'تم حفظ أوقات الدوام'))document.getElementById('wh-sched-modal').style.display='none';
+  if(crossesMidnight(schedule.checkIn,schedule.checkOut)){showToast(MIDNIGHT_MSG,'error');return;}
+  Object.assign(schedule,{startTime:v('wh-start')||null,workDays:readDays('wh-days')});
+  if(await branchChange({action:'schedule',id:whSchedCurrentId,schedule},'تم حفظ أوقات الدوام')){
+    const w=ALL_WAREHOUSES[whSchedCurrentId];if(w){w.schedule={checkIn:schedule.checkIn,checkOut:schedule.checkOut,...(schedule.startTime?{startTime:schedule.startTime}:{})};w.workDays=schedule.workDays;}document.getElementById('wh-sched-modal').style.display='none';}
 };
 clearWhSchedule=async function(){
   if(await branchChange({action:'schedule',id:whSchedCurrentId,schedule:null},'تم إزالة الدوام الخاص بالفرع'))document.getElementById('wh-sched-modal').style.display='none';

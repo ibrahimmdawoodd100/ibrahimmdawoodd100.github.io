@@ -2,8 +2,12 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com 'sha256-+EW/M4recP1gKNLKfecdlBfWtEeBFrmVgBFQTChWu2M=' 'sha256-a/IzCMNXGQu0kUO97r2RQoD/nvkekn3kX7/HnK/z5Jc=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://www.google.com/recaptcha/; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com 'sha256-XYkjsFu8PxVLwbktMDx3U1Ahco6nUC1iHSDEyZnyn+0=' 'sha256-eH65mNLmi1QJMveJhF4q9ie4ax0SGbNT8mgJei2omu0=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://www.google.com/recaptcha/; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
 
 
 
@@ -575,7 +579,9 @@ tr:hover td{background:#1a1f30}
           <div><div class="form-label" style="margin-bottom:8px">وقت الحضور — إلى</div><input class="form-input" type="time" id="ci-to"></div>
           <div><div class="form-label" style="margin-bottom:8px">وقت الانصراف — من</div><input class="form-input" type="time" id="co-from"></div>
           <div><div class="form-label" style="margin-bottom:8px">وقت الانصراف — إلى</div><input class="form-input" type="time" id="co-to"></div>
+          <div><div class="form-label" style="margin-bottom:8px">بداية الدوام (للتأخير)</div><input class="form-input" type="time" id="start-time"></div>
         </div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:10px">النافذة داخل اليوم نفسه (لا تعبر منتصف الليل). بدون بداية دوام لا يظهر أحد «متأخر». التأخير للعرض فقط، بلا خصم.</div>
         <button class="action-btn-full" data-basma-click="saveTimeWindows()">💾 حفظ نوافذ الوقت</button>
       </div>
 
@@ -592,7 +598,10 @@ tr:hover td{background:#1a1f30}
             <div><div class="form-label" style="margin-bottom:8px">حضوره — إلى</div><input class="form-input" type="time" id="sched-ci-to"></div>
             <div><div class="form-label" style="margin-bottom:8px">انصرافه — من</div><input class="form-input" type="time" id="sched-co-from"></div>
             <div><div class="form-label" style="margin-bottom:8px">انصرافه — إلى</div><input class="form-input" type="time" id="sched-co-to"></div>
+            <div><div class="form-label" style="margin-bottom:8px">بداية دوامه (اختياري)</div><input class="form-input" type="time" id="sched-start"></div>
           </div>
+          <div class="form-label" style="margin-bottom:6px">أيام عمله (بدون اختيار = أيام فرعه)</div>
+          <div id="sched-days" class="basma-days" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
           <div style="display:flex;gap:10px">
             <button class="action-btn-full" data-basma-click="saveEmpSchedule()" style="flex:1">💾 حفظ جدول الموظف</button>
             <button class="modal-btn btn-red" data-basma-click="clearEmpSchedule()" style="margin-top:8px">🗑 إزالة الجدول الخاص</button>
@@ -1016,8 +1025,6 @@ async function showEmpModal(eid) {
     ${mapsLink?`<div class="info-row"><span class="info-label">خريطة</span><a href="${mapsLink}" target="_blank" style="color:var(--blue);font-size:13px">🗺 فتح الخريطة</a></div>`:''}
   </div>
   <div class="modal-actions">
-    <button class="modal-btn btn-green" data-basma-click="overrideAttendance('${eid}','present')">✅ تعديل → حاضر</button>
-    <button class="modal-btn btn-red" data-basma-click="overrideAttendance('${eid}','absent')">❌ تسجيل غياب</button>
     <button class="modal-btn btn-blue" data-basma-click="resetEmployeeBio('${eid}')">🔑 إعادة البصمة</button>
     <button class="modal-btn btn-gray" data-basma-click="confirmDeleteEmp('${eid}')">🗑 حذف</button>
   </div>`;
@@ -1359,6 +1366,7 @@ async function loadSettings(){
     document.getElementById('ci-to').value=s.checkIn?.to||'09:00';
     document.getElementById('co-from').value=s.checkOut?.from||'16:00';
     document.getElementById('co-to').value=s.checkOut?.to||'17:00';
+    document.getElementById('start-time').value=s.startTime||'';
     loadHolidays(s.holidays||{});
   }catch(e){showToast('تعذر تحميل الإعدادات؛ لا تحفظ قبل إعادة فتح الصفحة. '+(window.BasmaErrors?.message(e,'')||''),'error');}
 }
@@ -1879,7 +1887,10 @@ function copyLink(elementId){
       <div><div class="form-label" style="margin-bottom:6px">وقت الحضور — إلى</div><input class="form-input" type="time" id="wh-ci-to"></div>
       <div><div class="form-label" style="margin-bottom:6px">وقت الانصراف — من</div><input class="form-input" type="time" id="wh-co-from"></div>
       <div><div class="form-label" style="margin-bottom:6px">وقت الانصراف — إلى</div><input class="form-input" type="time" id="wh-co-to"></div>
+      <div><div class="form-label" style="margin-bottom:6px">بداية الدوام (اختياري)</div><input class="form-input" type="time" id="wh-start"></div>
     </div>
+    <div class="form-label" style="margin-bottom:6px">أيام عمل الفرع (بدون اختيار = كل الأيام عدا عطلة الشركة)</div>
+    <div id="wh-days" class="basma-days" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
     <div style="font-size:11px;color:var(--text2);margin-bottom:14px">ملاحظة: هذه الأوقات تُطبَّق على موظفي الفرع ما لم يكن للموظف جدول خاص به</div>
     <div style="display:flex;gap:10px">
       <button class="action-btn-full" data-basma-click="saveWhSchedule()" style="flex:1">💾 حفظ</button>

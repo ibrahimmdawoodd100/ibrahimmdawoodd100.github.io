@@ -79,12 +79,8 @@ doDeleteEmp = async function(eid) {
   try { await Basma.call('disableEmployee', { employeeId: eid }); closeConfirm(); closeEmpModal(); await loadAllData(); if (currentPage !== 'dash') await pageLoaders[currentPage]?.(); showToast('تم تعطيل الحساب', 'success'); }
   catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
 };
-overrideAttendance = async function(eid, status) {
-  const answer = await BasmaDialogs.form('تعديل الحضور يدويًا', [{ id: 'reason', label: 'سبب التعديل (يُحفظ في سجل التدقيق)' }]);
-  const reason = answer?.reason; if (!reason) return;
-  try { await Basma.call('manualAttendance', { employeeId: eid, status, reason }); showToast('حُفظ التعديل منفصلًا عن إثبات البصمة', 'success'); closeEmpModal(); }
-  catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); }
-};
+// v5.17 (owner decision 1): no manual editing of attendance; the buttons are removed.
+overrideAttendance = async function() { showToast('تعديل الحضور يدويًا غير متاح', 'error'); };
 for (const [name, collection, status] of [['approveExcuse', 'excuses', 'approved'], ['rejectExcuse', 'excuses', 'rejected'], ['approveLeave', 'leaves', 'approved'], ['rejectLeave', 'leaves', 'rejected']]) {
   window[name] = async id => { try { await Basma.call('reviewRequest', { id, collection, status }); if (collection === 'leaves') loadLeaves(); else loadExcuses(); loadBadges(); showToast('تم تحديث الطلب', 'success'); } catch (error) { showToast(window.BasmaErrors?.message(error) ?? error.message, 'error'); } };
 }

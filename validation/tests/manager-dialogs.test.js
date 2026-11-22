@@ -57,18 +57,10 @@ test('reset employee account confirmed: calls the server once, then shows the ne
   await h.click('تم، حفظتها'); await done;
 });
 
-test('manual attendance reason uses the in-page form', async () => {
+// v5.17 (owner decision 1): no manual attendance editing; the buttons are removed and the function sends nothing.
+test('manual attendance editing is removed: nothing is sent to the server', async () => {
   const h = harness();
-  const done = h.ctx.overrideAttendance('e1', 'present'); await settle();
-  h.inputs()[0].value = 'نسي البصمة';
-  await h.click('موافق'); await done; await settle();
-  assert.deepEqual(plain(h.log.calls), [{ name: 'manualAttendance', data: { employeeId: 'e1', status: 'present', reason: 'نسي البصمة' } }]);
-});
-
-test('manual attendance with an empty reason sends nothing', async () => {
-  const h = harness();
-  const done = h.ctx.overrideAttendance('e1', 'present'); await settle();
-  await h.click('موافق'); await done;
+  await h.ctx.overrideAttendance('e1', 'present'); await settle();
   assert.equal(h.log.calls.length, 0);
 });
 

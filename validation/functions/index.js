@@ -10,6 +10,7 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineString } = require('firebase-functions/params');
 const webauthn = require('@simplewebauthn/server');
 const p = require('./policy');
+const rules = require('./report-model'); // same file as public/assets/report-model.js (test-checked)
 initializeApp();
 const db = getDatabase(), auth = getAuth();
 const rpID = defineString('WEBAUTHN_RP_ID');
@@ -61,7 +62,8 @@ exports.employeeHome = endpoint(['employee'], async ({uid,member,info,employee})
   ]);
   const device=credential?{status:await deviceState(cid,eid,credential.id)}:{status:'none'};
   const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value?.[key]!==undefined).map(key=>[key,value[key]]));
-  return {serverTime:Date.now(),date,employee:pick(employee,['name','empId','role','warehouseId','warehouseName','status','credId','schedule']),
+  return {serverTime:Date.now(),date,employee:pick(employee,['name','empId','role','warehouseId','warehouseName','status','credId','schedule','workDays']),
+    workDays:rules.workDaysOf(settings||{},warehouse,employee),startTime:rules.startTimeOf(settings||{},warehouse,employee),
     info:pick(info,['nameAr','nameEn','name','logo','timeZone','status']),
     settings:pick(settings,['checkIn','checkOut','weekendDays','holidays','geoZone']),
     warehouse:pick(warehouse,['name','active','schedule','geoZone']),today:today?.dateKey===date?today:{},
@@ -70,7 +72,7 @@ exports.employeeHome = endpoint(['employee'], async ({uid,member,info,employee})
 // Manager dashboard in ONE call (like listCompanies for the seller): the page no longer depends on many direct
 // database reads, which stall forever on networks where the database connection does not establish.
 // Company isolation: everything is read from member.companyId (the server-side access record), never from data.
-const MANAGER_EMPLOYEE_FIELDS = ['name', 'empId', 'role', 'warehouseId', 'warehouseName', 'status', 'schedule', 'createdAt'];
+const MANAGER_EMPLOYEE_FIELDS = ['name', 'empId', 'role', 'warehouseId', 'warehouseName', 'status', 'schedule', 'createdAt', 'workDays', 'disabledAt'];
 // Badge counts as keys only (no content) plus company status: pending leaves/excuses, assigned/started missions,
 // unread activity notifications. Sent inside managerHome (no extra call on open) and by managerList 'badges'.
 async function badgesOf(cid) {
@@ -121,16 +123,41 @@ exports.managerRecords = endpoint(['manager'], async ({ member, data }) => {
 // key order (next page after the cursor), messages/missions/notifications newest first (next page before the cursor).
 const LIST_PAGES = {
   employees: { path: 'employees', size: 200, fields: MANAGER_EMPLOYEE_FIELDS, newest: false },
-  warehouses: { path: 'warehouses', size: 200, fields: ['name', 'active', 'schedule', 'geoZone'], newest: false },
+  warehouses: { path: 'warehouses', size: 200, fields: ['name', 'active', 'schedule', 'geoZone', 'workDays'], newest: false },
   messages: { path: 'private_messages', size: 50, fields: ['empId', 'empName', 'message', 'read', 'createdAt'], newest: true },
   missions: { path: 'missions', size: 100, fields: ['empId', 'empName', 'location', 'description', 'date', 'expectedTime', 'status', 'assignedAt', 'startedAt', 'completedAt'], newest: true },
   notifications: { path: 'notifications/admin', size: 50, fields: ['type', 'message', 'timestamp', 'read'], newest: true }
 };
-exports.managerList = endpoint(['manager'], async ({ member, data }) => {
+// Owner decisions 2/4/5 + closed months: payroll for months from rules.RULES_FROM is computed HERE (same rules file as
+// the pages). After the 5-day grace a closed month is saved once (payrollSnapshots) and never recalculated.
+async function computePayrollMonth(cid, zone, month) {
+  const today = companyToday(zone), [y, m] = month.split('-').map(Number), last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const from = `${month}-01`, to = last < today ? last : today, range = (c, field) => db.ref(`companies/${cid}/${c}`).orderByChild(field).startAt(from).endAt(to).limitToFirst(40001).get().then(x => x.val() || {});
+  const [employees, settings, warehouses, salaries, records, leaves, excuses] = await Promise.all([read(`companies/${cid}/employees`), read(`companies/${cid}/settings`), read(`companies/${cid}/warehouses`), read(`privatePayroll/${cid}`), range('records', 'dateKey'), range('leaves', 'date'), range('excuses', 'date')]);
+  if (Object.keys(records).length > 40000) p.fail('عدد السجلات كبير جدًا لهذا الشهر', 'resource-exhausted');
+  const staff = employees || {}, rows = rules.build({ records, employees: staff, leaves, excuses, settings: settings || {}, warehouses: warehouses || {}, from, to, timeZone: zone, today });
+  const result = rules.payrollV2(rows, staff, salaries || {}, { month, settings: settings || {}, warehouses: warehouses || {}, timeZone: zone });
+  const compact = r => ({ employeeId: r.employeeId, name: r.name, empId: r.empId, salary: r.salary, due: r.due, deductPct: r.deductPct, absentDays: r.absentDays, workingDays: r.workingDays, employedDays: r.employedDays, deduction: r.deduction, net: r.net,
+    days: r.days.map(d => ({ date: d.date, statusLabel: d.statusLabel, delayMins: d.delayMins || 0 })) });
+  return { month, rows: result.rows.map(compact), missing: result.missing.map(eid => staff[eid]?.name || eid), rules: 'v2', to };
+}
+async function payrollMonth(cid, info, month) {
+  if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) p.fail('اختر الشهر', 'invalid-argument');
+  if (`${month}-01` < rules.RULES_FROM) throw new p.PolicyError('failed-precondition', 'رواتب هذا الشهر بالقواعد السابقة', { reason: 'v1-month' });
+  const zone = info.timeZone, today = companyToday(zone);
+  if (month > today.slice(0, 7)) p.fail('لا يمكن احتساب شهر مستقبلي', 'invalid-argument');
+  const frozen = month < today.slice(0, 7) && !inLeaveGrace(`${month}-01`, zone);
+  if (frozen) { const saved = await read(`payrollSnapshots/${cid}/${month}`); if (saved) return { ...saved, frozen: true }; }
+  const value = await computePayrollMonth(cid, zone, month);
+  if (frozen) { await db.ref(`payrollSnapshots/${cid}/${month}`).transaction(old => old || { ...value, savedAt: Date.now() }); return { ...(await read(`payrollSnapshots/${cid}/${month}`)), frozen: true }; }
+  return { ...value, frozen: false, closed: month < today.slice(0, 7), graceUntil: month < today.slice(0, 7) ? `${today.slice(0, 7)}-05` : null };
+}
+exports.managerList = endpoint(['manager'], async ({ member, info, data }) => {
   const cid = member.companyId;
   if (data.kind === 'settings') return { settings: (await read(`companies/${cid}/settings`)) || {} };
   // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
   if (data.kind === 'status') return { value: (await read(`companies/${cid}/info/status`)) ?? null };
+  if (data.kind === 'payrollMonth') return payrollMonth(cid, info, data.month);
   if (data.kind === 'payrollAll') {
     const all = (await read(`privatePayroll/${cid}`)) || {};
     return { items: Object.fromEntries(Object.entries(all).map(([eid, v]) => [eid, { salary: v?.salary ?? null, deductionPercent: v?.deductionPercent ?? null }])) };
@@ -207,10 +234,19 @@ exports.managerBranch = endpoint(['manager'], async ({ uid, member, data }) => {
   const id = p.key(data.id), ref = all.child(id);
   if (!(await ref.child('name').get()).exists()) p.fail('الفرع غير موجود', 'not-found');
   if (data.action === 'rename') await ref.update({ name: p.text(data.name, 'اسم الفرع', 80) });
-  else if (data.action === 'delete') await ref.remove();
+  else if (data.action === 'delete') {
+    // Owner decision 10: a branch that still has employees cannot be deleted (their check-in would stop).
+    const staff = Object.values((await read(`companies/${cid}/employees`)) || {}).filter(e => e?.warehouseId === id && e.status !== 'rejected').length;
+    if (staff) p.fail(`في الفرع ${staff} موظف؛ انقلهم إلى فرع آخر أولًا`, 'failed-precondition');
+    await ref.remove();
+  }
   else if (data.action === 'schedule') {
     if (data.schedule == null) await ref.child('schedule').remove();
-    else await ref.child('schedule').set({ checkIn: { from: hhmm(data.schedule.checkIn?.from), to: hhmm(data.schedule.checkIn?.to) }, checkOut: { from: hhmm(data.schedule.checkOut?.from), to: hhmm(data.schedule.checkOut?.to) } });
+    else {
+      const startTime = optionalTime(data.schedule.startTime), workDays = workDaysValue(data.schedule.workDays);
+      await ref.child('schedule').set({ checkIn: dayWindow(data.schedule.checkIn), checkOut: dayWindow(data.schedule.checkOut), ...(startTime ? { startTime } : {}) });
+      await ref.child('workDays').set(workDays);
+    }
   } else if (data.action === 'geoZone') {
     const { lat, lng, radius } = data.geoZone || {};
     if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180 || !Number.isFinite(radius) || radius < 1 || radius > 100000) p.fail('موقع غير صالح', 'invalid-argument');
@@ -292,9 +328,9 @@ exports.managerSettings = endpoint(['manager'], async ({ uid, member, data }) =>
   const cid = member.companyId, settings = db.ref(`companies/${cid}/settings`);
   let target = cid;
   switch (data.action) {
-    case 'timeWindows': await settings.update({ checkIn: windowOf(data.checkIn), checkOut: windowOf(data.checkOut) }); break;
-    case 'holidayAdd': { const ref = settings.child('holidays').push(); await ref.set({ date: isoDate(data.date), name: p.text(data.name, 'اسم العطلة', 80), active: true }); target = ref.key; break; }
-    case 'holidayRemove': target = p.key(data.id); await settings.child(`holidays/${target}`).remove(); break;
+    case 'timeWindows': await settings.update({ checkIn: dayWindow(data.checkIn), checkOut: dayWindow(data.checkOut), startTime: optionalTime(data.startTime) }); break;
+    case 'holidayAdd': { if (monthClosed(isoDate(data.date), member.timeZone || (await read(`companies/${cid}/info/timeZone`)))) p.fail('الشهر مغلق؛ لا تُضاف عطلة لتاريخ مضى', 'failed-precondition'); const ref = settings.child('holidays').push(); await ref.set({ date: isoDate(data.date), name: p.text(data.name, 'اسم العطلة', 80), active: true }); target = ref.key; break; }
+    case 'holidayRemove': { target = p.key(data.id); const h = await read(`companies/${cid}/settings/holidays/${target}`); if (h?.date && monthClosed(h.date, await read(`companies/${cid}/info/timeZone`))) p.fail('الشهر مغلق؛ لا تُحذف عطلة منه', 'failed-precondition'); await settings.child(`holidays/${target}`).remove(); break; }
     case 'geoZone': {
       const g = data.geoZone;
       if (!g || typeof g.enabled !== 'boolean' || !Array.isArray(g.zones) || g.zones.length > 20) p.fail('موقع غير صالح', 'invalid-argument');
@@ -304,7 +340,12 @@ exports.managerSettings = endpoint(['manager'], async ({ uid, member, data }) =>
       target = p.key(data.employeeId);
       if (!(await read(`companies/${cid}/employees/${target}/name`))) p.fail('الموظف غير موجود', 'not-found');
       const ref = db.ref(`companies/${cid}/employees/${target}/schedule`);
-      if (data.schedule == null) await ref.remove(); else await ref.set({ checkIn: windowOf(data.schedule.checkIn), checkOut: windowOf(data.schedule.checkOut) });
+      if (data.schedule == null) { await ref.remove(); await db.ref(`companies/${cid}/employees/${target}/workDays`).remove(); }
+      else {
+        const startTime = optionalTime(data.schedule.startTime), workDays = workDaysValue(data.schedule.workDays);
+        await ref.set({ checkIn: dayWindow(data.schedule.checkIn), checkOut: dayWindow(data.schedule.checkOut), ...(startTime ? { startTime } : {}) });
+        await db.ref(`companies/${cid}/employees/${target}/workDays`).set(workDays);
+      }
       break;
     }
     case 'adminNotificationsRead': return markRead(db.ref(`companies/${cid}/notifications/admin`), data.updates);
@@ -531,7 +572,16 @@ exports.disableEmployee = endpoint(['manager'], async ({ uid, member, data }) =>
   const eid = p.key(data.employeeId), cid = member.companyId;
   const target = await read(`accountLinks/${cid}/employees/${eid}`);
   if (target) { await db.ref(`access/${target}/enabled`).set(false); await auth.updateUser(target, { disabled: true }); await auth.revokeRefreshTokens(target); }
-  await db.ref(`companies/${cid}/employees/${eid}/status`).set('rejected');
+  const before = await read(`companies/${cid}/employees/${eid}`);
+  if (!before) p.fail('الموظف غير موجود', 'not-found');
+  await db.ref(`companies/${cid}/employees/${eid}`).update({ status: 'rejected', ...(before.status !== 'rejected' ? { disabledAt: Date.now() } : {}) });
+  // Owner decision 10: a disabled employee no longer takes a seat in the plan.
+  if (before.status !== 'rejected') await db.ref(`employeeIndex/${cid}`).transaction(index => {
+    if (!index?.ids) return index;
+    const hash = Object.keys(index.ids).find(h => index.ids[h] === eid);
+    if (!hash) return index;
+    delete index.ids[hash]; return { ...index, count: Math.max(0, (index.count || 1) - 1) };
+  });
   await audit(uid, 'employee.disable', `${cid}/${eid}`);
   return { ok: true };
 });
@@ -598,6 +648,20 @@ async function deviceState(cid, eid, credId) {
 const deviceLog = (cid, eid, event, details = {}) => db.ref(`deviceLog/${cid}/${eid}`).push({ event, at: Date.now(), ...details });
 // One small value per company; open employee pages poll it (employeeList 'version') and re-read employeeHome on change.
 const bumpVersion = cid => db.ref(`scheduleVersions/${cid}`).set(Date.now());
+// ---- v5.17 business rules (owner decisions of 22 Nov 2026) ----
+// A month closes by itself at its end (company time). For 5 days after that the manager may still decide LEAVE
+// requests that were submitted on time; nothing else may change a closed month.
+const companyToday = zone => p.dateParts(new Date(), zone).date;
+const monthClosed = (date, zone) => String(date).slice(0, 7) < companyToday(zone).slice(0, 7);
+function inLeaveGrace(date, zone) {
+  const today = companyToday(zone), [y, m] = String(date).slice(0, 7).split('-').map(Number);
+  return today.slice(0, 7) === new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7) && Number(today.slice(8, 10)) <= 5;
+}
+const nextDay = date => new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+const workDaysValue = v => (v == null ? null : Array.isArray(v) && v.length && v.length <= 7 && v.every(d => Number.isInteger(d) && d >= 0 && d <= 6) ? [...new Set(v)].sort() : p.fail('أيام العمل غير صالحة', 'invalid-argument'));
+const optionalTime = v => (v == null || v === '' ? null : hhmm(v));
+// Owner decision 8: no window may cross midnight (a night shift could not be recorded).
+const dayWindow = w => { const r = windowOf(w); if (p.minutes(r.from) >= p.minutes(r.to)) p.fail('النافذة يجب أن تكون داخل اليوم نفسه، لا تعبر منتصف الليل', 'invalid-argument'); return r; };
 // Per company and month: changes whenever records/leaves/excuses of that month change. The manager page caches CLOSED
 // months on the phone and re-downloads a month only when this number differs (v5.16 cost).
 const bumpMonth = (cid, date) => (typeof date === 'string' && /^\d{4}-\d{2}/.test(date) ? db.ref(`recordsVersions/${cid}/${date.slice(0, 7)}`).set(Date.now()) : null);
@@ -690,10 +754,13 @@ exports.recordAttendance = endpoint(['employee'], async ({ uid, member, info, da
   let delayMins = 0;
   if (type === 'in' || type === 'out') {
     const day = new Date(`${clock.date}T12:00:00Z`).getUTCDay();
-    const weekends = settings?.weekendDays || [5];
-    if (Object.values(weekends).includes(day) || Object.values(settings?.holidays || {}).some(h => h.active !== false && h.date === clock.date)) p.fail('اليوم عطلة');
+    void day;
+    // Owner decisions 9 + Q3: work days per branch with an optional employee override (else the company weekend).
+    if (!rules.isWorkDay(settings || {}, wh, employee, clock.date)) p.fail('اليوم ليس يوم عمل لك');
+    if ((await read(`fullDayLeaveIndex/${cid}/${eid}/${clock.date}`)) === true) p.fail('لديك إجازة معتمدة اليوم؛ لا يُسجَّل حضور');
     if (!p.insideWindow(clock.minutes, sched[type === 'in' ? 'checkIn' : 'checkOut'])) throw new p.PolicyError('failed-precondition', 'انتهت نافذة التسجيل أو لم تبدأ بعد. تمت إعادة مزامنة وقت الخادم؛ راجع الوقت المعروض.', { reason:'attendance-window', serverTime:Date.now(), timeZone:info.timeZone });
-    if (type === 'in') delayMins = (clock.minutes - p.minutes(sched.checkIn.from) + 1440) % 1440;
+    // Owner decisions 7 + Q2: lateness counts only from a start time the manager set (else nobody is late). Display only.
+    if (type === 'in') { const start = rules.startTimeOf(settings || {}, wh, employee); delayMins = start ? Math.max(0, Math.floor(clock.minutes - p.minutes(start))) : 0; }
   }
   let mission;
   if (type.startsWith('mission_')) {
@@ -772,14 +839,19 @@ exports.submitRequest = endpoint(['employee'], async ({ uid, member, info, data 
   let collection;
   if (data.kind === 'leave') {
     if (!['paid', 'unpaid', 'sick', 'emergency', 'partial'].includes(data.leaveType) || !/^\d{4}-\d{2}-\d{2}$/.test(data.date || '') || Number.isNaN(Date.parse(data.date))) p.fail('طلب غير صالح', 'invalid-argument');
-    p.validateLeaveDate(data.date, data.leaveType === 'partial', record.createdAt, info.timeZone);
+    // Owner decision + Q4: every leave (full or timed) is requested at least 1 day before; otherwise the day is absence.
+    if (data.date < nextDay(p.dateParts(new Date(record.createdAt), info.timeZone).date)) p.fail('الإجازة (الكاملة أو الزمنية) تُطلب قبل يومها بيوم على الأقل', 'invalid-argument');
+    p.validateLeaveDate(data.date, false, record.createdAt, info.timeZone);
     Object.assign(record, { date: data.date, reason: p.text(data.reason, 'السبب', 2000), leaveType: data.leaveType, isPartial: data.leaveType === 'partial' });
     if (record.isPartial) { if (p.minutes(data.fromTime) >= p.minutes(data.toTime)) p.fail('فترة غير صالحة'); Object.assign(record, { fromTime: data.fromTime, toTime: data.toTime }); }
     collection = 'leaves';
   } else if (data.kind === 'excuse') {
     collection = 'excuses';
-    if (!['no_checkin','no_checkout','no_both'].includes(data.type)) p.fail('نوع عذر غير صالح', 'invalid-argument');
-    Object.assign(record, { reason: p.text(data.reason, 'السبب', 2000), type: data.type, date: p.dateParts(new Date(record.createdAt), info.timeZone).date, dateSource:'server', dateTimeZone:info.timeZone });
+    // Owner decision + Q1: an excuse exists for LATENESS only (today, after a late check-in). Absence cannot be excused.
+    if (data.type !== 'late') p.fail('العذر للتأخير فقط؛ الغياب تغطيه إجازة معتمدة مسبقًا', 'invalid-argument');
+    const today = p.dateParts(new Date(record.createdAt), info.timeZone).date, ledger = await read(`attendanceLedger/${cid}/${eid}/${today}`);
+    if (!(ledger?.events?.in?.delayMins > 0)) p.fail('عذر التأخير يُقدَّم بعد تسجيل حضور متأخر في اليوم نفسه', 'failed-precondition');
+    Object.assign(record, { reason: p.text(data.reason, 'السبب', 2000), type: 'late', delayMins: ledger.events.in.delayMins, date: today, dateSource:'server', dateTimeZone:info.timeZone });
   } else p.fail('طلب غير صالح', 'invalid-argument');
   const id = collection === 'excuses' ? `excuse_${eid}_${record.date}` : db.ref().push().key;
   if (collection === 'excuses') {
@@ -787,6 +859,8 @@ exports.submitRequest = endpoint(['employee'], async ({ uid, member, info, data 
     if (!created.committed) p.fail('لديك طلب عذر لهذا اليوم بالفعل', 'already-exists');
   } else await db.ref(`companies/${cid}/${collection}/${id}`).set(record);
   await bumpMonth(cid, record.date);
+  // Owner decision 6: the manager is notified of every new request.
+  await db.ref(`companies/${cid}/notifications/admin`).push({ type: collection === 'leaves' ? 'leave_new' : 'excuse_new', message: collection === 'leaves' ? `🌴 ${employee.name}: طلب إجازة ${record.isPartial ? 'زمنية ' : ''}ليوم ${record.date}` : `📝 ${employee.name}: عذر تأخير (${record.delayMins} دقيقة)`, timestamp: new Date().toISOString(), read: false, employeeId: eid });
   await audit(uid, `request.${collection}`, `${cid}/${id}`);
   return { ok: true };
 });
@@ -829,14 +903,21 @@ exports.changePassword = endpoint(allRoles, async ({ uid, token, member, data })
   return { ok: true };
   });
 });
-exports.reviewRequest = endpoint(['manager'], async ({ uid, member, data }) => {
+exports.reviewRequest = endpoint(['manager'], async ({ uid, member, info, data }) => {
   const cid = member.companyId, id = p.key(data.id);
   if (!['leaves', 'excuses'].includes(data.collection) || !['approved', 'rejected'].includes(data.status)) p.fail('طلب غير صالح', 'invalid-argument');
   return withLock(`review_${createHash('sha256').update(`${cid}/${data.collection}/${id}`).digest('hex')}`, async () => {
   const request = await read(`companies/${cid}/${data.collection}/${id}`);
   if (!request) p.fail('الطلب غير موجود', 'not-found');
-  if (request.status !== 'pending' && request.status !== data.status) p.fail('الطلب محسوم؛ تعديل القرار يتطلب إجراء تصحيح مستقل');
-  if (data.collection === 'excuses' && data.status === 'approved') {
+  if (request.status !== 'pending' && request.status !== data.status) p.fail('الطلب محسوم؛ القرار نهائي');
+  // Closed month: only LEAVE requests submitted on time may still be decided, for 5 days after the month ends.
+  if (request.date && monthClosed(request.date, info.timeZone)) {
+    const onTime = data.collection === 'leaves' && Number.isFinite(request.createdAt) && p.dateParts(new Date(request.createdAt), info.timeZone).date < request.date;
+    if (!(onTime && inLeaveGrace(request.date, info.timeZone))) p.fail('الشهر مغلق؛ لا يمكن تغيير شيء فيه', 'failed-precondition');
+  }
+  // Owner decision + Q1: only lateness excuses can be approved (display only, no ledger change).
+  if (data.collection === 'excuses' && data.status === 'approved' && request.type !== 'late') p.fail('هذا النوع من الأعذار لم يعد معتمدًا؛ الغياب تغطيه إجازة معتمدة مسبقًا', 'failed-precondition');
+  if (data.collection === 'excuses' && data.status === 'approved' && request.type !== 'late') {
     if (request.dateSource !== 'server' || !Number.isFinite(request.createdAt) || !['no_checkin','no_checkout','no_both'].includes(request.type)) p.fail('العذر القديم يحتاج إلى إعادة تقديم من النسخة الآمنة');
     const date = p.dateParts(new Date(request.createdAt), request.dateTimeZone).date;
     const eid = p.key(request.empId), employee = await read(`companies/${cid}/employees/${eid}`);
@@ -873,6 +954,8 @@ exports.reviewRequest = endpoint(['manager'], async ({ uid, member, data }) => {
   });
 });
 exports.manualAttendance = endpoint(['manager'], async ({ uid, member, info, data }) => {
+  // Owner decision 1 (22 Nov 2026): no manager editing of attendance at all.
+  p.fail('تعديل الحضور يدويًا غير متاح', 'failed-precondition');
   const cid = member.companyId, eid = p.key(data.employeeId), reason = p.text(data.reason, 'سبب التعديل', 1000);
   const employee = await read(`companies/${cid}/employees/${eid}`);
   if (!employee) p.fail('الموظف غير موجود', 'not-found');
@@ -913,7 +996,21 @@ exports.cleanupSecurityState = onSchedule({ schedule: 'every 24 hours', region, 
     }
     if (ids.length < 100) break;
   } while (cursor);
+  await freezeClosedPayrolls();
 });
+async function freezeClosedPayrolls() {
+  const directory = (await read('companyDirectory')) || {};
+  let done = 0;
+  for (const [cid, info] of Object.entries(directory)) {
+    if (done >= 60) break;
+    try {
+      const zone = info?.timeZone || 'UTC', today = companyToday(zone), [y, m] = today.slice(0, 7).split('-').map(Number), month = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7);
+      if (`${month}-01` < rules.RULES_FROM || inLeaveGrace(`${month}-01`, zone) || await read(`payrollSnapshots/${cid}/${month}`)) continue;
+      const value = await computePayrollMonth(cid, zone, month);
+      await db.ref(`payrollSnapshots/${cid}/${month}`).transaction(old => old || { ...value, savedAt: Date.now() }); done++;
+    } catch (error) { console.error('payroll_freeze_failed', { code: error.code || 'internal' }); }
+  }
+}
 exports.dailyBackup = onSchedule({ schedule: 'every day 02:00', timeZone: 'UTC', region, timeoutSeconds: 540, memory: '1GiB', maxInstances: 1 }, async () => {
   const name = backupBucket.value();
   if (!name) throw new Error('BACKUP_BUCKET must reference a private bucket.');

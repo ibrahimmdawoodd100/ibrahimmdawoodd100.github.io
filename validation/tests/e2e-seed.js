@@ -41,7 +41,7 @@ async function seed() {
       records: { 'e2e-r1': { empId: 'e2e-emp2', empName: 'e2e موظف السجلات', type: 'in', timestamp: new Date(now - 36e5).toISOString(), dateKey: today, warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', locStatus: 'approved', delayMins: 0 } },
       today: { 'e2e-emp2': { dateKey: today, empId: 'e2e-emp2', checkIn: new Date(now - 36e5).toISOString() } },
       leaves: { 'e2e-l1': { empId: 'e2e-emp2', empName: 'e2e موظف السجلات', warehouseName: 'e2e الفرع الرئيسي', date: today, status: 'pending', leaveType: 'paid', reason: 'e2e إجازة', createdAt: now } },
-      excuses: { 'e2e-x1': { empId: 'e2e-emp2', empName: 'e2e موظف السجلات', warehouseName: 'e2e الفرع الرئيسي', date: today, status: 'pending', type: 'no_checkout', reason: 'e2e عذر', createdAt: now } },
+      excuses: { 'e2e-x1': { empId: 'e2e-emp2', empName: 'e2e موظف السجلات', warehouseName: 'e2e الفرع الرئيسي', date: today, status: 'pending', type: 'late', delayMins: 15, reason: 'e2e عذر', createdAt: now } },
       notifications: { 'e2e-emp1': { 'e2e-n1': { type: 'broadcast', message: 'e2e إشعار للموظف', timestamp: new Date(now).toISOString(), read: false } }, admin: { 'e2e-a1': { type: 'checkin', message: 'e2e نشاط', timestamp: new Date(now).toISOString(), read: false } } }
     },
     [`privatePayroll/${cid}/e2e-emp2`]: { salary: 1000, deductionPercent: 100 }

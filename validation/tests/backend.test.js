@@ -36,7 +36,7 @@ function harness({rpID='basma.example.org',origins='https://basma.example.org',n
     'firebase-functions/v2/https':{onCall:(options,fn)=>{fn.options=options;return fn;},HttpsError},
     'firebase-functions/v2/database':{onValueWritten:(options,fn)=>fn}, 'firebase-functions/v2/scheduler':{onSchedule:(options,fn)=>fn},
     'firebase-functions/params':{defineString:name=>({value:()=>name==='WEBAUTHN_RP_ID'?rpID:origins})},
-    '@simplewebauthn/server':webauthn, './policy':policy
+    '@simplewebauthn/server':webauthn, './policy':policy, './report-model':require('../functions/report-model.js')
   };
   const ServerDate=now===null?Date:class extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
   const context={exports:{},require:name=>{if(!modules[name])throw Error(name);return modules[name];},Buffer,console:{error(){}},Date:ServerDate,URL};
@@ -98,31 +98,29 @@ test('company employee cap and unique IDs survive concurrent additions',async()=
   await assert.rejects(()=>h.invoke('addEmployee','manager',{...data,empId:'A3'}));
   assert.equal(h.get('employeeIndex/c1/count'),2);
 });
-test('excuse date comes from the server; approval grants checkout through the ledger',async()=>{
-  for(const type of ['no_checkin','no_both']){
-    const h=harness();h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
-    await h.invoke('submitRequest','employee',{kind:'excuse',type,reason:'سبب',date:'1900-01-01',companyId:'c2',empId:'victim'});
-    const [id,request]=Object.entries(h.get('companies/c1/excuses'))[0];
-    assert.equal(request.date,new Date(request.createdAt).toISOString().slice(0,10));assert.equal(request.dateSource,'server');
-    await h.invoke('reviewRequest','manager',{collection:'excuses',id,status:'approved'});
-    const ledger=h.get(`attendanceLedger/c1/e1/${request.date}`);assert.equal(ledger.events.excused.excuseType,type);assert.equal(ledger.events.in,undefined);
-    h.set('proofs/employee/outproof',{intent:'out',version:1,expiresAt:Date.now()+60000});
-    await h.invoke('recordAttendance','employee',{type:'out',proof:'outproof',location:{lat:0,lng:0,accuracy:30}});
-    const state=h.get(`attendanceLedger/c1/e1/${request.date}`);assert.equal(state.events.out.empId,'e1');assert.equal(state.events.in,undefined);
-    await h.api.projectAttendance({params:{cid:'c1',eid:'e1',date:request.date}});
-    assert.equal(h.get('companies/c1/today/e1/statusLabel'),'انصرف (بعذر)');assert.equal(h.get('companies/c1/today/e1/checkIn'),null);
-  }
+// v5.17 (owner, 22 Nov 2026): an excuse is for LATENESS only, the same day, after a late check-in. It never grants check-out.
+test('lateness excuse: server-dated, only after a late check-in, approval is a label only (ledger unchanged)',async()=>{
+  const stamp=Date.parse('2026-12-14T09:30:00Z'),h=harness({now:stamp});h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
+  h.set('companies/c1/settings/startTime','08:00');
+  for(const type of ['no_checkin','no_checkout','no_both'])await assert.rejects(()=>h.invoke('submitRequest','employee',{kind:'excuse',type,reason:'سبب'}),/للتأخير فقط/);
+  await assert.rejects(()=>h.invoke('submitRequest','employee',{kind:'excuse',type:'late',reason:'سبب'}),/حضور متأخر/);
+  h.set('proofs/employee/p1',{intent:'in',version:1,expiresAt:stamp+60000});await h.invoke('recordAttendance','employee',{type:'in',proof:'p1',location:{lat:0,lng:0}});
+  await h.invoke('submitRequest','employee',{kind:'excuse',type:'late',reason:'زحمة',date:'1900-01-01',companyId:'c2',empId:'victim'});
+  const [id,request]=Object.entries(h.get('companies/c1/excuses'))[0];
+  assert.equal(request.date,'2026-12-14');assert.equal(request.dateSource,'server');assert.equal(request.delayMins,90);assert.equal(h.get('companies/c2/excuses'),null);
+  const before=JSON.stringify(h.get('attendanceLedger/c1/e1/2026-12-14'));
+  await h.invoke('reviewRequest','manager',{collection:'excuses',id,status:'approved'});
+  assert.equal(JSON.stringify(h.get('attendanceLedger/c1/e1/2026-12-14')),before);assert.equal(h.get(`companies/c1/excuses/${id}/status`),'approved');
 });
-test('unapproved, rejected, malformed, and wrong-company excuses cannot grant checkout',async()=>{
+test('old absence excuses, rejected, and wrong-company excuses cannot be approved and never grant check-out',async()=>{
   const h=harness();h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
-  await h.invoke('submitRequest','employee',{kind:'excuse',type:'no_checkin',reason:'سبب',date:'1900-01-01'});
-  const [id]=Object.keys(h.get('companies/c1/excuses'));
-  await h.invoke('reviewRequest','manager',{collection:'excuses',id,status:'rejected'});
-  await assert.rejects(()=>h.invoke('reviewRequest','manager',{collection:'excuses',id,status:'approved'}));
-  h.set('companies/c2/excuses/foreign',{empId:'e1',status:'pending'});
+  const today=new Date().toISOString().slice(0,10);
+  h.set('companies/c1/excuses/old',{empId:'e1',status:'pending',type:'no_checkin',date:today,dateSource:'server',createdAt:Date.now(),dateTimeZone:'UTC'});
+  await assert.rejects(()=>h.invoke('reviewRequest','manager',{collection:'excuses',id:'old',status:'approved'}),/لم يعد معتمدًا/);
+  await h.invoke('reviewRequest','manager',{collection:'excuses',id:'old',status:'rejected'});
+  await assert.rejects(()=>h.invoke('reviewRequest','manager',{collection:'excuses',id:'old',status:'approved'}));
+  h.set('companies/c2/excuses/foreign',{empId:'e1',status:'pending',type:'late'});
   await assert.rejects(()=>h.invoke('reviewRequest','manager',{collection:'excuses',id:'foreign',status:'approved'}));
-  h.set('companies/c1/excuses/malformed',{empId:'e1',status:'pending',type:'no_both',date:'2026-01-01'});
-  await assert.rejects(()=>h.invoke('reviewRequest','manager',{collection:'excuses',id:'malformed',status:'approved'}));
   h.set('proofs/employee/outproof',{intent:'out',version:1,expiresAt:Date.now()+60000});
   await assert.rejects(()=>h.invoke('recordAttendance','employee',{type:'out',proof:'outproof',location:{lat:0,lng:0}}));
 });
@@ -164,11 +162,12 @@ for(const [name,zone,stamp,today,tomorrow] of [
 ])test(`submitRequest server calendar: ${name}`,async()=>{
   const h=harness({now:Date.parse(stamp)});h.set('companies/c1/info/timeZone',zone);
   for(const leaveType of ['paid','unpaid','sick','emergency']){
-    for(const date of ['2026-10-14',today])await assert.rejects(()=>h.invoke('submitRequest','employee',{kind:'leave',leaveType,date,reason:'سبب'}),/الغد/);
+    for(const date of ['2026-10-14',today])await assert.rejects(()=>h.invoke('submitRequest','employee',{kind:'leave',leaveType,date,reason:'سبب'}),/قبل يومها|الغد/);
     await h.invoke('submitRequest','employee',{kind:'leave',leaveType,date:tomorrow,reason:'سبب'});
   }
-  await assert.rejects(()=>h.invoke('submitRequest','employee',{kind:'leave',leaveType:'partial',date:'2026-10-14',reason:'سبب',fromTime:'12:00',toTime:'13:00'}),/اليوم/);
-  for(const date of [today,tomorrow])await h.invoke('submitRequest','employee',{kind:'leave',leaveType:'partial',date,reason:'سبب',fromTime:'12:00',toTime:'13:00'});
+  // v5.17 (owner Q4 = A): timed leave also needs at least 1 day notice.
+  for(const date of ['2026-10-14',today])await assert.rejects(()=>h.invoke('submitRequest','employee',{kind:'leave',leaveType:'partial',date,reason:'سبب',fromTime:'12:00',toTime:'13:00'}),/قبل يومها/);
+  await h.invoke('submitRequest','employee',{kind:'leave',leaveType:'partial',date:tomorrow,reason:'سبب',fromTime:'12:00',toTime:'13:00'});
   await assert.rejects(()=>h.invoke('submitRequest','employee',{kind:'leave',leaveType:'paid',date:'2027-02-30',reason:'سبب'}),/تاريخ/);
 });
 test('time rejection has a specific reason and server time without consuming biometric proof',async()=>{
@@ -181,8 +180,9 @@ test('time rejection has a specific reason and server time without consuming bio
 
 test('approved partial leave permits biometric departure then return only within its server window',async()=>{
   const stamp=Date.parse('2026-10-15T12:10:00Z'),h=harness({now:stamp});h.set('companies/c1/employees/e1/status','approved');h.set('credentials/employee',{id:'credential1',publicKey:'a2V5',counter:0,transports:[]});/* own credential, registered before v5.15 (no device entry = approved) */
-  await h.invoke('submitRequest','employee',{kind:'leave',leaveType:'partial',date:'2026-10-15',reason:'سبب',fromTime:'12:00',toTime:'12:30'});
-  const id=Object.keys(h.get('companies/c1/leaves'))[0];await h.invoke('reviewRequest','manager',{collection:'leaves',id,status:'approved'});
+  // Requested the day before (v5.17: timed leave needs 1 day notice).
+  h.set('companies/c1/leaves/pl1',{empId:'e1',date:'2026-10-15',reason:'سبب',leaveType:'partial',isPartial:true,fromTime:'12:00',toTime:'12:30',status:'pending',createdAt:stamp-86400000});
+  const id='pl1';await h.invoke('reviewRequest','manager',{collection:'leaves',id,status:'approved'});
   for(const [type,proof]of [['in','p1'],['departure','p2'],['return','p3']]){
     h.set(`proofs/employee/${proof}`,{intent:type,version:1,expiresAt:stamp+60000});await h.invoke('recordAttendance','employee',{type,proof,location:{lat:0,lng:0}});
   }

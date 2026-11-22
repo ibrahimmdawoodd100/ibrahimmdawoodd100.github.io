@@ -91,7 +91,7 @@ test('branch add / rename / delete / hours / location go through managerBranch a
   await h.ctx.whGzSave(); await settle(20);
   assert.deepEqual(h.list('managerBranch'), [
     { action: 'add', name: 'فرع الجنوب' }, { action: 'rename', id: 'w1', name: 'اسم جديد' }, { action: 'delete', id: 'w2' },
-    { action: 'schedule', id: 'w1', schedule: { checkIn: { from: '08:00', to: '09:00' }, checkOut: { from: '16:00', to: '17:00' } } },
+    { action: 'schedule', id: 'w1', schedule: { checkIn: { from: '08:00', to: '09:00' }, checkOut: { from: '16:00', to: '17:00' }, startTime: null, workDays: null } }, // v5.17: start time + work days (empty = inherit)
     { action: 'schedule', id: 'w1', schedule: null }, { action: 'geoZone', id: 'w1', geoZone: { lat: 24.1, lng: 46.2, radius: 300 } }]);
   assert.equal(h.el('new-wh-name').value, '', 'input cleared after add');
   assert.equal(h.list('managerList').filter(d => d.kind === 'warehouses').length >= 7, true, 'the list reloads after each of the 6 changes');

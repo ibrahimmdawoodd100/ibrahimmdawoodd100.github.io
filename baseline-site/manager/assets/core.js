@@ -24,7 +24,9 @@ window.Basma = (() => {
         app.database().useEmulator(emu.host, emu.database);
         app.functions(config.region).useEmulator(emu.host, emu.functions);
       }
-      app.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(config.appCheckSiteKey), true);
+      // v5.16 cost: no background auto-refresh. Each App Check refresh is a paid reCAPTCHA assessment; the SDK still
+      // fetches a fresh token on demand when a call needs one and the old one has expired (no security change).
+      app.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(config.appCheckSiteKey), false);
       // LOCAL for every role (owner's choice): the session survives closing and reopening the app. Explicit «خروج»
       // still signs out; sensitive actions stay protected server-side (changePassword needs a sign-in < 5 min old).
       persistenceMode = 'LOCAL';
@@ -111,6 +113,7 @@ window.Basma = (() => {
   // logout AND when a different account signs in on the same phone, so employee B never sees employee A's state.
   // Firebase's own sign-in record is removed by signOut(); page memory is cleared by the reload.
   function clearLocalState(keep = []) {
+    try { indexedDB.deleteDatabase('basma-month-cache'); } catch {} // the manager's closed-month cache
     for (const storage of [localStorage, sessionStorage]) {
       try { for (const key of Object.keys(storage)) if (/^basma_/.test(key) && !keep.includes(key)) storage.removeItem(key); } catch {}
     }
@@ -415,7 +418,7 @@ window.Basma = (() => {
       };
       return ref;
     }
-    return { ref: path => makeRef(String(path || '').replace(/^\/+|\/+$/g, '')), prime(name, data, result) { cache.set(name + JSON.stringify(data), { at: Date.now(), promise: Promise.resolve(result) }); },
+    return { ref: path => makeRef(String(path || '').replace(/^\/+|\/+$/g, '')), prime(name, data, result) { cache.set(name + JSON.stringify(data), { at: Date.now(), promise: Promise.resolve(result) }); }, poll,
       get real() { return real; }, goOffline() { real?.goOffline(); }, goOnline() { real?.goOnline(); } };
   }
   return { stateBox, limitWrites, serverDb, snapshotOf, sweepSpinners, init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get signedIn() { return !!app?.auth().currentUser; }, reopenError, get persistenceMode() { return persistenceMode; } };
