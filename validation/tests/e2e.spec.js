@@ -385,7 +385,7 @@ test.describe('account switch and open-app updates (local emulators)', () => {
     const m = await managerSession(browser);
     const now = Math.floor(Date.now() / 60000), from = hhmm(now - 20), to = hhmm(now + 3);
     await test.step('the manager changes C\'s schedule; the open page shows it within seconds', async () => {
-      await m.page.evaluate(({ from, to }) => DB.ref(`companies/${COMPANY_ID}/employees/e2e-emp5/schedule`).set({ checkIn: { from, to }, checkOut: { from: '00:00', to: '23:59' } }), { from, to });
+      await m.page.evaluate(({ from, to }) => DB.ref(`companies/${COMPANY_ID}/employees/e2e-emp5/schedule`).set({ checkIn: { from, to }, checkOut: { from: to, to: '23:59' } }), { from, to }); // v5.19: check-out starts when check-in ends
       const t = Date.now(); await expect(page.locator('#tw-in-range')).toHaveText(`${from} — ${to}`, { timeout: 20000 }); timing('open employee page shows a manager schedule change', Date.now() - t);
       await expect(page.locator('#tw-in-status')).toContainText('مفتوح'); await expect(page.locator('#btn-checkin')).toBeEnabled();
     }, { timeout: 60000 });
