@@ -67,14 +67,17 @@ const secureAttendanceWindows=(()=>{
     const geo=secureZoneCheck();
     inButton.disabled=onLeave||holiday||!geo||!incoming.open||!!state.checkIn||!!state.checkOut;
     outButton.disabled=onLeave||holiday||!geo||!outgoing.open||!!state.checkOut||!(state.checkIn||state.checkInExcused);
+    // v5.19: the server refuses a check-out within 10 minutes of the check-in; the button waits too.
+    const sinceIn=state.checkIn?stamp-Date.parse(state.checkIn):Infinity,waitMins=sinceIn<600000?Math.ceil((600000-sinceIn)/60000):0;
+    if(waitMins&&!state.checkOut)outButton.disabled=true;
     setProfileStatus(onLeave?'في إجازة':holiday?'عطلة':state.statusLabel||'بانتظار الحضور',state.attendanceStatus==='excused_out'?'badge-blue':'badge-gray');
-    document.getElementById('win-msg').textContent=(state.checkInExcused&&!state.checkOut?'العذر معتمد؛ يمكنك تسجيل الانصراف ضمن وقته وبالتحقق من البصمة والموقع':state.statusLabel||'سجّل حضورك ضمن نافذة الدوام')+(state.checkIn&&cache.startTime&&state.delayMins>0?` — متأخر ${state.delayMins} دقيقة`:'');
+    document.getElementById('win-msg').textContent=(state.checkInExcused&&!state.checkOut?'العذر معتمد؛ يمكنك تسجيل الانصراف ضمن وقته وبالتحقق من البصمة والموقع':state.statusLabel||'سجّل حضورك ضمن نافذة الدوام')+(state.checkIn&&cache.startTime&&state.delayMins>0?` — متأخر ${state.delayMins} دقيقة`:'')+(waitMins&&!state.checkOut?` — يمكنك الانصراف بعد ${waitMins} دقيقة`:'');
     document.getElementById('tw-in-range').textContent=`${schedule.checkIn.from} — ${schedule.checkIn.to}`;document.getElementById('tw-out-range').textContent=`${schedule.checkOut.from} — ${schedule.checkOut.to}`;
     document.getElementById('tw-in-status').textContent=incoming.label;document.getElementById('tw-out-status').textContent=outgoing.label;
     // v5.15: a fingerprint/device the manager has not approved yet cannot record attendance (the server refuses too).
     if(cache.device?.status==='pending'){inButton.disabled=true;outButton.disabled=true;document.getElementById('win-msg').textContent='بصمتك أو جهازك الجديد بانتظار اعتماد المدير؛ لا يمكن تسجيل الحضور قبل الاعتماد. ستتحدث الصفحة وحدها بعد الاعتماد.';}
     window.basmaRenderPartial?.();
-    return Math.min(incoming.nextMs,outgoing.nextMs);
+    return Math.min(incoming.nextMs,outgoing.nextMs,waitMins&&!state.checkOut?Math.max(1000,(600000-sinceIn)%60000||60000):Infinity); // re-check each minute while waiting
   }
   function get(){if(!view)view=BasmaClock.controller({now,load,render,refreshMs:900000,onError:error=>{document.getElementById('btn-checkin').disabled=true;document.getElementById('btn-checkout').disabled=true;document.getElementById('win-msg').textContent=window.BasmaErrors?.message(error)??error.message;}});return view;}
   function foreground(){if(EMP?.id&&view)get().foreground();}

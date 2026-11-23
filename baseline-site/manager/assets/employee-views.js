@@ -40,7 +40,7 @@ const secureAttendanceWindows=(()=>{
     if(!Number.isFinite(home.serverTime))throw Error('تعذرت مزامنة وقت الخادم');
     anchor={server:home.serverTime+(after-before)/2,at:after};SERVER_TIME_OFFSET=anchor.server-Date.now();
     COMPANY_INFO=home.info;SETTINGS=home.settings||{};EMP={...home.employee,id:ACTIVATION_UID||EMP.id};
-    const wh=home.warehouse||{};WAREHOUSE_GEO_ZONE=wh.geoZone||null;WAREHOUSE_SCHEDULE=wh.schedule||null;
+    const wh=home.warehouse||{};WAREHOUSE_GEO_ZONE=(home.employee?.geoZone?.lat!=null&&home.employee.geoZone.enabled!==false?home.employee.geoZone:wh.geoZone)||null; // v5.18: his special work location firstWAREHOUSE_SCHEDULE=wh.schedule||null;
     current={today:newer(current?.today,home.today),date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS,device:home.device||{status:'none'},workDays:Array.isArray(home.workDays)?home.workDays:null,startTime:home.startTime||null};
     knownVersion=home.scheduleVersion??knownVersion;
     for(const id of ['main-wh-name','profile-wh'])document.getElementById(id).textContent=wh.name||EMP.warehouseName||'';

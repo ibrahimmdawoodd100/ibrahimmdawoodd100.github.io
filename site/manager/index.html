@@ -54,6 +54,8 @@
 
 
 
+
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>لوحة تحكم المدير — النسخة المخصصة</title>
 <link rel="manifest" href="./manifest.json">
@@ -584,6 +586,7 @@ tr:hover td{background:#1a1f30}
           <div><div class="form-label" style="margin-bottom:8px">بداية الدوام (للتأخير)</div><input class="form-input" type="time" id="start-time"></div>
         </div>
         <div style="font-size:11px;color:var(--text2);margin-bottom:10px">النافذة داخل اليوم نفسه (لا تعبر منتصف الليل). بدون بداية دوام لا يظهر أحد «متأخر». التأخير للعرض فقط، بلا خصم.</div>
+        <div id="tw-overlap-note" style="display:none;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:12px;margin-bottom:10px"></div>
         <button class="action-btn-full" data-basma-click="saveTimeWindows()">💾 حفظ نوافذ الوقت</button>
       </div>
 
@@ -593,8 +596,10 @@ tr:hover td{background:#1a1f30}
         <div class="form-group">
           <label class="form-label">اختر الموظف</label>
           <select class="form-input form-select" id="sched-emp-sel" data-basma-change="loadEmpSchedule()"><option value="">اختر...</option></select>
+          <div id="sched-overlap-warn" style="display:none;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:12px;margin-top:8px"></div>
         </div>
         <div id="sched-form" style="display:none">
+          <div id="sched-overlap-note" style="display:none;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:12px;margin-bottom:10px"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
             <div><div class="form-label" style="margin-bottom:8px">حضوره — من</div><input class="form-input" type="time" id="sched-ci-from"></div>
             <div><div class="form-label" style="margin-bottom:8px">حضوره — إلى</div><input class="form-input" type="time" id="sched-ci-to"></div>
@@ -1900,6 +1905,7 @@ function copyLink(elementId){
       <div><div class="form-label" style="margin-bottom:6px">وقت الانصراف — إلى</div><input class="form-input" type="time" id="wh-co-to"></div>
       <div><div class="form-label" style="margin-bottom:6px">بداية الدوام (اختياري)</div><input class="form-input" type="time" id="wh-start"></div>
     </div>
+    <div id="wh-overlap-note" style="display:none;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:12px;margin-bottom:10px"></div>
     <div class="form-label" style="margin-bottom:6px">أيام عمل الفرع (بدون اختيار = كل الأيام عدا عطلة الشركة)</div>
     <div id="wh-days" class="basma-days" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
     <div style="font-size:11px;color:var(--text2);margin-bottom:14px">ملاحظة: هذه الأوقات تُطبَّق على موظفي الفرع ما لم يكن للموظف جدول خاص به</div>

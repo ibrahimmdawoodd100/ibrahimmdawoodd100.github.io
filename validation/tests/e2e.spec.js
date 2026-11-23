@@ -307,6 +307,23 @@ test.describe('full flow on local emulators', () => {
       await show(page, 'showTab', 'home'); await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 25000 });
       const t = Date.now(); await page.click('#btn-checkin'); await expect(page.locator('#stat-in')).not.toHaveText('—', { timeout: 30000 }); timing('employee: fingerprint check-in', Date.now() - t, BUDGET.cold);
     }, { timeout: 60000 });
+    await test.step('employee: check-out waits 10 minutes after check-in (v5.19)', async () => {
+      await expect(page.locator('#win-msg')).toContainText('يمكنك الانصراف بعد', { timeout: 15000 });
+      await expect(page.locator('#btn-checkout')).toBeDisabled();
+      // Test clock: move THIS check-in 11 minutes back in the LOCAL emulator database (same admin access as the seed).
+      const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST || '127.0.0.1:9000';
+      let moved = false;
+      for (const ns of ['demo-basma-default-rtdb', 'demo-basma']) {
+        const days = await (await fetch(`http://${host}/attendanceLedger/e2e-co/e2e-emp1.json?ns=${ns}`, { headers: { Authorization: 'Bearer owner' } })).json();
+        for (const [date, day] of Object.entries(days || {})) if (day?.events?.in?.timestamp) {
+          const earlier = new Date(Date.parse(day.events.in.timestamp) - 11 * 60000).toISOString();
+          const r = await fetch(`http://${host}/attendanceLedger/e2e-co/e2e-emp1/${date}/events/in.json?ns=${ns}`, { method: 'PATCH', headers: { Authorization: 'Bearer owner' }, body: JSON.stringify({ timestamp: earlier }) });
+          expect(r.ok).toBe(true); moved = true;
+        }
+      }
+      expect(moved, 'the check-in was found in the local emulator').toBe(true);
+      await page.waitForTimeout(2500); await page.reload(); await show(page, 'showTab', 'home');
+    }, { timeout: 60000 });
     await test.step('employee: fingerprint check-out', async () => {
       await expect(page.locator('#btn-checkout')).toBeEnabled({ timeout: 25000 });
       const t = Date.now(); await page.click('#btn-checkout'); await expect(page.locator('#stat-out')).not.toHaveText('—', { timeout: 30000 }); timing('employee: fingerprint check-out', Date.now() - t, BUDGET.cold);

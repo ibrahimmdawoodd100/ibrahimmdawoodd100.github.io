@@ -174,7 +174,7 @@ const scenarios = {
     await seed.ref(`privatePayroll/${cid}`).set({ e1: { salary: 2200, deductionPercent: 100 } });
     const at = iso => loadServer(file, { now: Date.parse(iso) });
     const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await at(iso).invoke(name, uid, data)));
-    const W = { from: '00:00', to: '23:59' };
+    const W = { from: '00:00', to: '23:59' }, WI = { from: '00:00', to: '11:59' }, WO = { from: '12:00', to: '23:59' }; // v5.19: check-out after check-in
     // Leave notice: full AND timed leave at least 1 day before; the manager is notified.
     await assert.rejects(call('2026-12-15T09:00:00Z', 'submitRequest', emp, { kind: 'leave', leaveType: 'partial', date: '2026-12-15', fromTime: '10:00', toTime: '11:00', reason: 'x' }), e => /قبل يومها/.test(e.message));
     await assert.rejects(call('2026-12-15T09:00:00Z', 'submitRequest', emp, { kind: 'leave', leaveType: 'paid', date: '2026-12-15', reason: 'x' }), e => /قبل يومها/.test(e.message));
@@ -184,10 +184,10 @@ const scenarios = {
     await assert.rejects(call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'timeWindows', checkIn: { from: '22:00', to: '02:00' }, checkOut: W }), e => /منتصف الليل/.test(e.message));
     await assert.rejects(call('2026-12-15T09:00:00Z', 'managerBranch', mgr, { action: 'schedule', id: 'w1', schedule: { checkIn: W, checkOut: { from: '23:00', to: '06:00' } } }), e => /منتصف الليل/.test(e.message));
     // Start time (company) and work days (employee override Mon-Fri).
-    await call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'timeWindows', checkIn: W, checkOut: W, startTime: '08:00' });
-    await call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, workDays: [1, 2, 3, 4, 5] } });
+    await call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'timeWindows', checkIn: WI, checkOut: WO, startTime: '08:00' });
+    await call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: WI, checkOut: WO, workDays: [1, 2, 3, 4, 5] } });
     assert.deepEqual(await get(`companies/${cid}/employees/e1/workDays`), [1, 2, 3, 4, 5]);
-    await assert.rejects(call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, workDays: [7] } }), e => e.code === 'invalid-argument');
+    await assert.rejects(call('2026-12-15T09:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: WI, checkOut: WO, workDays: [7] } }), e => e.code === 'invalid-argument');
     const proof = id => seed.ref(`proofs/${emp}/${id}`).set({ intent: 'in', version: 1, expiresAt: Date.parse('2027-06-01T00:00:00Z') });
     await proof('sun'); await assert.rejects(call('2026-12-13T09:30:00Z', 'recordAttendance', emp, { type: 'in', proof: 'sun', location: { lat: 0, lng: 0 } }), e => /ليس يوم عمل/.test(e.message), 'Sunday is not his work day');
     await proof('mon'); await call('2026-12-14T09:30:00Z', 'recordAttendance', emp, { type: 'in', proof: 'mon', location: { lat: 0, lng: 0 } });
@@ -238,25 +238,25 @@ const scenarios = {
     await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
     const at = iso => loadServer(file, { now: Date.parse(iso) });
     const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await at(iso).invoke(name, uid, data)));
-    const W = { from: '00:00', to: '23:59' }, FAR = { lat: 25, lng: 47 }, BRANCH = { lat: 24, lng: 46 };
+    const W = { from: '00:00', to: '23:59' }, WI = { from: '00:00', to: '11:59' }, WO = { from: '12:00', to: '23:59' }, FAR = { lat: 25, lng: 47 }, BRANCH = { lat: 24, lng: 46 };
     let n = 0;
     const checkIn = async (iso, uid, where) => { const id = `p${++n}`; await seed.ref(`proofs/${uid}/${id}`).set({ intent: 'in', version: 1, expiresAt: Date.parse('2027-06-01T00:00:00Z') }); return call(iso, 'recordAttendance', uid, { type: 'in', proof: id, location: { ...where, accuracy: 10 } }); };
     // 1) Special work location for e1 only (a map point far from his branch).
-    await call('2026-12-01T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, workDays: [0, 1, 2, 3, 4, 5, 6], location: { ...FAR, radius: 250 } } });
+    await call('2026-12-01T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: WI, checkOut: WO, workDays: [0, 1, 2, 3, 4, 5, 6], location: { ...FAR, radius: 250 } } });
     assert.deepEqual(await get(`companies/${cid}/employees/e1/geoZone`), { ...FAR, radius: 250, enabled: true });
-    await assert.rejects(call('2026-12-01T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, location: { lat: 999, lng: 0, radius: 10 } } }), e => e.code === 'invalid-argument');
+    await assert.rejects(call('2026-12-01T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: WI, checkOut: WO, location: { lat: 999, lng: 0, radius: 10 } } }), e => e.code === 'invalid-argument');
     await assert.rejects(checkIn('2026-12-02T08:00:00Z', emp, BRANCH), 'e1 at his branch is now OUTSIDE his work location');
     assert.equal((await checkIn('2026-12-03T08:00:00Z', emp, FAR)).ok, true, 'e1 at the special point is accepted');
     assert.equal((await checkIn('2026-12-03T08:00:00Z', other, BRANCH)).ok, true, 'e2 (no special location) is unchanged');
     await assert.rejects(checkIn('2026-12-04T08:00:00Z', other, FAR), 'e2 cannot use e1\'s point');
     // 2) Editing the schedule from an older page (no location field) keeps the location; "branch" returns him.
-    await call('2026-12-05T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, workDays: [0, 1, 2, 3, 4, 5, 6] } });
+    await call('2026-12-05T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: WI, checkOut: WO, workDays: [0, 1, 2, 3, 4, 5, 6] } });
     assert.equal((await get(`companies/${cid}/employees/e1/geoZone`)).radius, 250);
     await call('2026-12-05T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: null });
     assert.equal(await get(`companies/${cid}/employees/e1/geoZone`), null, 'removing the special schedule returns him to his branch location');
     assert.equal((await checkIn('2026-12-06T08:00:00Z', emp, BRANCH)).ok, true);
     // 3) Permanent transfer: special times/days kept, special location reset, history untouched, fingerprint still valid.
-    await call('2026-12-07T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, startTime: '07:00', workDays: [0, 1, 2, 3, 4, 5, 6], location: { ...FAR, radius: 250 } } });
+    await call('2026-12-07T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: WI, checkOut: WO, startTime: '07:00', workDays: [0, 1, 2, 3, 4, 5, 6], location: { ...FAR, radius: 250 } } });
     const recordsBefore = JSON.stringify(await get(`companies/${cid}/records`)), ledgerBefore = JSON.stringify(await get(`attendanceLedger/${cid}/e1`));
     await assert.rejects(call('2026-12-08T08:00:00Z', 'transferEmployee', mgr, { employeeId: 'e1', warehouseId: 'w1' }), e => /أصلًا/.test(e.message), 'same branch');
     await call('2026-12-08T08:00:00Z', 'transferEmployee', mgr, { employeeId: 'e1', warehouseId: 'w2' });
@@ -283,6 +283,43 @@ const scenarios = {
     await call('2026-12-12T08:00:00Z', 'disableEmployee', mgr, { employeeId: 'e2' });
     await assert.rejects(call('2026-12-12T08:00:00Z', 'transferEmployee', mgr, { employeeId: 'e2', warehouseId: 'w2' }), e => /معطّل/.test(e.message));
   },
+  'schedule windows (owner, 24 Nov 2026): check-out starts at/after check-in ends for NEW saves, existing overlaps keep working, 10-minute minimum before check-out': async (file, tag) => {
+    const cid = `cWin${tag}`, mgr = `winM_${tag}`, emp = `winE_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-06-01T00:00:00Z'));
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`credentials/${emp}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] });
+    // An EXISTING overlapping special schedule (as found live: in 20:00-21:56 / out 21:35-22:35), saved before the rule.
+    const legacy = { checkIn: { from: '20:00', to: '21:56' }, checkOut: { from: '21:35', to: '22:35' } };
+    await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'E1', credId: 'cred-1', warehouseId: 'w1', warehouseName: 'Branch', createdAt: Date.parse('2026-11-01T00:00:00Z'), schedule: legacy });
+    const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await loadServer(file, { now: Date.parse(iso) }).invoke(name, uid, data)));
+    const T = '2026-12-14T08:00:00Z';
+    // 1) Normal same-day pair is accepted everywhere (check-out may start exactly when check-in ends).
+    const good = { checkIn: { from: '08:00', to: '09:00' }, checkOut: { from: '09:00', to: '17:00' } };
+    await call(T, 'managerSettings', mgr, { action: 'timeWindows', ...good });
+    await call(T, 'managerBranch', mgr, { action: 'schedule', id: 'w1', schedule: good });
+    await call(T, 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e2x', schedule: good }).catch(() => {}); // unknown employee: not the point here
+    // 2) Overlap is refused on the server, with a clear Arabic message, for company, branch and employee saves.
+    const overlap = { checkIn: { from: '20:00', to: '21:56' }, checkOut: { from: '21:35', to: '22:35' } };
+    const refused = e => e.code === 'invalid-argument' && /أوقات متداخلة/.test(e.message);
+    await assert.rejects(call(T, 'managerSettings', mgr, { action: 'timeWindows', ...overlap }), refused, 'company');
+    await assert.rejects(call(T, 'managerBranch', mgr, { action: 'schedule', id: 'w1', schedule: overlap }), refused, 'branch');
+    await assert.rejects(call(T, 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: overlap }), refused, 'employee');
+    // 3) A NEW overnight pair (check-out earlier on the clock) is refused too (decision 8: same day only).
+    await assert.rejects(call(T, 'managerBranch', mgr, { action: 'schedule', id: 'w1', schedule: { checkIn: { from: '22:00', to: '23:00' }, checkOut: { from: '06:00', to: '07:00' } } }), refused, 'new overnight');
+    assert.deepEqual(await get(`companies/${cid}/employees/e1/schedule`), legacy, 'the existing overlapping schedule is NOT changed');
+    // 4) The existing overlapping schedule still works: check-in at 21:40, check-out at 21:55 (both windows open).
+    const proof = async (id, intent) => seed.ref(`proofs/${emp}/${id}`).set({ intent, version: 1, expiresAt: Date.parse('2027-06-01T00:00:00Z') });
+    const rec = (iso, type, id) => call(iso, 'recordAttendance', emp, { type, proof: id, location: { lat: 0, lng: 0 } });
+    await proof('in1', 'in'); assert.equal((await rec('2026-12-14T21:40:00Z', 'in', 'in1')).ok, true);
+    // 5) 10-minute guard: check-out at +5 min is refused and the fingerprint proof is NOT used up.
+    await proof('out1', 'out');
+    await assert.rejects(rec('2026-12-14T21:45:00Z', 'out', 'out1'), e => /10 دقائق/.test(e.message) && /بقي 5 دقيقة/.test(e.message));
+    assert.equal((await get(`proofs/${emp}/out1`)).used, undefined, 'proof kept for the next try');
+    assert.equal((await rec('2026-12-14T21:50:00Z', 'out', 'out1')).ok, true, 'exactly 10 minutes later the same proof works');
+    assert.ok((await get(`attendanceLedger/${cid}/e1/2026-12-14`)).events.out);
+  },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;
     await seedCompany(cid);
@@ -304,17 +341,20 @@ const scenarios = {
     await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
     await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
     await seed.ref(`credentials/${uid}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] }); // the employee's own credential (registered before v5.15: no device entry = approved)
-    const proof = id => seed.ref(`proofs/${uid}/${id}`).set({ intent: id.slice(0, -1), version: 1, expiresAt: Date.now() + 60000 });
+    const proof = id => seed.ref(`proofs/${uid}/${id}`).set({ intent: id.slice(0, -1), version: 1, expiresAt: Date.parse('2027-06-01T00:00:00Z') });
+    await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-06-01T00:00:00Z'));
+    // v5.19: a check-out needs 10 minutes after the check-in, so the server clock is fixed and moves 11 minutes.
+    const T0 = Date.parse('2026-12-14T10:00:00Z'), atIn = () => loadServer(file, { now: T0 }), atOut = () => loadServer(file, { now: T0 + 11 * 60000 });
     await proof('in1');
-    const first = JSON.parse(JSON.stringify(await loadServer(file).invoke('recordAttendance', uid, { type: 'in', proof: 'in1', location: { lat: 0, lng: 0 } })));
+    const first = JSON.parse(JSON.stringify(await atIn().invoke('recordAttendance', uid, { type: 'in', proof: 'in1', location: { lat: 0, lng: 0 } })));
     assert.ok(first.today, 'the answer carries the day summary (the page shows it at once)');
     assert.equal(first.today.checkIn, first.timestamp); assert.equal(first.today.ledgerRevision, 1);
     await loadServer(file).exports.projectAttendance({ params: { cid, eid: 'e1', date: first.date } });
     assert.deepEqual(first.today, await get(`companies/${cid}/today/e1`), 'same values as the projection');
     await proof('out1');
-    const second = JSON.parse(JSON.stringify(await loadServer(file).invoke('recordAttendance', uid, { type: 'out', proof: 'out1', location: { lat: 0, lng: 0 } })));
+    const second = JSON.parse(JSON.stringify(await atOut().invoke('recordAttendance', uid, { type: 'out', proof: 'out1', location: { lat: 0, lng: 0 } })));
     // «سجلاتي» before the projection trigger ran: today's events already appear, once each.
-    const history = JSON.parse(JSON.stringify(await loadServer(file).invoke('employeeList', uid, { kind: 'history' })));
+    const history = JSON.parse(JSON.stringify(await atOut().invoke('employeeList', uid, { kind: 'history' })));
     const types = history.order.map(k => history.items[k].type).sort();
     assert.deepEqual(types, ['in', 'out'], 'check-in (projected) and check-out (not yet projected), no duplicates');
     assert.equal(second.today.checkOut, second.timestamp); assert.equal(second.today.checkIn, first.timestamp); assert.equal(second.today.ledgerRevision, 2);

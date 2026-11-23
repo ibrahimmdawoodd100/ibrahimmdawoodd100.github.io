@@ -249,7 +249,7 @@ exports.managerBranch = endpoint(['manager'], async ({ uid, member, data }) => {
     if (data.schedule == null) await ref.child('schedule').remove();
     else {
       const startTime = optionalTime(data.schedule.startTime), workDays = workDaysValue(data.schedule.workDays);
-      await ref.child('schedule').set({ checkIn: dayWindow(data.schedule.checkIn), checkOut: dayWindow(data.schedule.checkOut), ...(startTime ? { startTime } : {}) });
+      await ref.child('schedule').set({ ...dayPair(data.schedule.checkIn, data.schedule.checkOut), ...(startTime ? { startTime } : {}) });
       await ref.child('workDays').set(workDays);
     }
   } else if (data.action === 'geoZone') {
@@ -333,7 +333,7 @@ exports.managerSettings = endpoint(['manager'], async ({ uid, member, data }) =>
   const cid = member.companyId, settings = db.ref(`companies/${cid}/settings`);
   let target = cid;
   switch (data.action) {
-    case 'timeWindows': await settings.update({ checkIn: dayWindow(data.checkIn), checkOut: dayWindow(data.checkOut), startTime: optionalTime(data.startTime) }); break;
+    case 'timeWindows': await settings.update({ ...dayPair(data.checkIn, data.checkOut), startTime: optionalTime(data.startTime) }); break;
     case 'holidayAdd': { if (monthClosed(isoDate(data.date), member.timeZone || (await read(`companies/${cid}/info/timeZone`)))) p.fail('الشهر مغلق؛ لا تُضاف عطلة لتاريخ مضى', 'failed-precondition'); const ref = settings.child('holidays').push(); await ref.set({ date: isoDate(data.date), name: p.text(data.name, 'اسم العطلة', 80), active: true }); target = ref.key; break; }
     case 'holidayRemove': { target = p.key(data.id); const h = await read(`companies/${cid}/settings/holidays/${target}`); if (h?.date && monthClosed(h.date, await read(`companies/${cid}/info/timeZone`))) p.fail('الشهر مغلق؛ لا تُحذف عطلة منه', 'failed-precondition'); await settings.child(`holidays/${target}`).remove(); break; }
     case 'geoZone': {
@@ -361,7 +361,7 @@ exports.managerSettings = endpoint(['manager'], async ({ uid, member, data }) =>
           }
         }
         const startTime = optionalTime(data.schedule.startTime), workDays = workDaysValue(data.schedule.workDays);
-        await ref.set({ checkIn: dayWindow(data.schedule.checkIn), checkOut: dayWindow(data.schedule.checkOut), ...(startTime ? { startTime } : {}) });
+        await ref.set({ ...dayPair(data.schedule.checkIn, data.schedule.checkOut), ...(startTime ? { startTime } : {}) });
         await db.ref(`companies/${cid}/employees/${target}/workDays`).set(workDays);
       }
       break;
@@ -695,6 +695,14 @@ function specialZone(v) {
 }
 const zoneText = z => (z ? { lat: z.lat, lng: z.lng, radius: z.radius } : 'branch');
 const employeeLog = (cid, eid, entry) => db.ref(`employeeLog/${cid}/${eid}`).push({ ...entry, at: Date.now() });
+// v5.19 (owner, 24 Nov 2026): for NEW saves the check-out window starts at or after the check-in window ends
+// (same day; decision 8 = no overnight). Existing saved schedules are never changed or refused at check-in time.
+function dayPair(checkIn, checkOut) {
+  const i = dayWindow(checkIn), o = dayWindow(checkOut);
+  if (p.minutes(o.from) < p.minutes(i.to)) p.fail('أوقات متداخلة: وقت الانصراف يجب أن يبدأ عند نهاية وقت الحضور أو بعده', 'invalid-argument');
+  return { checkIn: i, checkOut: o };
+}
+const MIN_WORK_MS = 10 * 60000; // a check-out needs at least 10 minutes after the check-in
 // Per company and month: changes whenever records/leaves/excuses of that month change. The manager page caches CLOSED
 // months on the phone and re-downloads a month only when this number differs (v5.16 cost).
 const bumpMonth = (cid, date) => (typeof date === 'string' && /^\d{4}-\d{2}/.test(date) ? db.ref(`recordsVersions/${cid}/${date.slice(0, 7)}`).set(Date.now()) : null);
@@ -806,6 +814,11 @@ exports.recordAttendance = endpoint(['employee'], async ({ uid, member, info, da
   }
   // v5.18: an employee's special work location comes first (this employee only), then his branch, then the company.
   const zone = employee.geoZone?.lat != null && employee.geoZone.enabled !== false ? employee.geoZone : wh.geoZone && wh.geoZone.enabled !== false ? wh.geoZone : settings?.geoZone?.enabled ? settings.geoZone : null;
+  // v5.19: a check-out is refused when less than 10 minutes passed since the check-in (checked before the proof is used).
+  if (type === 'out') {
+    const inAt = Date.parse((await read(`attendanceLedger/${cid}/${eid}/${clock.date}/events/in/timestamp`)) || '');
+    if (Number.isFinite(inAt) && Date.now() - inAt < MIN_WORK_MS) p.fail(`لا يمكن تسجيل الانصراف قبل مرور 10 دقائق على الحضور (بقي ${Math.ceil((MIN_WORK_MS - (Date.now() - inAt)) / 60000)} دقيقة)`, 'failed-precondition');
+  }
   // Missions do not implicitly bypass a geofence. Configure their approved coordinates explicitly.
   const coords = p.location(data.location, mission?.geoZone || zone);
   const proofRef = db.ref(`proofs/${uid}/${p.key(data.proof)}`);

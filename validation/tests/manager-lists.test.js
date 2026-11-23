@@ -216,3 +216,20 @@ test('employees page: a pending fingerprint device is listed; approving calls ma
   assert.equal(box.children.length, 0, 'list redrawn: nothing pending');
   assert.ok(h.timeouts.some(([label, ms]) => label === 'managerDevice' && ms === 20000));
 });
+
+// v5.19 (owner, 24 Nov 2026): overlapping windows. New saves are stopped before any call; existing overlaps only warn.
+test('schedule windows: an overlapping save sends nothing; an existing overlapping branch shows «أوقات متداخلة»', async () => {
+  const overlapBranches = { ...branches, order: ['w1', 'w2', 'w3'], items: { ...branches.items, w3: { name: 'المتداخل', active: true, schedule: { checkIn: { from: '20:00', to: '21:56' }, checkOut: { from: '21:35', to: '22:35' } } } } };
+  const h = managerHarness((n, d) => (n === 'managerList' && d.kind === 'warehouses' ? overlapBranches : defaultServer(n, d)));
+  await h.ctx.pageLoaders.warehouses(); await settle(20);
+  const cards = h.el('warehouses-list').children;
+  assert.match(h.texts(cards[2]), /أوقات متداخلة/, 'existing overlap is flagged, not changed');
+  assert.doesNotMatch(h.texts(cards[0]), /أوقات متداخلة/);
+  h.ctx.whSchedCurrentId = 'w1';
+  for (const [id, v] of [['wh-ci-from', '20:00'], ['wh-ci-to', '21:56'], ['wh-co-from', '21:35'], ['wh-co-to', '22:35']]) h.el(id).value = v;
+  await h.ctx.saveWhSchedule(); await settle(20);
+  assert.equal(h.list('managerBranch').length, 0, 'nothing sent');
+  assert.deepEqual(h.toasts.at(-1), ['error', 'أوقات متداخلة: وقت الانصراف يجب أن يبدأ عند نهاية وقت الحضور أو بعده']);
+  h.el('wh-co-from').value = '21:56'; await h.ctx.saveWhSchedule(); await settle(20);
+  assert.equal(h.list('managerBranch').length, 1, 'check-out starting exactly when check-in ends is accepted');
+});
