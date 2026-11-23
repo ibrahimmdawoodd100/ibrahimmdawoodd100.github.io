@@ -93,3 +93,23 @@ test('the server uses the SAME rules file as the pages (functions/report-model.j
   const fs = require('node:fs'), path = require('node:path');
   assert.equal(fs.readFileSync(path.join(__dirname, '../functions/report-model.js'), 'utf8'), fs.readFileSync(path.join(__dirname, '../public/assets/report-model.js'), 'utf8'), 'copy public/assets/report-model.js to functions/');
 });
+
+// v5.18: permanent branch transfer. Each day uses the branch he was in on that day; the old branch name stays.
+test('transfer: days before the move keep the old branch (name and work days); days after use the new branch', () => {
+  const ws = { w1: { name: 'القديم' }, w2: { name: 'الجديد', workDays: [6, 0, 1, 2, 3] } }; // new branch: Sat-Wed
+  const employee = emp({ warehouseId: 'w2', warehouseName: 'الجديد', branchHistory: { a: { at: Date.parse('2026-12-10T06:00:00Z'), from: 'w1', to: 'w2' } } });
+  assert.equal(R.branchOn(employee, '2026-12-09', TZ), 'w1'); assert.equal(R.branchOn(employee, '2026-12-10', TZ), 'w2');
+  assert.equal(R.branchOn(emp(), '2026-12-09', TZ), 'w1', 'no transfers = current branch');
+  const rows = Object.fromEntries(R.build({ settings, warehouses: ws, timeZone: TZ, today: '2026-12-31', employees: { e1: employee }, records: {}, from: '2026-12-03', to: '2026-12-17' }).map(r => [r.date, r]));
+  assert.equal(rows['2026-12-03'].warehouseName, 'القديم', 'history keeps the old branch name');
+  assert.equal(rows['2026-12-03'].classification, 'absent', 'Thursday is a work day in the old branch');
+  assert.equal(rows['2026-12-17'].classification, 'holiday', 'Thursday is NOT a work day in the new branch');
+  assert.equal(rows['2026-12-17'].warehouseName, 'الجديد');
+  // Payroll work days of the month follow the branch of each day.
+  const pay = R.payrollV2(Object.values(rows), { e1: employee }, { e1: { salary: 2400, deductionPercent: 100 } }, { month: '2026-12', settings, warehouses: ws, timeZone: TZ }).rows[0];
+  const expected = R.monthDates('2026-12').filter(d => R.isWorkDay(settings, ws[d < '2026-12-10' ? 'w1' : 'w2'], employee, d)).length;
+  assert.equal(pay.workingDays, expected);
+  // His own special work days still win over any branch.
+  const own = { ...employee, workDays: [1] };
+  assert.equal(R.isWorkDay(settings, ws.w2, own, '2026-12-14'), true); assert.equal(R.isWorkDay(settings, ws.w2, own, '2026-12-15'), false);
+});

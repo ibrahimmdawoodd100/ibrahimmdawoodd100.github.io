@@ -201,12 +201,28 @@ const secureOriginalModal=showEmpModal;
 showEmpModal=async function(eid){
   await secureOriginalModal(eid);
   const parent=document.getElementById('emp-modal-box'),section=document.createElement('div');section.className='modal-section';
-  section.appendChild(secureManagerView.text('h3','نقل إلى فرع'));
+  // v5.18: permanent transfer (until changed again with this same screen) + change log.
+  const employee=ALL_EMPLOYEES[eid]||{};
+  section.appendChild(secureManagerView.text('h3','🔁 نقل إلى فرع آخر'));
+  section.appendChild(secureManagerView.text('div',`الفرع الحالي: ${ALL_WAREHOUSES[employee.warehouseId]?.name||employee.warehouseName||'—'}`));
   const select=document.createElement('select');select.className='form-input';
-  for(const [id,wh]of Object.entries(ALL_WAREHOUSES).filter(([,wh])=>wh.active)){const option=secureManagerView.text('option',wh.name);option.value=id;select.appendChild(option);}select.value=ALL_EMPLOYEES[eid].warehouseId;
-  const button=secureManagerView.text('button','حفظ نقل الفرع');button.className='action-btn-full';button.addEventListener('click',async()=>{
-    button.disabled=true;try{await Basma.call('transferEmployee',{employeeId:eid,warehouseId:select.value});closeEmpModal();await loadAllData();showToast('تم نقل الفرع مع حفظ السجلات السابقة','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{button.disabled=false;}
-  });section.append(select,button);parent.appendChild(section);
+  for(const [id,wh]of Object.entries(ALL_WAREHOUSES).filter(([,wh])=>wh.active)){const option=secureManagerView.text('option',wh.name);option.value=id;select.appendChild(option);}select.value=employee.warehouseId;
+  const button=secureManagerView.text('button','حفظ النقل');button.className='action-btn-full';button.addEventListener('click',async()=>{
+    if(select.value===employee.warehouseId){showToast('اختر فرعًا غير فرعه الحالي','error');return;}
+    const target=ALL_WAREHOUSES[select.value]?.name||'';
+    if(!await BasmaDialogs.confirm('نقل الموظف',`سيُنقل «${employee.name||''}» إلى «${target}» نقلًا دائمًا. يأخذ دوام الفرع الجديد وأيامه وموقعه. أوقاته وأيامه الخاصة تبقى، وموقعه الخاص يعود لموقع الفرع الجديد. السجلات السابقة تبقى باسم الفرع القديم. البصمة والجهاز يبقيان صالحين.`,'نقل'))return;
+    button.disabled=true;try{await Basma.call('transferEmployee',{employeeId:eid,warehouseId:select.value});closeEmpModal();await loadAllData();showToast('تم النقل؛ السجلات السابقة لم تتغير','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{button.disabled=false;}
+  });section.append(select,button);
+  const logBox=secureManagerView.text('div','جاري تحميل سجل التغييرات...');logBox.style.cssText='font-size:12px;color:var(--text2);margin-top:10px';section.appendChild(logBox);
+  parent.appendChild(section);
+  Basma.call('managerList',{kind:'employeeLog',employeeId:eid}).then(result=>{
+    const items=Object.values(result?.items||{}).sort((a,b)=>b.at-a.at),name=id=>ALL_WAREHOUSES[id]?.name||'';
+    logBox.replaceChildren(secureManagerView.text('b','📜 سجل النقل وموقع العمل'));
+    if(!items.length){logBox.appendChild(secureManagerView.text('div','لا توجد تغييرات بعد'));return;}
+    const where=z=>z==='branch'||!z?'موقع الفرع':`نقطة على الخريطة (نطاق ${Math.round(z.radius)} م)`;
+    for(const x of items){const when=new Date(x.at).toLocaleString('ar',{timeZone:COMPANY_INFO.timeZone||'UTC'}),who='المدير';
+      logBox.appendChild(secureManagerView.text('div',x.type==='transfer'?`${when} — ${who}: نقل من «${x.fromName||name(x.from)}» إلى «${x.toName||name(x.to)}»${x.locationReset?' (أُعيد موقعه لموقع الفرع)':''}`:`${when} — ${who}: موقع العمل من ${where(x.from)} إلى ${where(x.to)}`));}
+  }).catch(error=>{logBox.textContent='تعذر تحميل السجل: '+(window.BasmaErrors?.message(error)??error.message);});
   const salary=document.getElementById('emp-salary-input'),deduction=document.getElementById('emp-deduction-input');salary.value='';deduction.value='';
   salary.disabled=deduction.disabled=true;
   try{const financial=await secureManagerView.financial(eid);salary.value=financial.salary;deduction.value=financial.deductionPercent;}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'info');}finally{salary.disabled=deduction.disabled=false;}
@@ -313,16 +329,27 @@ saveTimeWindows=async function(){
   catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
 if(typeof loadEmpSchedule==='function'){const originalLoad=loadEmpSchedule;loadEmpSchedule=function(...args){const result=originalLoad.apply(this,args);const emp=ALL_EMPLOYEES[document.getElementById('sched-emp-sel')?.value]||{};
-  const start=document.getElementById('sched-start');if(start)start.value=emp.schedule?.startTime||'';renderDays('sched-days',emp.workDays);return result;};}
+  const start=document.getElementById('sched-start');if(start)start.value=emp.schedule?.startTime||'';renderDays('sched-days',emp.workDays);
+  empLocDraft=emp.geoZone?.lat!=null?{lat:emp.geoZone.lat,lng:emp.geoZone.lng,radius:emp.geoZone.radius}:null;
+  const mode=document.getElementById('sched-loc-mode');if(mode)mode.value=empLocDraft?'other':'branch';showEmpLoc();return result;};}
 saveEmpSchedule=async function(){
   const eid=document.getElementById('sched-emp-sel').value;if(!eid)return;const v=id=>document.getElementById(id).value;
   const schedule={checkIn:{from:v('sched-ci-from'),to:v('sched-ci-to')},checkOut:{from:v('sched-co-from'),to:v('sched-co-to')},startTime:v('sched-start')||null,workDays:readDays('sched-days')};
   if(!schedule.checkIn.from||!schedule.checkIn.to||!schedule.checkOut.from||!schedule.checkOut.to){showToast('أدخل جميع الأوقات','error');return;}
   if(crossesMidnight(schedule.checkIn,schedule.checkOut)){showToast(MIDNIGHT_MSG,'error');return;}
+  const other=document.getElementById('sched-loc-mode')?.value==='other';
+  if(other&&!empLocDraft){showToast('اختر نقطة موقع العمل على الخريطة أولًا','error');return;}
+  schedule.location=other?empLocDraft:'branch';
   try{await Basma.call('managerSettings',{action:'employeeSchedule',employeeId:eid,schedule});
-    ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],schedule:{checkIn:schedule.checkIn,checkOut:schedule.checkOut,...(schedule.startTime?{startTime:schedule.startTime}:{})},workDays:schedule.workDays};showToast('تم حفظ جدول الموظف ✅','success');}
+    ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],schedule:{checkIn:schedule.checkIn,checkOut:schedule.checkOut,...(schedule.startTime?{startTime:schedule.startTime}:{})},workDays:schedule.workDays,geoZone:other?{...empLocDraft,enabled:true}:null};showToast('تم حفظ جدول الموظف ✅','success');}
   catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
+
+if(typeof clearEmpSchedule==='function'){const originalClear=clearEmpSchedule;clearEmpSchedule=async function(...args){
+  const eid=document.getElementById('sched-emp-sel')?.value,result=await originalClear.apply(this,args);
+  // The server returns him to his branch location as well (v5.18).
+  if(eid&&ALL_EMPLOYEES[eid]&&!ALL_EMPLOYEES[eid].schedule){ALL_EMPLOYEES[eid].geoZone=null;delete ALL_EMPLOYEES[eid].workDays;empLocDraft=null;const mode=document.getElementById('sched-loc-mode');if(mode)mode.value='branch';renderDays('sched-days',null);showEmpLoc();}
+  return result;};}
 
 // Direct database mutations in the original manager UI must also evict cached metadata.
 for(const name of ['saveEmpSchedule','clearEmpSchedule','addWarehouse','editWH','saveWhSchedule','clearWhSchedule','whGzSave','saveTimeWindows','addHoliday','deleteHoliday','saveGeoZone','approveEmp','rejectEmp']){
@@ -465,10 +492,13 @@ saveWhSchedule=async function(){
 clearWhSchedule=async function(){
   if(await branchChange({action:'schedule',id:whSchedCurrentId,schedule:null},'تم إزالة الدوام الخاص بالفرع'))document.getElementById('wh-sched-modal').style.display='none';
 };
-// The map opens with the branch's saved zone from the loaded list (no database read).
-whSetGeoZone=function(id){
-  whGzCurrentId=id;whGzLat=null;whGzLng=null;
-  document.getElementById('wh-gz-modal-title').textContent='📍 موقع: '+(ALL_WAREHOUSES[id]?.name||'');
+// The map opens with a saved zone from the loaded list (no database read). One map, two uses (v5.18):
+// a branch location (saved at once) or an employee's special work location (kept in the schedule form until "save").
+let gzMode='branch',empLocDraft=null;
+function openGzMap(title,zone,saveLabel){
+  whGzLat=null;whGzLng=null;
+  document.getElementById('wh-gz-modal-title').textContent=title;
+  const save=document.getElementById('wh-gz-save-btn');if(save)save.textContent=saveLabel;
   document.getElementById('wh-gz-modal').style.display='flex';
   setTimeout(()=>{
     if(!whGzReady){const el=document.getElementById('wh-gz-map');if(!el||!window.L)return;el.replaceChildren();
@@ -476,12 +506,35 @@ whSetGeoZone=function(id){
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri — Satellite',maxZoom:19}).addTo(whGzMap);
       whGzMap.on('click',e=>whGzSetLoc(e.latlng.lat,e.latlng.lng));whGzReady=true;}
     whGzMap.invalidateSize();
-    const gz=ALL_WAREHOUSES[id]?.geoZone;
-    if(gz?.lat){whGzSetLoc(gz.lat,gz.lng);const r=gz.radius||300;document.getElementById('wh-gz-radius-val').value=r>=1000?(r/1000).toFixed(1):r;document.getElementById('wh-gz-radius-unit').value=r>=1000?'km':'m';}
+    const r=zone?.radius||300;document.getElementById('wh-gz-radius-val').value=r>=1000?(r/1000).toFixed(1):r;document.getElementById('wh-gz-radius-unit').value=r>=1000?'km':'m';
+    if(zone?.lat!=null){whGzSetLoc(zone.lat,zone.lng);whGzMap.setView([zone.lat,zone.lng],16);}
   },300);
+}
+whSetGeoZone=function(id){
+  gzMode='branch';whGzCurrentId=id;
+  openGzMap('📍 موقع: '+(ALL_WAREHOUSES[id]?.name||''),ALL_WAREHOUSES[id]?.geoZone,'💾 حفظ موقع الفرع');
+};
+const zoneLabel=z=>z?`📍 ${Number(z.lat).toFixed(5)} ، ${Number(z.lng).toFixed(5)} — نطاق ${z.radius>=1000?(z.radius/1000).toFixed(1)+' كم':Math.round(z.radius)+' م'}`:'لم تُحدَّد نقطة بعد';
+function showEmpLoc(){
+  const mode=document.getElementById('sched-loc-mode')?.value||'branch',box=document.getElementById('sched-loc-box');
+  if(box)box.style.display=mode==='other'?'block':'none';
+  const text=document.getElementById('sched-loc-text');if(text)text.textContent=zoneLabel(empLocDraft);
+}
+window.empLocModeChanged=function(){showEmpLoc();};
+window.pickEmpLocation=function(){
+  const eid=document.getElementById('sched-emp-sel')?.value;if(!eid)return;const emp=ALL_EMPLOYEES[eid]||{};
+  const branch=ALL_WAREHOUSES[emp.warehouseId]?.geoZone;
+  // Default radius = his branch radius; the map starts at the saved point, else at his branch.
+  const start=empLocDraft||(branch?.lat!=null?{lat:branch.lat,lng:branch.lng,radius:branch.radius||300}:{radius:300});
+  gzMode='employee';openGzMap('🗺 موقع عمل: '+(emp.name||''),start,'✔ اعتماد هذه النقطة للموظف');
 };
 whGzSave=async function(){
   if(!whGzLat||!whGzLng){showToast('حدد الموقع على الخريطة أولاً','error');return;}
+  if(gzMode==='employee'){
+    empLocDraft={lat:whGzLat,lng:whGzLng,radius:Math.round(whGzGetRadius())};gzMode='branch';
+    document.getElementById('wh-gz-modal').style.display='none';showEmpLoc();
+    showToast('تم اختيار النقطة؛ اضغط «حفظ جدول الموظف» لاعتمادها','info');return;
+  }
   if(await branchChange({action:'geoZone',id:whGzCurrentId,geoZone:{lat:whGzLat,lng:whGzLng,radius:whGzGetRadius()}},'تم حفظ موقع الفرع ✅'))document.getElementById('wh-gz-modal').style.display='none';
 };
 // Branch list for the "add employee" panel from the loaded list.

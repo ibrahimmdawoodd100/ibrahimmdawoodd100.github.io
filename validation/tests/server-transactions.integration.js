@@ -224,6 +224,65 @@ const scenarios = {
     await seed.ref(`privatePayroll/${cid}/e1/salary`).set(9999);
     assert.equal((await call('2027-02-10T10:00:00Z', 'managerList', mgr, { kind: 'payrollMonth', month: '2026-12' })).rows[0].net, 300, 'a frozen month is never recalculated');
   },
+  'work location + permanent transfer (owner, 23 Nov 2026): special map point for one employee, reset on removal/transfer, history kept, log, fingerprint still valid': async (file, tag) => {
+    const cid = `cLoc${tag}`, mgr = `locM_${tag}`, emp = `locE_${tag}`, other = `locO_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-06-01T00:00:00Z'));
+    await seed.ref(`companies/${cid}/warehouses`).set({ w1: { active: true, name: 'الفرع الأول', geoZone: { lat: 24, lng: 46, radius: 200, enabled: true } }, w2: { active: true, name: 'الفرع الثاني', geoZone: { lat: 21, lng: 39, radius: 300, enabled: true } } });
+    await seed.ref(`companies/${cid}/employees`).set({ e1: { status: 'approved', name: 'E1', credId: 'cred-1', warehouseId: 'w1', warehouseName: 'الفرع الأول', createdAt: Date.parse('2026-11-01T00:00:00Z') },
+      e2: { status: 'approved', name: 'E2', credId: 'cred-2', warehouseId: 'w1', warehouseName: 'الفرع الأول', createdAt: Date.parse('2026-11-01T00:00:00Z') } });
+    for (const [uid, eid, cred] of [[emp, 'e1', 'cred-1'], [other, 'e2', 'cred-2']]) {
+      await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: eid, enabled: true, version: 1 });
+      await seed.ref(`credentials/${uid}`).set({ id: cred, publicKey: 'a2V5', counter: 0, transports: [] });
+    }
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    const at = iso => loadServer(file, { now: Date.parse(iso) });
+    const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await at(iso).invoke(name, uid, data)));
+    const W = { from: '00:00', to: '23:59' }, FAR = { lat: 25, lng: 47 }, BRANCH = { lat: 24, lng: 46 };
+    let n = 0;
+    const checkIn = async (iso, uid, where) => { const id = `p${++n}`; await seed.ref(`proofs/${uid}/${id}`).set({ intent: 'in', version: 1, expiresAt: Date.parse('2027-06-01T00:00:00Z') }); return call(iso, 'recordAttendance', uid, { type: 'in', proof: id, location: { ...where, accuracy: 10 } }); };
+    // 1) Special work location for e1 only (a map point far from his branch).
+    await call('2026-12-01T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, workDays: [0, 1, 2, 3, 4, 5, 6], location: { ...FAR, radius: 250 } } });
+    assert.deepEqual(await get(`companies/${cid}/employees/e1/geoZone`), { ...FAR, radius: 250, enabled: true });
+    await assert.rejects(call('2026-12-01T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, location: { lat: 999, lng: 0, radius: 10 } } }), e => e.code === 'invalid-argument');
+    await assert.rejects(checkIn('2026-12-02T08:00:00Z', emp, BRANCH), 'e1 at his branch is now OUTSIDE his work location');
+    assert.equal((await checkIn('2026-12-03T08:00:00Z', emp, FAR)).ok, true, 'e1 at the special point is accepted');
+    assert.equal((await checkIn('2026-12-03T08:00:00Z', other, BRANCH)).ok, true, 'e2 (no special location) is unchanged');
+    await assert.rejects(checkIn('2026-12-04T08:00:00Z', other, FAR), 'e2 cannot use e1\'s point');
+    // 2) Editing the schedule from an older page (no location field) keeps the location; "branch" returns him.
+    await call('2026-12-05T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, workDays: [0, 1, 2, 3, 4, 5, 6] } });
+    assert.equal((await get(`companies/${cid}/employees/e1/geoZone`)).radius, 250);
+    await call('2026-12-05T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: null });
+    assert.equal(await get(`companies/${cid}/employees/e1/geoZone`), null, 'removing the special schedule returns him to his branch location');
+    assert.equal((await checkIn('2026-12-06T08:00:00Z', emp, BRANCH)).ok, true);
+    // 3) Permanent transfer: special times/days kept, special location reset, history untouched, fingerprint still valid.
+    await call('2026-12-07T08:00:00Z', 'managerSettings', mgr, { action: 'employeeSchedule', employeeId: 'e1', schedule: { checkIn: W, checkOut: W, startTime: '07:00', workDays: [0, 1, 2, 3, 4, 5, 6], location: { ...FAR, radius: 250 } } });
+    const recordsBefore = JSON.stringify(await get(`companies/${cid}/records`)), ledgerBefore = JSON.stringify(await get(`attendanceLedger/${cid}/e1`));
+    await assert.rejects(call('2026-12-08T08:00:00Z', 'transferEmployee', mgr, { employeeId: 'e1', warehouseId: 'w1' }), e => /أصلًا/.test(e.message), 'same branch');
+    await call('2026-12-08T08:00:00Z', 'transferEmployee', mgr, { employeeId: 'e1', warehouseId: 'w2' });
+    const moved = await get(`companies/${cid}/employees/e1`);
+    assert.equal(moved.warehouseId, 'w2'); assert.equal(moved.warehouseName, 'الفرع الثاني'); assert.equal(moved.geoZone, undefined, 'special location reset to the new branch');
+    assert.equal(moved.schedule.startTime, '07:00', 'special times kept'); assert.deepEqual(moved.workDays, [0, 1, 2, 3, 4, 5, 6], 'special work days kept');
+    assert.equal(moved.credId, 'cred-1'); assert.ok(await get(`credentials/${emp}`), 'fingerprint binding untouched');
+    assert.equal(JSON.stringify(await get(`companies/${cid}/records`)), recordsBefore, 'old records keep the old branch');
+    assert.equal(JSON.stringify(await get(`attendanceLedger/${cid}/e1`)), ledgerBefore, 'ledger history untouched');
+    await assert.rejects(checkIn('2026-12-09T08:00:00Z', emp, BRANCH), 'the old branch location no longer works');
+    const ok = await checkIn('2026-12-10T08:00:00Z', emp, { lat: 21, lng: 39 });
+    assert.equal(ok.ok, true, 'same fingerprint works at the new branch');
+    assert.equal((await get(`attendanceLedger/${cid}/e1/2026-12-10`)).events.in.warehouseName, 'الفرع الثاني');
+    assert.equal((await get(`attendanceLedger/${cid}/e1/2026-12-03`)).events.in.warehouseName, 'الفرع الأول');
+    // Back to the old branch with the same screen (permanent until changed again).
+    await call('2026-12-11T08:00:00Z', 'transferEmployee', mgr, { employeeId: 'e1', warehouseId: 'w1' });
+    assert.equal(Object.keys((await get(`companies/${cid}/employees/e1/branchHistory`)) || {}).length, 2);
+    // 4) Log: who, when, from, to — for transfers and location changes; manager reads it.
+    const log = Object.values((await call('2026-12-11T09:00:00Z', 'managerList', mgr, { kind: 'employeeLog', employeeId: 'e1' })).items);
+    assert.deepEqual(log.map(x => x.type), ['location', 'location', 'location', 'transfer', 'transfer']);
+    const t = log[3]; assert.equal(t.actor, mgr); assert.equal(t.from, 'w1'); assert.equal(t.fromName, 'الفرع الأول'); assert.equal(t.to, 'w2'); assert.equal(t.toName, 'الفرع الثاني'); assert.equal(t.locationReset, true); assert.equal(t.at, Date.parse('2026-12-08T08:00:00Z'));
+    assert.deepEqual(log[0].to, { ...FAR, radius: 250 });
+    // 5) A disabled employee cannot be transferred.
+    await call('2026-12-12T08:00:00Z', 'disableEmployee', mgr, { employeeId: 'e2' });
+    await assert.rejects(call('2026-12-12T08:00:00Z', 'transferEmployee', mgr, { employeeId: 'e2', warehouseId: 'w2' }), e => /معطّل/.test(e.message));
+  },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;
     await seedCompany(cid);

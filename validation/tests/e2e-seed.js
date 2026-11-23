@@ -30,7 +30,7 @@ async function seed() {
     [`accountLinks/${cid}/manager`]: uid.manager, [`companyDirectory/${cid}`]: info, [`employeeIndex/${cid}/count`]: 5,
     [`companies/${cid}`]: {
       info, settings: { checkIn: { from: '00:00', to: '23:59' }, checkOut: { from: '00:00', to: '23:59' }, weekendDays: [9] },
-      warehouses: { 'e2e-w1': { name: 'e2e الفرع الرئيسي', active: true, geoZone: { ...BRANCH, enabled: true } } },
+      warehouses: { 'e2e-w1': { name: 'e2e الفرع الرئيسي', active: true, geoZone: { ...BRANCH, enabled: true } }, 'e2e-w2': { name: 'e2e الفرع الثاني', active: true, geoZone: { ...BRANCH, radius: 400, enabled: true } } }, // v5.18: transfer target
       employees: {
         'e2e-emp1': { name: 'e2e موظف البصمة', empId: 'E2E-1', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },
         'e2e-emp3': { name: 'e2e موظف أ', empId: 'E2E-3', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },

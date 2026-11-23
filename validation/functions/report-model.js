@@ -30,6 +30,14 @@
     if(Number.isFinite(employee?.disabledAt)&&date>dateAt(employee.disabledAt,timeZone))return false;
     return true;
   }
+  // v5.18: the branch an employee belonged to on a date (transfers are permanent; history keeps the old branch).
+  function branchOn(employee,date,timeZone){
+    const moves=Object.values(employee?.branchHistory||{}).filter(m=>Number.isFinite(m?.at)).sort((a,b)=>a.at-b.at);
+    if(!moves.length)return employee?.warehouseId;
+    let branch=moves[0].from||employee.warehouseId;
+    for(const move of moves)if(dateAt(move.at,timeZone)<=date)branch=move.to;
+    return branch;
+  }
   function monthDates(month){const [y,m]=month.split('-').map(Number);return dates(`${month}-01`,new Date(Date.UTC(y,m,0)).toISOString().slice(0,10));}
   function summary(events={}) {
     const excuse=events.excused;
@@ -81,9 +89,9 @@
   // Absence cannot be excused; only an approved full-day leave covers it. Late = display only.
   function dayV2({eid,employee,date,events,leave,lateExcuse,settings,warehouses,warehouseId,timeZone,today}){
     if(!employedOn(employee,date,timeZone))return null;
-    const anchor=events.in||events.out,branch=anchor?.warehouseId||employee.warehouseId;
+    const anchor=events.in||events.out,home=branchOn(employee,date,timeZone),branch=anchor?.warehouseId||home;
     if(warehouseId!=='all'&&branch!==warehouseId)return null;
-    const warehouse=warehouses[branch]||warehouses[employee.warehouseId],workDay=isWorkDay(settings,warehouse,employee,date);
+    const warehouse=warehouses[home]||warehouses[employee.warehouseId],workDay=isWorkDay(settings,warehouse,employee,date);
     const checkIn=events.in?.timestamp||null,checkOut=events.out?.timestamp||null,delayMins=events.in?.delayMins||0;
     let classification,statusLabel,late=null;
     if(events.in){
@@ -92,7 +100,7 @@
     } else if(leave){classification=leave.leaveType==='unpaid'?'unpaid_leave':'leave';statusLabel=leave.leaveType==='unpaid'?'إجازة بدون راتب':'إجازة معتمدة';}
     else if(!workDay){classification='holiday';statusLabel='عطلة';}
     else {classification='absent';statusLabel='غائب';}
-    return {employeeId:eid,name:employee.name,empId:employee.empId||'',role:employee.role||'',date,warehouseId:branch,warehouseName:anchor?.warehouseName||employee.warehouseName||'',
+    return {employeeId:eid,name:employee.name,empId:employee.empId||'',role:employee.role||'',date,warehouseId:branch,warehouseName:anchor?.warehouseName||(home===employee.warehouseId?employee.warehouseName:warehouses[home]?.name)||employee.warehouseName||'',
       checkIn,checkOut,checkInExcused:false,checkOutExcused:false,attendanceStatus:classification,statusLabel,late,noCheckout:!!events.in&&!checkOut&&!!today&&date<today,
       actualWorkMinutes:checkIn&&checkOut?Math.max(0,(Date.parse(checkOut)-Date.parse(checkIn))/60000):null,classification,holiday:!workDay,workDay,
       locationName:events.in?.locationName||events.out?.locationName||'',delayMins,rules:'v2'};
@@ -104,7 +112,7 @@
     for(const eid of new Set(rows.map(row=>row.employeeId))){
       const employee=employees[eid],financial=privatePayroll[eid];
       if(!financial||!Number.isFinite(financial.salary)||!Number.isFinite(financial.deductionPercent)){missing.push(eid);continue;}
-      const warehouse=warehouses[employee.warehouseId],all=monthDates(month).filter(d=>isWorkDay(settings,warehouse,employee,d));
+      const all=monthDates(month).filter(d=>isWorkDay(settings,warehouses[branchOn(employee,d,timeZone)]||warehouses[employee.warehouseId],employee,d));
       const workingDays=all.length,employedDays=all.filter(d=>employedOn(employee,d,timeZone)).length,days=rows.filter(row=>row.employeeId===eid);
       const absentDays=days.filter(day=>day.classification==='absent'||day.classification==='unpaid_leave').length,rate=workingDays?financial.salary/workingDays:0;
       const due=Math.round(rate*employedDays),deduction=Math.round(rate*absentDays*financial.deductionPercent/100);
@@ -123,5 +131,5 @@
     }
     return result;
   }
-  return {dateAt,dates,summary,build,payroll,payrollV2,workDaysOf,startTimeOf,isWorkDay,employedOn,monthDates,RULES_FROM};
+  return {dateAt,dates,summary,build,payroll,payrollV2,workDaysOf,startTimeOf,isWorkDay,employedOn,monthDates,branchOn,RULES_FROM};
 });

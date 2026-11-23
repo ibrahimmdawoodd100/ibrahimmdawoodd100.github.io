@@ -62,7 +62,7 @@ exports.employeeHome = endpoint(['employee'], async ({uid,member,info,employee})
   ]);
   const device=credential?{status:await deviceState(cid,eid,credential.id)}:{status:'none'};
   const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value?.[key]!==undefined).map(key=>[key,value[key]]));
-  return {serverTime:Date.now(),date,employee:pick(employee,['name','empId','role','warehouseId','warehouseName','status','credId','schedule','workDays']),
+  return {serverTime:Date.now(),date,employee:pick(employee,['name','empId','role','warehouseId','warehouseName','status','credId','schedule','workDays','geoZone']),
     workDays:rules.workDaysOf(settings||{},warehouse,employee),startTime:rules.startTimeOf(settings||{},warehouse,employee),
     info:pick(info,['nameAr','nameEn','name','logo','timeZone','status']),
     settings:pick(settings,['checkIn','checkOut','weekendDays','holidays','geoZone']),
@@ -72,7 +72,7 @@ exports.employeeHome = endpoint(['employee'], async ({uid,member,info,employee})
 // Manager dashboard in ONE call (like listCompanies for the seller): the page no longer depends on many direct
 // database reads, which stall forever on networks where the database connection does not establish.
 // Company isolation: everything is read from member.companyId (the server-side access record), never from data.
-const MANAGER_EMPLOYEE_FIELDS = ['name', 'empId', 'role', 'warehouseId', 'warehouseName', 'status', 'schedule', 'createdAt', 'workDays', 'disabledAt'];
+const MANAGER_EMPLOYEE_FIELDS = ['name', 'empId', 'role', 'warehouseId', 'warehouseName', 'status', 'schedule', 'createdAt', 'workDays', 'disabledAt', 'geoZone', 'branchHistory'];
 // Badge counts as keys only (no content) plus company status: pending leaves/excuses, assigned/started missions,
 // unread activity notifications. Sent inside managerHome (no extra call on open) and by managerList 'badges'.
 async function badgesOf(cid) {
@@ -158,6 +158,11 @@ exports.managerList = endpoint(['manager'], async ({ member, info, data }) => {
   // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
   if (data.kind === 'status') return { value: (await read(`companies/${cid}/info/status`)) ?? null };
   if (data.kind === 'payrollMonth') return payrollMonth(cid, info, data.month);
+  if (data.kind === 'employeeLog') {
+    const eid = p.key(data.employeeId);
+    const items = (await db.ref(`employeeLog/${cid}/${eid}`).orderByKey().limitToLast(50).get()).val() || {};
+    return { items };
+  }
   if (data.kind === 'payrollAll') {
     const all = (await read(`privatePayroll/${cid}`)) || {};
     return { items: Object.fromEntries(Object.entries(all).map(([eid, v]) => [eid, { salary: v?.salary ?? null, deductionPercent: v?.deductionPercent ?? null }])) };
@@ -340,8 +345,21 @@ exports.managerSettings = endpoint(['manager'], async ({ uid, member, data }) =>
       target = p.key(data.employeeId);
       if (!(await read(`companies/${cid}/employees/${target}/name`))) p.fail('الموظف غير موجود', 'not-found');
       const ref = db.ref(`companies/${cid}/employees/${target}/schedule`);
-      if (data.schedule == null) { await ref.remove(); await db.ref(`companies/${cid}/employees/${target}/workDays`).remove(); }
+      const emp = { child: k => db.ref(`companies/${cid}/employees/${target}/${k}`) }, oldZone = await read(`companies/${cid}/employees/${target}/geoZone`);
+      if (data.schedule == null) {
+        await ref.remove(); await emp.child('workDays').remove();
+        // Removing the special schedule returns him to his branch location.
+        if (oldZone) { await emp.child('geoZone').remove(); await employeeLog(cid, target, { type: 'location', actor: uid, from: zoneText(oldZone), to: 'branch' }); }
+      }
       else {
+        // v5.18: work location — omitted = unchanged (older page); 'branch'/null = his branch; {lat,lng,radius} = map point.
+        if (data.schedule.location !== undefined) {
+          const zone = specialZone(data.schedule.location);
+          if (JSON.stringify(zoneText(zone)) !== JSON.stringify(zoneText(oldZone))) {
+            await emp.child('geoZone').set(zone);
+            await employeeLog(cid, target, { type: 'location', actor: uid, from: zoneText(oldZone), to: zoneText(zone) });
+          }
+        }
         const startTime = optionalTime(data.schedule.startTime), workDays = workDaysValue(data.schedule.workDays);
         await ref.set({ checkIn: dayWindow(data.schedule.checkIn), checkOut: dayWindow(data.schedule.checkOut), ...(startTime ? { startTime } : {}) });
         await db.ref(`companies/${cid}/employees/${target}/workDays`).set(workDays);
@@ -598,13 +616,19 @@ exports.transferEmployee = endpoint(['manager'], async ({ uid, member, data }) =
   const cid = member.companyId, eid = p.key(data.employeeId), warehouseId = p.key(data.warehouseId);
   const warehouse = await read(`companies/${cid}/warehouses/${warehouseId}`);
   if (!warehouse?.active) p.fail('الفرع غير متاح');
-  const ref = db.ref(`companies/${cid}/employees/${eid}`), before = await ref.get();
-  if (!before.exists()) p.fail('الموظف غير موجود', 'not-found');
-  // Update only the live branch assignment. Attendance events retain their historical branch.
-  await ref.update({ warehouseId, warehouseName:warehouse.name });
+  const ref = db.ref(`companies/${cid}/employees/${eid}`), before = (await ref.get()).val();
+  if (!before) p.fail('الموظف غير موجود', 'not-found');
+  if (before.status === 'rejected') p.fail('الموظف معطّل؛ لا يُنقل', 'failed-precondition');
+  if (before.warehouseId === warehouseId) p.fail('الموظف في هذا الفرع أصلًا', 'failed-precondition');
+  const fromName = before.warehouseName || (await read(`companies/${cid}/warehouses/${before.warehouseId}/name`)) || '';
+  // Permanent move (v5.18). Only the live assignment changes: past attendance/leave/payroll keep the old branch.
+  // His special times and work days stay; his special map location is reset to the new branch. Device/fingerprint untouched.
+  await ref.update({ warehouseId, warehouseName: warehouse.name, geoZone: null });
+  await db.ref(`companies/${cid}/employees/${eid}/branchHistory`).push({ at: Date.now(), from: before.warehouseId || null, to: warehouseId });
+  await employeeLog(cid, eid, { type: 'transfer', actor: uid, from: before.warehouseId || null, fromName, to: warehouseId, toName: warehouse.name, locationReset: !!before.geoZone });
   await bumpVersion(cid);
-  await audit(uid, 'employee.transfer', `${cid}/${eid}`, { from:before.val().warehouseId, to:warehouseId });
-  return { ok:true };
+  await audit(uid, 'employee.transfer', `${cid}/${eid}`, { from: before.warehouseId, to: warehouseId });
+  return { ok: true };
 });
 exports.renewSubscription = endpoint(['seller'], async ({ uid, data }) => {
   const cid = p.key(data.companyId), requestId = p.key(data.requestId);
@@ -662,6 +686,15 @@ const workDaysValue = v => (v == null ? null : Array.isArray(v) && v.length && v
 const optionalTime = v => (v == null || v === '' ? null : hhmm(v));
 // Owner decision 8: no window may cross midnight (a night shift could not be recorded).
 const dayWindow = w => { const r = windowOf(w); if (p.minutes(r.from) >= p.minutes(r.to)) p.fail('النافذة يجب أن تكون داخل اليوم نفسه، لا تعبر منتصف الليل', 'invalid-argument'); return r; };
+// v5.18: an employee's special work location (a map point + radius) and the employee change log.
+function specialZone(v) {
+  if (v == null || v === 'branch') return null;
+  const { lat, lng, radius } = v || {};
+  if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180 || !Number.isFinite(radius) || radius < 1 || radius > 100000) p.fail('موقع العمل غير صالح', 'invalid-argument');
+  return { lat, lng, radius: Math.round(radius), enabled: true };
+}
+const zoneText = z => (z ? { lat: z.lat, lng: z.lng, radius: z.radius } : 'branch');
+const employeeLog = (cid, eid, entry) => db.ref(`employeeLog/${cid}/${eid}`).push({ ...entry, at: Date.now() });
 // Per company and month: changes whenever records/leaves/excuses of that month change. The manager page caches CLOSED
 // months on the phone and re-downloads a month only when this number differs (v5.16 cost).
 const bumpMonth = (cid, date) => (typeof date === 'string' && /^\d{4}-\d{2}/.test(date) ? db.ref(`recordsVersions/${cid}/${date.slice(0, 7)}`).set(Date.now()) : null);
@@ -771,7 +804,8 @@ exports.recordAttendance = endpoint(['employee'], async ({ uid, member, info, da
     const leave = await read(`companies/${cid}/todayPartialLeave/${eid}`);
     if (!leave || leave.status !== 'approved' || leave.date !== clock.date || !p.insideWindow(clock.minutes, { from: leave.fromTime, to: leave.toTime })) p.fail('لا توجد إجازة زمنية معتمدة لهذا الوقت');
   }
-  const zone = wh.geoZone && wh.geoZone.enabled !== false ? wh.geoZone : settings?.geoZone?.enabled ? settings.geoZone : null;
+  // v5.18: an employee's special work location comes first (this employee only), then his branch, then the company.
+  const zone = employee.geoZone?.lat != null && employee.geoZone.enabled !== false ? employee.geoZone : wh.geoZone && wh.geoZone.enabled !== false ? wh.geoZone : settings?.geoZone?.enabled ? settings.geoZone : null;
   // Missions do not implicitly bypass a geofence. Configure their approved coordinates explicitly.
   const coords = p.location(data.location, mission?.geoZone || zone);
   const proofRef = db.ref(`proofs/${uid}/${p.key(data.proof)}`);

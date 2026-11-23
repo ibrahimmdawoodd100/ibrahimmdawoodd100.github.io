@@ -52,6 +52,8 @@
 
 
 
+
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>لوحة تحكم المدير — النسخة المخصصة</title>
 <link rel="manifest" href="./manifest.json">
@@ -602,11 +604,20 @@ tr:hover td{background:#1a1f30}
           </div>
           <div class="form-label" style="margin-bottom:6px">أيام عمله (بدون اختيار = أيام فرعه)</div>
           <div id="sched-days" class="basma-days" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+          <div class="form-label" style="margin-bottom:6px">مكان العمل</div>
+          <select class="form-input form-select" id="sched-loc-mode" data-basma-change="empLocModeChanged()" style="margin-bottom:8px">
+            <option value="branch">📍 موقع فرعه (الافتراضي)</option>
+            <option value="other">🗺 موقع آخر على الخريطة</option>
+          </select>
+          <div id="sched-loc-box" style="display:none;margin-bottom:12px">
+            <button class="modal-btn btn-gold" data-basma-click="pickEmpLocation()" style="width:100%">🗺 اختيار النقطة والنطاق على الخريطة</button>
+            <div id="sched-loc-text" style="font-size:12px;color:var(--text2);margin-top:6px">لم تُحدَّد نقطة بعد</div>
+          </div>
           <div style="display:flex;gap:10px">
             <button class="action-btn-full" data-basma-click="saveEmpSchedule()" style="flex:1">💾 حفظ جدول الموظف</button>
             <button class="modal-btn btn-red" data-basma-click="clearEmpSchedule()" style="margin-top:8px">🗑 إزالة الجدول الخاص</button>
           </div>
-          <div style="font-size:11px;color:var(--text2);margin-top:8px">ملاحظة: إزالة الجدول الخاص يعيد الموظف لمواعيد الشركة الافتراضية</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:8px">ملاحظة: إزالة الجدول الخاص يعيد الموظف لمواعيد فرعه وموقع فرعه</div>
         </div>
       </div>
 
@@ -1923,7 +1934,7 @@ function copyLink(elementId){
         <option value="km">كيلومتر</option>
       </select>
     </div>
-    <button class="action-btn-full" data-basma-click="whGzSave()">💾 حفظ موقع الفرع</button>
+    <button class="action-btn-full" id="wh-gz-save-btn" data-basma-click="whGzSave()">💾 حفظ موقع الفرع</button>
   </div>
 </div>
 

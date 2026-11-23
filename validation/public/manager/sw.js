@@ -5,20 +5,20 @@
 // network untouched. A new release changes VERSION, so the browser installs a fresh cache and deletes the old one.
 // v5.16: each file has its own content hash; on a new release UNCHANGED files are copied from the previous cache and
 // only changed files are downloaded (a typical release: a few KB per phone instead of the whole app).
-const VERSION = '04dea6c6cccc4d25';
+const VERSION = 'cb0d068cfc7cda63';
 const SCOPE = '/manager/';
 const FILES = {
-  "/manager/": "eae83ff74301",
-  "/manager/assets/actions.js": "2ee09ee897fc",
+  "/manager/": "6f30a506973f",
+  "/manager/assets/actions.js": "942e906ce8a4",
   "/manager/assets/config.js": "01501064d14f",
   "/manager/assets/core.js": "6fdd649e82d8",
   "/manager/assets/dialogs.js": "027614ad19b1",
   "/manager/assets/leaflet/leaflet.css": "a78371028241",
   "/manager/assets/leaflet/leaflet.js": "db49d009c841",
   "/manager/assets/manager-data.js": "7a91ada56dfe",
-  "/manager/assets/manager-views.js": "39fe0ea1fb4d",
+  "/manager/assets/manager-views.js": "01aeeb09bc4a",
   "/manager/assets/manager.js": "16ff39557051",
-  "/manager/assets/report-model.js": "9f9ec7f0ff67",
+  "/manager/assets/report-model.js": "347bd34a83ae",
   "/manager/assets/safe-dom.js": "a9347101b27d",
   "/manager/icon-manager-192.png": "432358d6f141",
   "/manager/icon-manager-512.png": "92c5f11bb6dd",

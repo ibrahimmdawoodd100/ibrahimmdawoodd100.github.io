@@ -41,7 +41,7 @@ const secureAttendanceWindows=(()=>{
     anchor={server:home.serverTime+(after-before)/2,at:after};SERVER_TIME_OFFSET=anchor.server-Date.now();
     COMPANY_INFO=home.info;SETTINGS=home.settings||{};EMP={...home.employee,id:ACTIVATION_UID||EMP.id};
     const wh=home.warehouse||{};WAREHOUSE_GEO_ZONE=wh.geoZone||null;WAREHOUSE_SCHEDULE=wh.schedule||null;
-    current={today:newer(current?.today,home.today),date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS,device:home.device||{status:'none'}};
+    current={today:newer(current?.today,home.today),date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS,device:home.device||{status:'none'},workDays:Array.isArray(home.workDays)?home.workDays:null,startTime:home.startTime||null};
     knownVersion=home.scheduleVersion??knownVersion;
     for(const id of ['main-wh-name','profile-wh'])document.getElementById(id).textContent=wh.name||EMP.warehouseName||'';
     for(const id of ['splash-company-name','wh-company-name','reg-company-name','main-company-name']){const el=document.getElementById(id);if(el)el.textContent=COMPANY_INFO.nameAr||COMPANY_INFO.name||'الشركة';}
@@ -60,14 +60,15 @@ const secureAttendanceWindows=(()=>{
     const zone=COMPANY_INFO.timeZone||'UTC',day=BasmaClock.parts(stamp,zone).date,state=cache.today.dateKey===day?cache.today:{};
     if(cache.date!==day){get().refresh();return 1000;}
     const onLeave=cache.onLeave===true;
-    const holiday=checkHoliday(new Date(stamp),SETTINGS),schedule=cache.schedule;
+    // v5.17: work days come from the server (branch, employee override, else company weekend); holidays still apply.
+    const holiday=checkHoliday(new Date(stamp),SETTINGS)||(cache.workDays?!cache.workDays.includes(new Date(`${day}T12:00:00Z`).getUTCDay()):false),schedule=cache.schedule;
     document.getElementById('leave-banner').style.display=onLeave?'block':'none';document.getElementById('holiday-banner').style.display=holiday?'block':'none';document.getElementById('fp-card').style.display=onLeave||holiday?'none':'block';
     const incoming=BasmaClock.windowState(stamp,zone,schedule.checkIn),outgoing=BasmaClock.windowState(stamp,zone,schedule.checkOut);
     const geo=secureZoneCheck();
     inButton.disabled=onLeave||holiday||!geo||!incoming.open||!!state.checkIn||!!state.checkOut;
     outButton.disabled=onLeave||holiday||!geo||!outgoing.open||!!state.checkOut||!(state.checkIn||state.checkInExcused);
     setProfileStatus(onLeave?'في إجازة':holiday?'عطلة':state.statusLabel||'بانتظار الحضور',state.attendanceStatus==='excused_out'?'badge-blue':'badge-gray');
-    document.getElementById('win-msg').textContent=state.checkInExcused&&!state.checkOut?'العذر معتمد؛ يمكنك تسجيل الانصراف ضمن وقته وبالتحقق من البصمة والموقع':state.statusLabel||'سجّل حضورك ضمن نافذة الدوام';
+    document.getElementById('win-msg').textContent=(state.checkInExcused&&!state.checkOut?'العذر معتمد؛ يمكنك تسجيل الانصراف ضمن وقته وبالتحقق من البصمة والموقع':state.statusLabel||'سجّل حضورك ضمن نافذة الدوام')+(state.checkIn&&cache.startTime&&state.delayMins>0?` — متأخر ${state.delayMins} دقيقة`:'');
     document.getElementById('tw-in-range').textContent=`${schedule.checkIn.from} — ${schedule.checkIn.to}`;document.getElementById('tw-out-range').textContent=`${schedule.checkOut.from} — ${schedule.checkOut.to}`;
     document.getElementById('tw-in-status').textContent=incoming.label;document.getElementById('tw-out-status').textContent=outgoing.label;
     // v5.15: a fingerprint/device the manager has not approved yet cannot record attendance (the server refuses too).

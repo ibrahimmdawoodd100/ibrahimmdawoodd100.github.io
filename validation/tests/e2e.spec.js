@@ -212,6 +212,26 @@ test.describe('full flow on local emulators', () => {
       await show(manager, 'showPage', 'payroll'); await manager.evaluate(() => calculatePayroll()); await expect(manager.locator('#pr-tbody')).toContainText('e2e موظف السجلات'); await expect(manager.locator('#pr-stats')).toContainText('لا توجد بيانات راتب لـ: e2e موظف الجدول'); await shot(manager, 'manager-payroll');
       await gm.verify(manager, 'manager lists');
     }, { timeout: 60000 });
+    await test.step('manager: work location in the special schedule, permanent transfer with its log (v5.18)', async () => {
+      await show(manager, 'showPage', 'settings');
+      await manager.selectOption('#sched-emp-sel', 'e2e-emp2'); await expect(manager.locator('#sched-form')).toBeVisible();
+      await expect(manager.locator('#sched-loc-mode')).toHaveValue('branch'); await expect(manager.locator('#sched-loc-box')).toBeHidden();
+      await manager.selectOption('#sched-loc-mode', 'other'); await expect(manager.locator('#sched-loc-box')).toBeVisible();
+      await manager.click('#sched-loc-box button'); await expect(manager.locator('#wh-gz-save-btn')).toContainText('اعتماد هذه النقطة');
+      await manager.evaluate(() => whGzClose()); await manager.selectOption('#sched-loc-mode', 'branch');
+      await show(manager, 'showPage', 'emps'); await show(manager, 'showEmpModal', 'e2e-emp2');
+      const modal = manager.locator('#emp-modal'); await expect(modal).toContainText('الفرع الحالي: e2e الفرع الرئيسي', { timeout: 15000 });
+      await expect(modal).toContainText('لا توجد تغييرات بعد', { timeout: 15000 });
+      await modal.locator('select.form-input').last().selectOption('e2e-w2'); await modal.getByRole('button', { name: 'حفظ النقل' }).click();
+      await manager.getByRole('button', { name: 'نقل', exact: true }).click();
+      await expect(manager.locator('#emp-modal')).not.toHaveClass(/active/, { timeout: 20000 });
+      await show(manager, 'showEmpModal', 'e2e-emp2');
+      await expect(modal).toContainText('الفرع الحالي: e2e الفرع الثاني', { timeout: 15000 });
+      await expect(modal).toContainText('نقل من «e2e الفرع الرئيسي» إلى «e2e الفرع الثاني»', { timeout: 15000 });
+      await manager.evaluate(() => closeEmpModal());
+      await show(manager, 'showPage', 'attend'); await expect(manager.locator('#att-tbody')).toContainText('e2e الفرع الرئيسي'); // today's record keeps the old branch
+      await gm.verify(manager, 'manager transfer');
+    }, { timeout: 90000 });
     await test.step('manager: add, rename and delete a branch', async () => {
       await show(manager, 'showPage', 'warehouses'); await expect(manager.locator('#warehouses-list .wh-card-admin').first()).toBeVisible();
       await manager.fill('#new-wh-name', 'e2e فرع مؤقت'); await manager.click('[data-basma-click="addWarehouse()"]');
