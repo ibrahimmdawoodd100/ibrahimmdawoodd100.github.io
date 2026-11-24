@@ -25,7 +25,7 @@ const ALLOWED_CONSOLE = [
   { text: /^Failed to load resource: the server responded with a status of 403 \(\)$/, from: /^https:\/\/content-firebaseappcheck\.googleapis\.com\/v1\/projects\/signature-7706e\/apps\/[^/]+:exchangeRecaptchaEnterpriseToken/, modes: ['live'],
     reason: 'reCAPTCHA Enterprise refuses an automated headless browser on a GitHub data-centre IP, so App Check gives it no token; real phones get tokens (production calls pass App Check). Logged-in flows are covered by the emulator run' }
 ];
-ALLOWED_CONSOLE.push({ text: /^\[Report Only\] Refused to frame 'https:\/\/www\.google\.com\/' because an ancestor violates the following Content Security Policy directive: "frame-ancestors 'self'"\.$/, from: /^$|^\?$/, modes: ['live', 'emulator'],
+ALLOWED_CONSOLE.push({ text: /^\[Report Only\] Refused to frame 'https:\/\/www\.google\.com\/' because an ancestor violates the following Content Security Policy directive: "frame-ancestors 'self'"\.\s*$/, from: /^$|^\?$/, modes: ['live', 'emulator'],
   reason: "Chrome reporting Google's OWN report-only header for a www.google.com frame (reCAPTCHA); report-only never blocks, and our pages have no report-only policy" });
 const ignored = [];
 const allowedConsole = m => { const hit = ALLOWED_CONSOLE.find(a => a.modes.includes(MODE) && a.text.test(m.text()) && a.from.test(m.location()?.url || '')); if (hit) ignored.push(hit.reason); return !!hit; };
@@ -239,7 +239,7 @@ test.describe('full flow on local emulators', () => {
       await manager.click('[data-basma-click="localExport()"]');
       await expect(manager.getByText('إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا')).toBeVisible();
       await manager.getByRole('button', { name: 'متابعة' }).click();
-      const pw = manager.locator('input[type="password"]'); await pw.nth(0).fill('e2e-backup-pass'); await pw.nth(1).fill('e2e-backup-pass');
+      const pw = manager.locator('input[type="password"]:visible'); await expect(pw).toHaveCount(2); await pw.nth(0).fill('e2e-backup-pass'); await pw.nth(1).fill('e2e-backup-pass'); // the dialog's two fields, not the hidden login field
       const [download] = await Promise.all([manager.waitForEvent('download', { timeout: 30000 }), manager.getByRole('button', { name: 'موافق' }).click()]);
       const file = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
       expect(file.format).toBe('basma-backup-v1'); expect(file.count).toBeGreaterThan(0); expect(JSON.stringify(file)).not.toContain('e2e موظف');
