@@ -744,7 +744,7 @@ function dayPair(checkIn, checkOut) {
 }
 const MIN_WORK_MS = 10 * 60000; // a check-out needs at least 10 minutes after the check-in
 // ---- v6.0 (owner, 24 Nov 2026): records live on the manager's device; Firebase keeps a 45-day mailbox. ----
-const KEEP_DAYS = 45, PURGE_START = '2026-12-10', SYNC_PAGE = 2000;
+const KEEP_DAYS = 45, PURGE_START = '2027-01-10', SYNC_PAGE = 2000; // owner 24 Nov: postponed from 2026-12-10
 const daysBefore = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) - n * 86400000).toISOString().slice(0, 10);
 const purgeCutoff = zone => daysBefore(companyToday(zone), KEEP_DAYS); // records dated BEFORE this are removed
 const purgeActive = zone => companyToday(zone) >= PURGE_START;

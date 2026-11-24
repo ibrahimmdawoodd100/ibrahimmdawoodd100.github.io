@@ -320,7 +320,7 @@ const scenarios = {
     assert.equal((await rec('2026-12-14T21:50:00Z', 'out', 'out1')).ok, true, 'exactly 10 minutes later the same proof works');
     assert.ok((await get(`attendanceLedger/${cid}/e1/2026-12-14`)).events.out);
   },
-  'local storage (owner, 24 Nov 2026): signed incremental sync of own company only, then every record older than 45 days is removed (not before 2026-12-10), settings/accounts kept': async (file, tag) => {
+  'local storage (owner, 24 Nov 2026): signed incremental sync of own company only, then every record older than 45 days is removed (not before 2027-01-10), settings/accounts kept': async (file, tag) => {
     const { createPublicKey, verify } = require('node:crypto');
     const cid = `cSync${tag}`, other = `cSyncO${tag}`, mgr = `syncM_${tag}`, mgrO = `syncMO_${tag}`;
     await seedCompany(cid); await seedCompany(other);
@@ -367,10 +367,10 @@ const scenarios = {
     assert.equal((await get(`companies/${cid}/syncState`)).syncedTo, '2026-11-30');
     await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'syncAck', syncedTo: '2027-01-20', lastBackupAt: Date.parse('2026-12-01T07:00:00Z') });
     assert.equal((await get(`companies/${cid}/syncState`)).lastBackupAt, Date.parse('2026-12-01T07:00:00Z'));
-    // 3) Before 2026-12-10 nothing is removed.
-    await loadServer(file, { now: Date.parse('2026-12-09T03:00:00Z') }).exports.cleanupSecurityState();
+    // 3) Before 2027-01-10 (owner postponed the start) nothing is removed, even far past 45 days.
+    await loadServer(file, { now: Date.parse('2027-01-09T03:00:00Z') }).exports.cleanupSecurityState();
     assert.equal(Object.keys(await get(`companies/${cid}/records`)).length, 2003);
-    // 4) From 2026-12-10: everything dated before (today - 45 days) is removed; recent data and the company setup stay.
+    // 4) From 2027-01-10: everything dated before (today - 45 days) is removed; recent data and the company setup stay.
     await loadServer(file, { now: Date.parse('2027-01-30T03:00:00Z') }).exports.cleanupSecurityState(); // cutoff 2026-12-16
     const left = await get(`companies/${cid}/records`);
     assert.equal(Object.keys(left).length, 2000); assert.equal(left.r0000, undefined);
