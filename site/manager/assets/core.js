@@ -80,7 +80,13 @@ window.Basma = (() => {
       const homeName = HOME_CALL[role], t1 = clock();
       let candidate;
       try {
-        if (homeName) { const home = await timeout(call(homeName), Number(window.BASMA_HOME_TIMEOUT_MS) || 25000, homeName); pendingHome = { name: homeName, value: home }; candidate = { ...home.profile, serverTime: home.serverTime }; }
+        const openHome = () => timeout(call(homeName), Number(window.BASMA_HOME_TIMEOUT_MS) || 25000, homeName);
+        if (homeName) {
+          let home;
+          try { home = await openHome(); }
+          catch (error) { if (role !== 'manager' || error?.details?.reason !== 'consent-required') throw error; if (!(await consentGate())) return null; home = await openHome(); }
+          pendingHome = { name: homeName, value: home }; candidate = { ...home.profile, serverTime: home.serverTime };
+        }
         else candidate = await call('profile');
         trace(`الدالة ${homeName || 'profile'} (فتح الصفحة)`, t1);
       } catch (error) { trace(`الدالة ${homeName || 'profile'} (فتح الصفحة)`, t1, false, error?.code || 'error'); throw error; }
@@ -95,6 +101,17 @@ window.Basma = (() => {
       if (['functions/permission-denied','auth/user-token-expired','auth/invalid-user-token','auth/user-disabled'].includes(error.code)) await app.auth().signOut();
       throw error;
     }
+  }
+  // v6.1 (owner, 25 Nov 2026): one-time written consent before a manager can use the app. The server stores who/when
+  // and refuses company data until then. Refusing signs out.
+  async function consentGate() {
+    const status = await call('managerList', { kind: 'consentStatus' });
+    if (status.accepted) return true;
+    const message = `${status.text}\n\nلا يمكن استخدام البرنامج قبل الموافقة. «إلغاء» يسجّل خروجك.`;
+    const ok = window.BasmaDialogs ? await window.BasmaDialogs.confirm('موافقة على حفظ البيانات', message, 'أوافق', 'btn-gold') : false;
+    if (!ok) { await logout(); return false; }
+    await call('managerList', { kind: 'consentAccept', version: status.version });
+    return true;
   }
   async function login(username, password, role) {
     await init(role);

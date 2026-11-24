@@ -159,9 +159,21 @@ async function employeeLogin({ g, page }, account, ready = '#act-bio-btn') {
   await page.fill('#dl-emp-username', account); await page.fill('#dl-emp-password', FIX.password); await page.click('#dl-emp-submit');
   await expect(page.locator(ready)).toBeVisible({ timeout: 20000 });
 }
+// v6.1: a manager's FIRST sign-in shows the one-time written consent; later sign-ins do not. After the dashboard, the
+// retention notice is a toast, or (30 days before deletion starts) a dialog that the test answers with «إلغاء».
+async function managerSignedIn(page, { expectConsent = null } = {}) {
+  const consent = page.getByRole('button', { name: 'أوافق', exact: true }), dash = page.locator('#dash-tbody').filter({ hasText: 'e2e' });
+  const first = await Promise.race([consent.waitFor({ timeout: 25000 }).then(() => 'consent'), dash.waitFor({ timeout: 25000 }).then(() => 'dash')]);
+  if (expectConsent !== null) expect(first === 'consent', expectConsent ? 'the one-time consent is shown on the first sign-in' : 'no consent screen after it was accepted').toBe(expectConsent);
+  if (first === 'consent') { await expect(page.getByText('مسؤولية الشركة')).toBeVisible(); await consent.click(); await dash.waitFor({ timeout: 25000 }); }
+  await page.waitForFunction(() => window.__basmaNotice, null, { timeout: 30000 });
+  if (await page.evaluate(() => window.__basmaNotice) === 'dialog') await page.getByRole('button', { name: 'إلغاء' }).click();
+  return first;
+}
 async function managerSession(browser) {
   const g = await guarded(browser), page = await g.context.newPage();
   await g.open(page, '/manager/', '#dl-username', 'manager login'); await page.fill('#dl-username', FIX.accounts.manager); await page.fill('#dl-password', FIX.password); await page.click('#dl-submit-btn');
+  await managerSignedIn(page);
   await expect(page.locator('#dash-tbody')).toContainText('e2e موظف السجلات', { timeout: 20000 });
   return { g, page };
 }
@@ -194,7 +206,12 @@ test.describe('full flow on local emulators', () => {
     await test.step('manager: login and dashboard', async () => {
       await gm.open(manager, '/manager/', '#dl-username', 'manager login'); await manager.fill('#dl-username', accounts.manager); await manager.fill('#dl-password', password);
       const t = Date.now(); await manager.click('#dl-submit-btn');
-      await expect(manager.locator('#dash-tbody')).toContainText('e2e موظف السجلات', { timeout: 20000 }); timing('manager: login → dashboard (cold)', Date.now() - t, BUDGET.cold);
+      await managerSignedIn(manager, { expectConsent: true }); // v6.1: one-time written consent on the first sign-in
+      await expect(manager.locator('#dash-tbody')).toContainText('e2e موظف السجلات', { timeout: 20000 }); timing('manager: login → consent → dashboard (cold)', Date.now() - t, BUDGET.cold);
+      // The consent is stored on the server (who + when): read from the LOCAL emulator only.
+      const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST || '127.0.0.1:9000';
+      let consents = null; for (const ns of ['demo-basma-default-rtdb', 'demo-basma']) { const v = await (await fetch(`http://${host}/companies/e2e-co/consents.json?ns=${ns}`, { headers: { Authorization: 'Bearer owner' } })).json(); if (v) consents = v; }
+      const c = Object.values(consents || {})[0]; expect(c?.uid).toBeTruthy(); expect(Number.isFinite(c?.at)).toBe(true); expect(c?.version).toBe(1);
       await shot(manager, 'manager-dashboard'); await gm.verify(manager, 'manager dashboard');
     }, { timeout: 60000 });
     await test.step('manager: employees, branches, attendance, leaves, excuses, payroll lists are filled', async () => {
@@ -235,6 +252,12 @@ test.describe('full flow on local emulators', () => {
     await test.step('manager: company records on this device; encrypted backup export (v6.0)', async () => {
       await show(manager, 'showPage', 'settings');
       await expect(manager.locator('#local-data-status')).toContainText('السجلات على هذا الجهاز', { timeout: 20000 });
+      // v6.1: no sync button (the phone syncs by itself), only Export and Import; the retention warning is always shown.
+      await expect(manager.locator('#local-data-card button')).toHaveCount(2);
+      await expect(manager.locator('#local-data-card')).not.toContainText('مزامنة الآن');
+      await expect(manager.locator('#local-data-card')).toContainText('بياناتك الأقدم من 45 يوماً تُحذف من السيرفر، صدّر نسخة');
+      await expect(manager.locator('#local-data-warn')).toContainText('لم تُصدِّر أي نسخة احتياطية بعد'); // red until the first export
+      await expect(manager.locator('#local-data-status')).not.toContainText('آخر مزامنة: —');
       await expect(manager.locator('#local-data-status')).not.toContainText('حضور 0 ');
       await manager.click('[data-basma-click="localExport()"]');
       await expect(manager.getByText('إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا')).toBeVisible();
@@ -244,6 +267,7 @@ test.describe('full flow on local emulators', () => {
       const file = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
       expect(file.format).toBe('basma-backup-v1'); expect(file.count).toBeGreaterThan(0); expect(JSON.stringify(file)).not.toContain('e2e موظف');
       await expect(manager.locator('#local-data-status')).not.toContainText('آخر نسخة احتياطية: —', { timeout: 15000 });
+      await expect(manager.locator('#local-data-warn')).not.toContainText('لم تُصدِّر أي نسخة احتياطية بعد'); // gone after the first export
       await gm.verify(manager, 'manager device backup');
     }, { timeout: 90000 });
     await test.step('manager: add, rename and delete a branch', async () => {
@@ -281,6 +305,7 @@ test.describe('full flow on local emulators', () => {
       const g2 = await guarded(browser, { storageState: state }), again = await g2.context.newPage();
       const t = Date.now(); await again.goto(BASE + '/manager/', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await expect(again.locator('#dash-tbody')).toContainText('e2e موظف السجلات', { timeout: 20000 }); timing('manager: reopen with saved session (warm)', Date.now() - t, BUDGET.warm);
+      await again.waitForFunction(() => window.__basmaNotice, null, { timeout: 30000 }); if (await again.evaluate(() => window.__basmaNotice) === 'dialog') await again.getByRole('button', { name: 'إلغاء' }).click(); // v6.1 retention notice on every open
       await expect(again.locator('#dl-username')).toBeHidden(); await shot(again, 'manager-reopened'); await g2.verify(again, 'manager reopen'); await g2.context.close();
     }, { timeout: 60000 });
 
@@ -445,7 +470,7 @@ test.describe('cost budgets (local emulators, 10,000 employees)', () => {
     await test.step('manager: open the dashboard, then 30 idle minutes (mocked clock)', async () => {
       await page.clock.install();
       await g.open(page, '/manager/', '#dl-username', 'manager login'); await page.fill('#dl-username', accounts.manager); await page.fill('#dl-password', FIX.password);
-      g.resetCalls(); await page.click('#dl-submit-btn'); await expect(page.locator('#dash-tbody')).toContainText('e2e حجم 3', { timeout: 20000 }); await settleCalls(page);
+      g.resetCalls(); await page.click('#dl-submit-btn'); await managerSignedIn(page, { expectConsent: false }); await expect(page.locator('#dash-tbody')).toContainText('e2e حجم 3', { timeout: 20000 }); await settleCalls(page);
       costCheck('manager open', g.calls, BUDGET_COST.managerOpen);
       g.resetCalls(); await page.clock.runFor(30 * 60000); await settleCalls(page);
       costCheck('manager idle 30 min', g.calls, BUDGET_COST.managerIdle30min);

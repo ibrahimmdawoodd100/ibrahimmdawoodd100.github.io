@@ -46,7 +46,7 @@ function harness({rpID='basma.example.org',origins='https://basma.example.org',n
   set('companies/c1/settings',{checkIn:{from:'00:00',to:'23:59'},checkOut:{from:'00:00',to:'23:59'},weekendDays:[9]});
   set('companies/c1/warehouses/w1',{active:true,name:'Branch'});
   set('companies/c1/employees/e1',{status:'pending_activation',name:'Employee',warehouseId:'w1',warehouseName:'Branch'});
-  for(const [uid,role,cid,eid] of [['seller','seller'],['manager','manager','c1'],['employee','employee','c1','e1']]) set(`access/${uid}`,{role,companyId:cid||null,employeeId:eid||null,version:1,enabled:true});
+  for(const [uid,role,cid,eid] of [['seller','seller'],['manager','manager','c1'],['employee','employee','c1','e1']]) set(`access/${uid}`,{role,companyId:cid||null,employeeId:eid||null,version:1,enabled:true,...(role==='manager'?{retentionConsent:1}:{})}); /* v6.1: this manager already gave the one-time consent */
   const invoke=(name,uid,data={},version=1)=>context.exports[name]({auth:uid?{uid,token:{version,auth_time:Date.now()/1000}}:null,app:{alreadyConsumed:false},data});
   return { api:context.exports, get,set,invoke,users,optionsSeen,readPaths };
 }

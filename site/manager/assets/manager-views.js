@@ -23,6 +23,7 @@ async function closedMonth(a,b,fetchPart){
 }
 // v6.0 (owner, 24 Nov 2026): the company's records live on THIS device (encrypted IndexedDB, signed by the server).
 // Firebase keeps 45 days. Each open pulls only what is new; reports and payroll read the device copy, also offline.
+const RETENTION_MSG='بياناتك الأقدم من 45 يوماً تُحذف من السيرفر، صدّر نسخة',SYNC_FAILED='تعذّرت المزامنة؛ ستُعاد تلقائيًا عند الفتح القادم. تُعرض البيانات المحفوظة على الجهاز.';
 const localData=(()=>{
   let store=null,ready=null,lastSync=0,persisted=null,lastOpenBefore=null,lastError=null;
   const call=(name,data)=>Basma.timeout(Basma.call(name,data),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,name);
@@ -47,10 +48,10 @@ const localData=(()=>{
     if(!m.lastBackupAt||now-m.lastBackupAt>30*day)out.push(m.lastBackupAt?`آخر نسخة احتياطية قبل ${Math.floor((now-m.lastBackupAt)/day)} يومًا. صدّر نسخة جديدة.`:'لم تُصدِّر أي نسخة احتياطية بعد. إن ضاع هذا الهاتف ضاعت السجلات القديمة.');
     if(persisted===false)out.push('المتصفح لم يضمن حفظ البيانات دائمًا؛ صدّر نسخة احتياطية بانتظام.');
     if(!s.verifiable&&!s.info?.offline)out.push('هذا المتصفح لا يتحقق من تواقيع السجلات؛ حدّث المتصفح.');
-    if(lastError)out.push('تعذّرت المزامنة الآن؛ تُعرض البيانات المحفوظة على الجهاز.');
+    if(lastError)out.push(SYNC_FAILED);
     return out;
   }
-  return {get,open,warnings,get persisted(){return persisted;}};
+  return {get,open,warnings,get persisted(){return persisted;},get failed(){return !!lastError;}};
 })();
 async function deviceRange(from,to){
   const s=await localData.open().catch(()=>null);if(!s)return null;
@@ -308,7 +309,7 @@ loadAllData=async function(){
   try{managerData.invalidate();await loadDashboard();populateWHSelects();loadBadges();loadAdminNotifBadge();}
   finally{hideLoading();}
   // v6.0: after the dashboard, pull what is new into this device (one call) and warn once if something needs attention.
-  localData.warnings().then(list=>{if(list.length)showToast('⚠️ '+list[0],'info');}).catch(()=>{});
+  openNotices().catch(()=>{});
 };
 const requestTickets={leaves:0,excuses:0};
 async function loadManagerRequests(collection){
@@ -416,10 +417,31 @@ async function renderLocalCard(){
     `الخادم يحتفظ بآخر ${info.keepDays||45} يومًا فقط${info.purgeStart?` (يبدأ الحذف ${info.purgeStart})`:''}. الأقدم يبقى على هذا الجهاز وفي النسخ الاحتياطية فقط.`
   ].map(line=>secureManagerView.text('div',line)));
 }
-window.localSyncNow=async function(){
-  showLoading('جاري المزامنة...');
-  try{await localData.open(true);showToast('تمت المزامنة','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();await renderLocalCard();}
-};
+// v6.1 (owner, 25 Nov 2026): no sync button. The phone syncs by itself when the app opens and when the manager comes
+// back after at least 5 minutes in the background. No polling. A failed sync shows a short message and retries next time.
+async function autoSync(reason){
+  try{await localData.open(true);}catch{}
+  if(localData.failed)showToast('⚠️ '+SYNC_FAILED,'info');
+  if(currentPage==='settings')renderLocalCard();
+  return reason;
+}
+let hiddenAt=null;
+document.addEventListener?.('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'){hiddenAt=Date.now();return;}
+  if(hiddenAt&&Date.now()-hiddenAt>=5*60000&&typeof COMPANY_ID!=='undefined'&&COMPANY_ID)autoSync('resume');
+  hiddenAt=null;
+});
+// Shown on EVERY manager open (owner 3a); in the 30 days before deletion starts it is a dialog that must be answered.
+async function openNotices(){
+  await autoSync('open');
+  const s=localData.get(),start=s?.info?.purgeStart||'2027-01-10',today=secureManagerView.today();
+  const daysLeft=Math.round((Date.parse(`${start}T00:00:00Z`)-Date.parse(`${today}T00:00:00Z`))/86400000);
+  const others=(await localData.warnings()).filter(w=>w!==SYNC_FAILED);
+  window.__basmaNotice=daysLeft>0&&daysLeft<=30?'dialog':'toast'; // read by the browser test only
+  if(daysLeft>0&&daysLeft<=30){
+    if(await BasmaDialogs.confirm('تنبيه مهم',`${RETENTION_MSG}.\nيبدأ الحذف بعد ${daysLeft} يومًا (${start}).${others.length?'\n'+others.join('\n'):''}`,'صدّر الآن','btn-gold'))window.localExport();
+  } else showToast(`⚠️ ${RETENTION_MSG}${others[0]?' — '+others[0]:''}`,'info');
+}
 window.localExport=async function(){
   const s=await localData.open().catch(()=>null);if(!s){showToast('البيانات المحلية غير متاحة','error');return;}
   if(!await BasmaDialogs.confirm('تصدير نسخة احتياطية','ستُحفظ كل سجلات الشركة الموجودة على هذا الجهاز في ملف مشفّر بكلمة سر تختارها. ⚠️ إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا، ولا يستطيع أحد استرجاعها، وتضيع النسخة نهائيًا. احفظ كلمة السر في مكان آمن.','متابعة','btn-gold'))return;

@@ -87,7 +87,7 @@ const scenarios = {
   'devices: a new fingerprint needs the manager\'s approval; another employee\'s credential and a pending device are refused server-side': async (file, tag) => {
     const cid = `cDev${tag}`, A = `devA_${tag}`, B = `devB_${tag}`, mgr = `devM_${tag}`;
     await seedCompany(cid);
-    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
     for (const [uid, eid] of [[A, 'eA'], [B, 'eB']]) {
       await seed.ref(`companies/${cid}/employees/${eid}`).set({ status: 'pending_activation', name: eid, warehouseId: 'w1', warehouseName: 'Branch' });
       await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: eid, enabled: true, version: 1 });
@@ -133,7 +133,7 @@ const scenarios = {
   'cost guards: one-call payroll, month versions change on every month write, hourly cap per login': async (file, tag) => {
     const cid = `cCost${tag}`, mgr = `costM_${tag}`, emp = `costE_${tag}`;
     await seedCompany(cid);
-    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
     await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
     await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'E', empId: 'N1', warehouseId: 'w1', warehouseName: 'Branch', credId: 'cred-1', deviceFingerprint: 'secret-device' });
     await seed.ref(`privatePayroll/${cid}`).set({ e1: { salary: 900, deductionPercent: 50, iban: 'secret-iban' } });
@@ -164,7 +164,7 @@ const scenarios = {
   'business rules (owner, 22 Nov 2026): leave notice, lateness, work days, leave day, no night windows, branch delete, seat freed, no manual edits, closed month + grace, frozen payroll': async (file, tag) => {
     const cid = `cBiz${tag}`, mgr = `bizM_${tag}`, emp = `bizE_${tag}`;
     await seedCompany(cid);
-    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
     await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
     await seed.ref(`credentials/${emp}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] });
     await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-06-01T00:00:00Z'));
@@ -235,7 +235,7 @@ const scenarios = {
       await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: eid, enabled: true, version: 1 });
       await seed.ref(`credentials/${uid}`).set({ id: cred, publicKey: 'a2V5', counter: 0, transports: [] });
     }
-    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
     const at = iso => loadServer(file, { now: Date.parse(iso) });
     const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await at(iso).invoke(name, uid, data)));
     const W = { from: '00:00', to: '23:59' }, WI = { from: '00:00', to: '11:59' }, WO = { from: '12:00', to: '23:59' }, FAR = { lat: 25, lng: 47 }, BRANCH = { lat: 24, lng: 46 };
@@ -287,7 +287,7 @@ const scenarios = {
     const cid = `cWin${tag}`, mgr = `winM_${tag}`, emp = `winE_${tag}`;
     await seedCompany(cid);
     await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-06-01T00:00:00Z'));
-    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
     await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
     await seed.ref(`credentials/${emp}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] });
     // An EXISTING overlapping special schedule (as found live: in 20:00-21:56 / out 21:35-22:35), saved before the rule.
@@ -324,7 +324,7 @@ const scenarios = {
     const { createPublicKey, verify } = require('node:crypto');
     const cid = `cSync${tag}`, other = `cSyncO${tag}`, mgr = `syncM_${tag}`, mgrO = `syncMO_${tag}`;
     await seedCompany(cid); await seedCompany(other);
-    for (const [uid, c] of [[mgr, cid], [mgrO, other]]) await seed.ref(`access/${uid}`).set({ role: 'manager', companyId: c, enabled: true, version: 1 });
+    for (const [uid, c] of [[mgr, cid], [mgrO, other]]) await seed.ref(`access/${uid}`).set({ role: 'manager', companyId: c, enabled: true, version: 1, retentionConsent: 1 });
     for (const c of [cid, other]) await seed.ref(`companies/${c}/info/expiresAt`).set(Date.parse('2027-12-01T00:00:00Z'));
     await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'E1', warehouseId: 'w1', warehouseName: 'Branch' });
     const records = {};
@@ -361,12 +361,11 @@ const scenarios = {
     assert.deepEqual(Object.keys(pay.items).sort(), ['2026-10', '2026-12']); assert.ok(ok(cid, 'payroll', '2026-10', pay.items['2026-10']));
     await assert.rejects(call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'sync', collection: 'privatePayroll' }), e => e.code === 'invalid-argument');
     // One call per open: keys + first page of every collection + ack of the previous pull.
-    const one = await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'syncAll', from: { records: null, leaves: 'mailbox', excuses: 'mailbox' }, ack: { syncedTo: '2026-11-30' } });
-    assert.equal(one.keys.storeKey, k1.storeKey); assert.equal(Object.keys(one.pages.records.items).length, 2000); assert.ok(one.pages.records.next);
-    assert.deepEqual(Object.keys(one.pages.leaves.items), ['lNew'], 'mailbox = the last 47 days'); assert.deepEqual(Object.keys(one.pages.payroll.items).sort(), ['2026-10', '2026-12']);
-    assert.equal((await get(`companies/${cid}/syncState`)).syncedTo, '2026-11-30');
-    await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'syncAck', syncedTo: '2027-01-20', lastBackupAt: Date.parse('2026-12-01T07:00:00Z') });
-    assert.equal((await get(`companies/${cid}/syncState`)).lastBackupAt, Date.parse('2026-12-01T07:00:00Z'));
+    // v6.1: no cursor = FULL sync (first time on a phone); incremental syncs are tested in the v6.1 scenario.
+    const one = await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'syncAll', lastBackupAt: Date.parse('2026-12-01T07:00:00Z') });
+    assert.equal(one.full, true); assert.equal(one.keys.storeKey, k1.storeKey); assert.equal(Object.keys(one.pages.records.items).length, 2000); assert.ok(one.pages.records.next);
+    assert.deepEqual(Object.keys(one.pages.leaves.items).sort(), ['lNew', 'lOld']); assert.deepEqual(Object.keys(one.pages.payroll.items).sort(), ['2026-10', '2026-12']);
+    assert.equal((await get(`companies/${cid}/syncState/${mgr}`)).lastBackupAt, Date.parse('2026-12-01T07:00:00Z'), 'per manager login, informational only');
     // 3) Before 2027-01-10 (owner postponed the start) nothing is removed, even far past 45 days.
     await loadServer(file, { now: Date.parse('2027-01-09T03:00:00Z') }).exports.cleanupSecurityState();
     assert.equal(Object.keys(await get(`companies/${cid}/records`)).length, 2003);
@@ -383,6 +382,61 @@ const scenarios = {
     assert.ok(await get(`access/${mgr}`), 'accounts kept');
     // 5) A month whose records are gone is never recalculated on the server.
     await assert.rejects(call('2027-02-20T08:00:00Z', 'managerList', mgr, { kind: 'payrollMonth', month: '2026-12' }), e => e.details?.reason === 'device-only');
+  },
+  'v6.1 (owner, 25 Nov 2026): one-time written consent before company data, incremental sync of ONLY new/changed items, closed-month pay statement saved before deletion, change list purged': async (file, tag) => {
+    const cid = `cInc${tag}`, mgr = `incM_${tag}`, emp = `incE_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-12-01T00:00:00Z'));
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 }); // NO consent yet
+    await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
+    await seed.ref(`credentials/${emp}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] });
+    await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'E1', credId: 'cred-1', warehouseId: 'w1', warehouseName: 'Branch', createdAt: Date.parse('2026-11-01T00:00:00Z') });
+    await seed.ref(`privatePayroll/${cid}/e1`).set({ salary: 3000, deductionPercent: 100 });
+    await seed.ref(`companies/${cid}/records/old1`).set({ empId: 'e1', type: 'in', dateKey: '2026-12-01', timestamp: '2026-12-01T08:00:00.000Z' });
+    await seed.ref('companyDirectory').update({ [cid]: { timeZone: 'UTC', status: 'active' } });
+    const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await loadServer(file, iso ? { now: Date.parse(iso) } : {}).invoke(name, uid, data)));
+    // 1) Consent: nothing of the company before it; the text is shown; who/when stored once.
+    const blocked = e => e.details?.reason === 'consent-required';
+    await assert.rejects(call(null, 'managerHome', mgr, {}), blocked);
+    await assert.rejects(call(null, 'managerList', mgr, { kind: 'syncAll' }), blocked);
+    await assert.rejects(call(null, 'managerRecords', mgr, { from: '2026-12-01', to: '2026-12-01' }), blocked);
+    const status = await call(null, 'managerList', mgr, { kind: 'consentStatus' });
+    assert.equal(status.accepted, false); assert.match(status.text, /45 يومًا/); assert.match(status.text, /مسؤولية الشركة/);
+    await assert.rejects(call(null, 'managerList', mgr, { kind: 'consentAccept', version: 99 }), e => e.code === 'failed-precondition');
+    const accepted = await call(null, 'managerList', mgr, { kind: 'consentAccept', version: status.version });
+    const stored = await get(`companies/${cid}/consents/${mgr}`);
+    assert.equal(stored.uid, mgr); assert.equal(stored.at, accepted.at); assert.equal(stored.version, 1); assert.equal(stored.text, status.text);
+    assert.equal((await call(null, 'managerList', mgr, { kind: 'consentStatus' })).accepted, true);
+    assert.ok(await call(null, 'managerHome', mgr, {}), 'company data after consent');
+    // 2) Full sync once; then an incremental sync sends ONLY what changed since the cursor.
+    const full = await call(null, 'managerList', mgr, { kind: 'syncAll' });
+    assert.equal(full.full, true); assert.deepEqual(Object.keys(full.pages.records.items), ['old1']);
+    const quiet = await call(null, 'managerList', mgr, { kind: 'syncAll', cursor: full.cursor });
+    assert.equal(quiet.full, false); for (const col of ['records', 'leaves', 'excuses', 'payroll']) assert.deepEqual(Object.keys(quiet.pages[col].items), [], `nothing new: ${col}`);
+    const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+    await call(null, 'submitRequest', emp, { kind: 'leave', leaveType: 'paid', date: tomorrow, reason: 'سفر' });
+    const leaveId = Object.keys(await get(`companies/${cid}/leaves`))[0];
+    await call(null, 'reviewRequest', mgr, { collection: 'leaves', id: leaveId, status: 'approved' });
+    await seed.ref(`attendanceLedger/${cid}/e1/2026-12-02/events/in`).set({ type: 'in', empId: 'e1', actor: emp, timestamp: '2026-12-02T08:00:00.000Z', dateKey: '2026-12-02' });
+    await loadServer(file).exports.projectAttendance({ params: { cid, eid: 'e1', date: '2026-12-02' } });
+    await seed.ref(`companies/${cid}/records/sneaky`).set({ empId: 'e1', type: 'in', dateKey: '2026-12-03' }); // written outside the server code: not in the change list
+    const inc = await call(null, 'managerList', mgr, { kind: 'syncAll', cursor: { at: quiet.cursor.at } });
+    assert.deepEqual(Object.keys(inc.pages.records.items), ['2026-12-02_e1_in'], 'only the new record');
+    assert.deepEqual(Object.keys(inc.pages.leaves.items), [leaveId], 'the leave once, in its latest state');
+    assert.equal(inc.pages.leaves.items[leaveId].d.status, 'approved');
+    assert.ok(inc.cursor.at >= quiet.cursor.at && inc.cursor.key);
+    const again = await call(null, 'managerList', mgr, { kind: 'syncAll', cursor: { at: inc.cursor.at + 121000 } });
+    assert.deepEqual(Object.keys(again.pages.records.items), [], 'after the cursor: nothing again');
+    // 3) A closed month past its grace: the pay statement is made and sent on the next sync, before any deletion.
+    assert.equal(await get(`payrollSnapshots/${cid}/2026-12`), null);
+    const jan = await call('2027-01-07T08:00:00Z', 'managerList', mgr, { kind: 'syncAll', cursor: { at: Date.parse('2027-01-07T07:00:00Z') } });
+    assert.ok(await get(`payrollSnapshots/${cid}/2026-12`), 'saved on the server first');
+    assert.deepEqual(Object.keys(jan.pages.payroll.items), ['2026-12'], 'and sent to the phone in the same sync');
+    assert.equal(jan.pages.payroll.items['2026-12'].d.rows[0].employeeId, 'e1');
+    // 4) The change list is deleted by age like everything else.
+    await seed.ref(`changeLog/${cid}/-AAAAAAAoldentry000000`).set({ col: 'records', id: 'x', at: 1 });
+    await loadServer(file, { now: Date.parse('2027-03-01T03:00:00Z') }).exports.cleanupSecurityState();
+    assert.equal(await get(`changeLog/${cid}/-AAAAAAAoldentry000000`), null);
   },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;
@@ -467,7 +521,7 @@ const scenarios = {
       await seed.ref(`companies/${cid}/records/r_${cid}`).set({ empId: `e_${cid}`, type: 'in', timestamp: `${day}T08:00:00Z`, dateKey: day, lat: 0, lng: 0, locStatus: 'approved', warehouseId: 'w1' });
       await seed.ref(`companies/${cid}/records/old_${cid}`).set({ empId: `e_${cid}`, type: 'in', timestamp: '2020-01-01T08:00:00Z', dateKey: '2020-01-01', lat: 0, lng: 0, locStatus: 'approved', warehouseId: 'w1' });
       await seed.ref(`companies/${cid}/leaves/l_${cid}`).set({ empId: `e_${cid}`, date: day, status: 'approved', leaveType: 'paid' });
-      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
     }
     // A forged companyId in the request must be ignored: the company comes from the server-side access record.
     const home = await loadServer(file).invoke('managerHome', `mgr_${A}`, { companyId: B });
@@ -502,7 +556,7 @@ const scenarios = {
     const A = `cRecA${tag}`, B = `cRecB${tag}`;
     for (const cid of [A, B]) {
       await seedCompany(cid);
-      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
       await seed.ref(`companies/${cid}/records`).set({
         [`in_${cid}`]: { empId: 'e1', type: 'in', timestamp: '2026-10-05T08:00:00Z', dateKey: '2026-10-05', lat: 33.3, lng: 44.4, actor: 'uid-secret', locStatus: 'approved', warehouseId: 'w1', warehouseName: 'Branch', delayMins: 3 },
         [`old_${cid}`]: { empId: 'e1', type: 'in', timestamp: '2026-08-01T08:00:00Z', dateKey: '2026-08-01', lat: 0, lng: 0, locStatus: 'approved', warehouseId: 'w1' } });
@@ -526,7 +580,7 @@ const scenarios = {
     const A = `cLstA${tag}`, B = `cLstB${tag}`;
     for (const cid of [A, B]) {
       await seedCompany(cid);
-      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+      await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
       const staff = {};
       for (let i = 0; i < 205; i++) staff[`e${String(i).padStart(3, '0')}`] = { name: `موظف ${i}`, empId: `N${i}`, status: i < 3 ? 'approved' : 'pending_activation', warehouseId: 'w1', credId: 'secret-cred', deviceFingerprint: 'secret-device' };
       await seed.ref(`companies/${cid}/employees`).set(staff);
@@ -581,12 +635,12 @@ const scenarios = {
     for (const updates of [{ 'n2/message': 'x' }, { 'n2/read': 'yes' }, { '../x/read': true }]) await assert.rejects(call({ kind: 'notificationsUpdate', updates }), e => e.code === 'invalid-argument', JSON.stringify(updates));
     assert.equal((await call({ kind: 'status' })).value, 'active');
     await assert.rejects(call({ kind: 'records' }), e => e.code === 'invalid-argument');
-    await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
     await assert.rejects(loadServer(file).invoke('employeeList', `mgr_${cid}`, { kind: 'today' }), e => e.code === 'permission-denied');
   },
   'managerSettings: time windows, holidays, zones, schedules, missions, activity notifications — own company, strict checks': async (file, tag) => {
     const A = `cSetA${tag}`, B = `cSetB${tag}`;
-    for (const cid of [A, B]) { await seedCompany(cid); await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 }); await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'أحمد', empId: 'N1', warehouseId: 'w1' }); }
+    for (const cid of [A, B]) { await seedCompany(cid); await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 }); await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'أحمد', empId: 'N1', warehouseId: 'w1' }); }
     const call = async (data, uid = `mgr_${A}`) => JSON.parse(JSON.stringify(await loadServer(file).invoke('managerSettings', uid, data)));
     const w = (from, to) => ({ from, to });
     await call({ action: 'timeWindows', checkIn: w('07:30', '08:30'), checkOut: w('15:00', '16:00'), companyId: B });
@@ -640,12 +694,12 @@ const scenarios = {
     for (const t of [{ companyId: cid, amount: -1, dateStr: '2026-11-17' }, { companyId: cid, amount: 5, dateStr: 'x' }, { companyId: '../x', amount: 5, dateStr: '2026-11-17' }, { companyId: cid, amount: 5, dateStr: '2026-11-17', note: '<b>' }])
       await assert.rejects(call({ kind: 'addTransaction', transaction: t }), e => e.code === 'invalid-argument', JSON.stringify(t));
     await assert.rejects(call({ kind: 'addTransaction', transaction: { companyId: 'nope', amount: 5, dateStr: '2026-11-17' } }), e => e.code === 'not-found');
-    await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+    await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
     await assert.rejects(call({ kind: 'transactions' }, `mgr_${cid}`), e => e.code === 'permission-denied');
   },
   'managerBranch: add, rename, hours, location, delete in own company only, with strict checks': async (file, tag) => {
     const A = `cBrA${tag}`, B = `cBrB${tag}`;
-    for (const cid of [A, B]) { await seedCompany(cid); await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 }); }
+    for (const cid of [A, B]) { await seedCompany(cid); await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 }); }
     const call = (data, uid = `mgr_${A}`) => loadServer(file).invoke('managerBranch', uid, data);
     const { id } = await call({ action: 'add', name: '  فرع جديد  ', companyId: B });
     assert.deepEqual(await get(`companies/${A}/warehouses/${id}`), { name: 'فرع جديد', active: true });
@@ -703,7 +757,7 @@ test('EXCUSES — absence excuses are refused; a lateness excuse after a late ch
   await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', credId: 'cred-1', name: 'E', warehouseId: 'w1', warehouseName: 'Branch' });
   await seed.ref(`access/${emp}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
   await seed.ref(`credentials/${emp}`).set({ id: 'cred-1', publicKey: 'a2V5', counter: 0, transports: [] }); // the employee's own credential (registered before v5.15: no device entry = approved)
-  await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+  await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
   const call = (name, uid, data) => loadServer(CURRENT).invoke(name, uid, data);
   for (const type of ['no_checkin', 'no_checkout', 'no_both']) await assert.rejects(call('submitRequest', emp, { kind: 'excuse', type, reason: 'x' }), e => /للتأخير فقط/.test(e.message), type);
   await assert.rejects(call('submitRequest', emp, { kind: 'excuse', type: 'late', reason: 'زحمة' }), e => /بعد تسجيل حضور متأخر/.test(e.message), 'no check-in yet');
@@ -749,7 +803,7 @@ test('FIXED — two concurrent check-ins with two valid proofs: exactly one reco
 async function notifyCompany(cid) {
   await seedCompany(cid);
   await seed.ref(`companies/${cid}/employees`).set({ e1: { status: 'approved', name: 'E1' }, e2: { status: 'approved', name: 'E2' }, e3: { status: 'disabled', name: 'Off' } });
-  await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1 });
+  await seed.ref(`access/mgr_${cid}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
   await seed.ref(`access/emp_${cid}`).set({ role: 'employee', companyId: cid, employeeId: 'e1', enabled: true, version: 1 });
   return { mgr: `mgr_${cid}`, emp: `emp_${cid}` };
 }

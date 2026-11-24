@@ -58,6 +58,8 @@
 
 
 
+
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>لوحة تحكم المدير — النسخة المخصصة</title>
 <link rel="manifest" href="./manifest.json">
@@ -573,10 +575,10 @@ tr:hover td{background:#1a1f30}
       <!-- v6.0: the company's records live on this device; Firebase keeps 45 days only -->
       <div class="section-card" id="local-data-card" style="border:1px solid var(--gold)">
         <div class="section-title">💾 بيانات الشركة على هذا الجهاز</div>
+        <div style="font-size:12px;color:var(--gold);font-weight:700;margin-bottom:8px">⚠️ بياناتك الأقدم من 45 يوماً تُحذف من السيرفر، صدّر نسخة</div>
         <div id="local-data-status" style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:10px">جاري التحقق...</div>
         <div id="local-data-warn" style="display:none;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:12px;margin-bottom:10px"></div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="action-btn-full" data-basma-click="localSyncNow()">🔄 مزامنة الآن</button>
           <button class="action-btn-full" data-basma-click="localExport()">⬇️ تصدير نسخة احتياطية</button>
           <button class="modal-btn btn-gold" data-basma-click="localImport()">⬆️ استيراد نسخة احتياطية</button>
           <input type="file" id="local-import-file" accept=".json,application/json" style="display:none">

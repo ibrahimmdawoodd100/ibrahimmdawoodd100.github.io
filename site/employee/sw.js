@@ -5,17 +5,17 @@
 // network untouched. A new release changes VERSION, so the browser installs a fresh cache and deletes the old one.
 // v5.16: each file has its own content hash; on a new release UNCHANGED files are copied from the previous cache and
 // only changed files are downloaded (a typical release: a few KB per phone instead of the whole app).
-const VERSION = '325ea7cbac11a92a';
+const VERSION = 'ce7deee7ab8e0004';
 const SCOPE = '/employee/';
 const FILES = {
-  "/employee/": "3a5e52848c24",
+  "/employee/": "3373e529d786",
   "/employee/icon-employee-192.png": "315df644e081",
   "/employee/icon-employee-512.png": "6ce95559c4db",
   "/employee/manifest.json": "48143bdece32",
-  "/manager/assets/actions.js": "0feb2471fbda",
+  "/manager/assets/actions.js": "192bb05e32cc",
   "/manager/assets/attendance-clock.js": "2598d20e2917",
   "/manager/assets/config.js": "01501064d14f",
-  "/manager/assets/core.js": "43e9ce57ba8e",
+  "/manager/assets/core.js": "2ad15c69c732",
   "/manager/assets/dialogs.js": "027614ad19b1",
   "/manager/assets/employee-views.js": "3df595559f71",
   "/manager/assets/employee.js": "cbd8d460817c",

@@ -82,6 +82,7 @@ async function badgesOf(cid) {
   return { status: status ?? null, leaves, excuses, assigned, started, unread, devices };
 }
 exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
+  requireConsent(member);
   const cid = member.companyId, stamp = Date.now(), date = p.dateParts(new Date(stamp), info.timeZone).date;
   const sameDay = (collection, field) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).equalTo(date).limitToFirst(20000).get().then(s => s.val() || {});
   const [settings, warehouses, employees, records, leaves, excuses, badges] = await Promise.all([
@@ -103,6 +104,7 @@ function isoDay(value) {
   return value;
 }
 exports.managerRecords = endpoint(['manager'], async ({ member, data }) => {
+  requireConsent(member);
   const cid = member.companyId, MAX = 20000;
   const query = (collection, field, from, to) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).startAt(from).endAt(to).limitToFirst(MAX + 1).get().then(s => s.val() || {});
   const bounded = value => { if (Object.keys(value).length > MAX) p.fail('عدد السجلات كبير؛ اختر فترة أقصر', 'invalid-argument'); return value; };
@@ -151,7 +153,7 @@ async function payrollMonth(cid, info, month) {
   const frozen = month < today.slice(0, 7) && !inLeaveGrace(`${month}-01`, zone);
   if (frozen) { const saved = await read(`payrollSnapshots/${cid}/${month}`); if (saved) return { ...saved, frozen: true }; }
   const value = await computePayrollMonth(cid, zone, month);
-  if (frozen) { await db.ref(`payrollSnapshots/${cid}/${month}`).transaction(old => old || { ...value, savedAt: Date.now() }); return { ...(await read(`payrollSnapshots/${cid}/${month}`)), frozen: true }; }
+  if (frozen) { const t = await db.ref(`payrollSnapshots/${cid}/${month}`).transaction(old => (old ? undefined : { ...value, savedAt: Date.now() })); if (t.committed) await noteChanges(cid, [['payroll', month]]); return { ...(await read(`payrollSnapshots/${cid}/${month}`)), frozen: true }; }
   return { ...value, frozen: false, closed: month < today.slice(0, 7), graceUntil: month < today.slice(0, 7) ? `${today.slice(0, 7)}-05` : null };
 }
 // One signed page of a collection, oldest first, from a date (cursor = last date + key). Own company only.
@@ -170,7 +172,55 @@ async function syncPage(cid, data) {
   const items = signItems(cid, data.collection, Object.fromEntries(page.map(([id, v]) => [id, clean(v)])), await signingKey());
   return { items, next: more && last ? { date: last[1]?.[field] || '', key: last[0] } : null };
 }
-exports.managerList = endpoint(['manager'], async ({ member, info, data }) => {
+async function syncAll(cid, uid, info, data) {
+  const zone = info.timeZone, startedAt = Date.now();
+  await ensureClosedSnapshots(cid, zone); // owner 3c: a closed month's pay statement reaches the phone before deletion
+  const [signing, store] = await Promise.all([signingKey(), storeKey(cid)]);
+  const keys = { companyId: cid, publicKey: signing.publicKey, storeKey: store.key, keepDays: KEEP_DAYS, purgeStart: PURGE_START, cutoff: purgeCutoff(zone), today: companyToday(zone) };
+  await db.ref(`companies/${cid}/syncState/${uid}`).set({ lastPullAt: startedAt, ...(Number.isFinite(data.lastBackupAt) && data.lastBackupAt <= startedAt ? { lastBackupAt: data.lastBackupAt } : {}) }); // per manager login; informational only (never blocks)
+  const since = Number(data.cursor?.at);
+  if (!Number.isFinite(since)) {
+    const [records, leaves, excuses, payroll] = await Promise.all([...['records', 'leaves', 'excuses'].map(c => syncPage(cid, { collection: c, from: null })), syncPage(cid, { collection: 'payroll' })]);
+    return { keys, full: true, cursor: { at: startedAt }, pages: { records, leaves, excuses, payroll } };
+  }
+  const startKey = data.cursor.key && /^[-0-9A-Za-z_]{8,}$/.test(data.cursor.key) ? data.cursor.key : pushPrefix(Math.max(0, since - 120000));
+  const log = (await db.ref(`changeLog/${cid}`).orderByKey().startAfter(startKey).limitToFirst(SYNC_PAGE).get()).val() || {};
+  const entries = Object.entries(log), byCol = { records: new Set(), leaves: new Set(), excuses: new Set(), payroll: new Set() };
+  for (const [, e] of entries) if (byCol[e?.col] && typeof e.id === 'string') byCol[e.col].add(e.id);
+  const path = (col, id) => (col === 'payroll' ? `payrollSnapshots/${cid}/${p.key(id)}` : `companies/${cid}/${col}/${p.key(id)}`);
+  const clean = (col, v) => (col === 'records' ? Object.fromEntries(RECORD_FIELDS.filter(k => v?.[k] !== undefined).map(k => [k, v[k]])) : v);
+  const pages = {};
+  for (const col of Object.keys(byCol)) {
+    const found = {};
+    await Promise.all([...byCol[col]].map(async id => { const v = await read(path(col, id)); if (v) found[id] = clean(col, v); }));
+    pages[col] = { items: signItems(cid, col, found, signing), next: null };
+  }
+  const last = entries.at(-1);
+  return { keys, full: false, more: entries.length >= SYNC_PAGE, cursor: last ? { at: last[1].at, key: last[0] } : { at: since, key: data.cursor.key || null }, pages };
+}
+// Closed months past their 5-day grace get their signed pay statement now (if the daily job has not made it yet).
+async function ensureClosedSnapshots(cid, zone) {
+  const today = companyToday(zone), [y, m] = today.slice(0, 7).split('-').map(Number);
+  for (const back of [1, 2]) {
+    const month = new Date(Date.UTC(y, m - 1 - back, 1)).toISOString().slice(0, 7), last = new Date(Date.UTC(y, m - back, 0)).toISOString().slice(0, 10);
+    if (`${month}-01` < rules.RULES_FROM || inLeaveGrace(`${month}-01`, zone) || (purgeActive(zone) && last < purgeCutoff(zone)) || (await read(`payrollSnapshots/${cid}/${month}`))) continue;
+    const value = await computePayrollMonth(cid, zone, month);
+    const t = await db.ref(`payrollSnapshots/${cid}/${month}`).transaction(old => (old ? undefined : { ...value, savedAt: Date.now() }));
+    if (t.committed) await noteChanges(cid, [['payroll', month]]);
+  }
+}
+exports.managerList = endpoint(['manager'], async ({ uid, member, info, data }) => {
+  // Owner 3b: the consent screen is the only thing available before the one-time written consent.
+  if (data.kind === 'consentStatus') return { accepted: member.retentionConsent === RETENTION_VERSION, version: RETENTION_VERSION, text: RETENTION_TEXT, purgeStart: PURGE_START, keepDays: KEEP_DAYS };
+  if (data.kind === 'consentAccept') {
+    if (data.version !== RETENTION_VERSION) p.fail('نص الموافقة تغيّر؛ أعد فتح البرنامج', 'failed-precondition');
+    const user = await auth.getUser(uid).catch(() => null), username = String(user?.email || '').split('@')[0] || null;
+    const at = Date.now();
+    await db.ref().update({ [`access/${uid}/retentionConsent`]: RETENTION_VERSION, [`companies/${member.companyId}/consents/${uid}`]: { uid, username, at, version: RETENTION_VERSION, text: RETENTION_TEXT } });
+    await audit(uid, 'retention.consent', member.companyId, { version: RETENTION_VERSION });
+    return { ok: true, at };
+  }
+  requireConsent(member);
   const cid = member.companyId;
   if (data.kind === 'settings') return { settings: (await read(`companies/${cid}/settings`)) || {} };
   // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
@@ -181,24 +231,9 @@ exports.managerList = endpoint(['manager'], async ({ member, info, data }) => {
     return { companyId: cid, publicKey: signing.publicKey, storeKey: store.key, keepDays: KEEP_DAYS, purgeStart: PURGE_START, cutoff: purgeCutoff(info.timeZone), today: companyToday(info.timeZone) };
   }
   if (data.kind === 'sync') return syncPage(cid, { ...data, from: data.from === 'mailbox' ? daysBefore(companyToday(info.timeZone), KEEP_DAYS + 2) : data.from });
-  // One call per open (cost guard): keys + the first page of every collection + the acknowledgement of the last pull.
-  if (data.kind === 'syncAll') {
-    const from = data.from || {}, mailbox = daysBefore(companyToday(info.timeZone), KEEP_DAYS + 2), pick = v => (v === 'mailbox' ? mailbox : v ?? null);
-    if (data.ack?.syncedTo) {
-      const state = { lastPullAt: Date.now(), syncedTo: isoDay(data.ack.syncedTo) };
-      if (Number.isFinite(data.ack.lastBackupAt) && data.ack.lastBackupAt <= Date.now()) state.lastBackupAt = data.ack.lastBackupAt;
-      await db.ref(`companies/${cid}/syncState`).update(state);
-    }
-    const [signing, store, records, leaves, excuses, payroll] = await Promise.all([signingKey(), storeKey(cid), ...['records', 'leaves', 'excuses'].map(c => syncPage(cid, { collection: c, from: pick(from[c]) })), syncPage(cid, { collection: 'payroll' })]);
-    return { keys: { companyId: cid, publicKey: signing.publicKey, storeKey: store.key, keepDays: KEEP_DAYS, purgeStart: PURGE_START, cutoff: purgeCutoff(info.timeZone), today: companyToday(info.timeZone) }, pages: { records, leaves, excuses, payroll } };
-  }
-  if (data.kind === 'syncAck') {
-    const now = Date.now(), state = { lastPullAt: now, syncedTo: isoDay(data.syncedTo) };
-    if (Number.isFinite(data.lastBackupAt) && data.lastBackupAt <= now) state.lastBackupAt = data.lastBackupAt;
-    await db.ref(`companies/${cid}/syncState`).update(state);
-    return { ok: true };
-  }
-  if (data.kind === 'employeeLog') {
+  // One call per open (cost guard). FULL the first time on a phone (no cursor): keys + the first page of every collection.
+  // Then INCREMENTAL: only items noted in changeLog since the phone's cursor (2 min overlap), in pages of 2,000.
+  if (data.kind === 'syncAll') return syncAll(cid, uid, info, data);  if (data.kind === 'employeeLog') {
     const eid = p.key(data.employeeId);
     const items = (await db.ref(`employeeLog/${cid}/${eid}`).orderByKey().limitToLast(50).get()).val() || {};
     return { items };
@@ -764,6 +799,17 @@ function signItems(cid, collection, items, key) {
   for (const [id, value] of Object.entries(items)) out[id] = { d: value, s: edSign(null, Buffer.from(signedMessage(cid, collection, id, value)), pk).toString('base64') };
   return out;
 }
+// v6.1 (owner, 25 Nov 2026): every new or changed synced item is noted in changeLog/{cid} (server-only path, keys in
+// time order) so each manager phone downloads ONLY what changed since its last sync.
+const PUSH_CHARS = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
+const pushPrefix = ms => { let out = ''; for (let i = 0; i < 8; i++) { out = PUSH_CHARS.charAt(ms % 64) + out; ms = Math.floor(ms / 64); } return out; };
+// Keys = server time (8 chars, same alphabet/order as push ids) + 12 random chars, so key order = time order.
+const noteChange = (updates, cid, col, id) => { const now = Date.now(); updates[`changeLog/${cid}/${pushPrefix(now)}${randomBytes(9).toString('base64url').slice(0, 12)}`] = { col, id, at: now }; return updates; };
+const noteChanges = (cid, list) => (list.length ? db.ref().update(list.reduce((u, [col, id]) => noteChange(u, cid, col, id), {})) : null);
+// Owner decision 3b: one written consent per manager account before company data is served.
+const RETENTION_VERSION = 1;
+const RETENTION_TEXT = 'يحتفظ الخادم بآخر 45 يومًا فقط من سجلات الشركة (الحضور والإجازات والأعذار والرواتب). ابتداءً من 10 يناير 2027 يُحذف من الخادم كل ما هو أقدم من 45 يومًا، سواء سُحب إلى جهاز المدير أم لا. حفظ البيانات الأقدم مسؤولية الشركة: على جهاز المدير أو في النسخ الاحتياطية التي تصدّرها. إن ضاع الجهاز أو مُسحت بياناته ولا توجد نسخة احتياطية، فلا يمكن استرجاع تلك البيانات.';
+const requireConsent = member => { if (member.role === 'manager' && member.retentionConsent !== RETENTION_VERSION) throw new p.PolicyError('failed-precondition', 'وافق على شروط حفظ البيانات أولًا', { reason: 'consent-required' }); };
 // Per company and month: changes whenever records/leaves/excuses of that month change. The manager page caches CLOSED
 // months on the phone and re-downloads a month only when this number differs (v5.16 cost).
 const bumpMonth = (cid, date) => (typeof date === 'string' && /^\d{4}-\d{2}/.test(date) ? db.ref(`recordsVersions/${cid}/${date.slice(0, 7)}`).set(Date.now()) : null);
@@ -922,7 +968,7 @@ exports.projectAttendance = onValueWritten({ ref: '/attendanceLedger/{cid}/{eid}
     const recordId = `${date}_${eid}_${id}`;
     // Existing reviewed records are not overwritten on subsequent events or trigger retries.
     const existing = await read(`companies/${cid}/records/${recordId}`);
-    if (!existing) updates[`companies/${cid}/records/${recordId}`] = value;
+    if (!existing) { updates[`companies/${cid}/records/${recordId}`] = value; noteChange(updates, cid, 'records', recordId); }
     if (['departure', 'return'].includes(value.type)) updates[`companies/${cid}/partialLeaveRecords/${eid}/${date}/${value.type === 'departure' ? 'departureAt' : 'returnAt'}`] = value.timestamp;
     if (value.missionKey) {
       await serverTransaction(db.ref(`companies/${cid}/missions/${value.missionKey}`), mission => {
@@ -964,8 +1010,9 @@ exports.submitRequest = endpoint(['employee'], async ({ uid, member, info, data 
   const id = collection === 'excuses' ? `excuse_${eid}_${record.date}` : db.ref().push().key;
   if (collection === 'excuses') {
     const created = await db.ref(`companies/${cid}/${collection}/${id}`).transaction(old => old ? undefined : record);
+    if (created.committed) await noteChanges(cid, [[collection, id]]);
     if (!created.committed) p.fail('لديك طلب عذر لهذا اليوم بالفعل', 'already-exists');
-  } else await db.ref(`companies/${cid}/${collection}/${id}`).set(record);
+  } else { await db.ref(`companies/${cid}/${collection}/${id}`).set(record); await noteChanges(cid, [[collection, id]]); }
   await bumpMonth(cid, record.date);
   // Owner decision 6: the manager is notified of every new request.
   await db.ref(`companies/${cid}/notifications/admin`).push({ type: collection === 'leaves' ? 'leave_new' : 'excuse_new', message: collection === 'leaves' ? `🌴 ${employee.name}: طلب إجازة ${record.isPartial ? 'زمنية ' : ''}ليوم ${record.date}` : `📝 ${employee.name}: عذر تأخير (${record.delayMins} دقيقة)`, timestamp: new Date().toISOString(), read: false, employeeId: eid });
@@ -1042,7 +1089,7 @@ exports.reviewRequest = endpoint(['manager'], async ({ uid, member, info, data }
     });
     if (!approved.committed) p.fail(denial || 'تعذر اعتماد العذر');
   }
-  const updates = { [`companies/${cid}/${data.collection}/${id}/status`]: data.status };
+  const updates = noteChange({ [`companies/${cid}/${data.collection}/${id}/status`]: data.status }, cid, data.collection, id);
   // Server-private, date-scoped projection. Commit together with the decision;
   // retries are idempotent, other dates/employees cannot overwrite this flag.
   if (data.collection === 'leaves' && data.status === 'approved' && !request.isPartial && request.leaveType !== 'partial') {
@@ -1138,6 +1185,10 @@ async function purgeOldRecords({ budget = 50000 } = {}) {
       n = await flush(updates);
     }
     { const updates = {}; for (const date of Object.keys(await older(`${base}/adjustments`))) updates[`${base}/adjustments/${date}`] = null; await flush(updates); }
+    for (let n = 1; n && left > 0;) { // the change list itself is kept 45 days too
+      const old = (await db.ref(`changeLog/${cid}`).orderByKey().endBefore(pushPrefix(Date.parse(`${cutoff}T00:00:00Z`))).limitToFirst(Math.min(2000, left)).get()).val() || {};
+      n = await flush(Object.fromEntries(Object.keys(old).map(k => [`changeLog/${cid}/${k}`, null])));
+    }
     { const updates = {}; for (const month of Object.keys((await read(`payrollSnapshots/${cid}`)) || {})) { const [y, m] = month.split('-').map(Number); if (new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10) < cutoff) updates[`payrollSnapshots/${cid}/${month}`] = null; } await flush(updates); }
   }
   return budget - left;
@@ -1151,7 +1202,7 @@ async function freezeClosedPayrolls() {
       const zone = info?.timeZone || 'UTC', today = companyToday(zone), [y, m] = today.slice(0, 7).split('-').map(Number), month = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7);
       if (`${month}-01` < rules.RULES_FROM || inLeaveGrace(`${month}-01`, zone) || await read(`payrollSnapshots/${cid}/${month}`)) continue;
       const value = await computePayrollMonth(cid, zone, month);
-      await db.ref(`payrollSnapshots/${cid}/${month}`).transaction(old => old || { ...value, savedAt: Date.now() }); done++;
+      const t = await db.ref(`payrollSnapshots/${cid}/${month}`).transaction(old => (old ? undefined : { ...value, savedAt: Date.now() })); if (t.committed) await noteChanges(cid, [['payroll', month]]); done++;
     } catch (error) { console.error('payroll_freeze_failed', { code: error.code || 'internal' }); }
   }
 }

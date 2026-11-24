@@ -21,8 +21,45 @@ async function closedMonth(a,b,fetchPart){
   if(cached&&version!==null&&cached.version===version)return cached.data;
   const data=await fetchPart();if(version!==null)monthCache.put(key,{version,data});return data;
 }
-// Records, leaves and excuses for any range: managerRecords, at most 31 days per call (reports split longer ranges).
+// v6.0 (owner, 24 Nov 2026): the company's records live on THIS device (encrypted IndexedDB, signed by the server).
+// Firebase keeps 45 days. Each open pulls only what is new; reports and payroll read the device copy, also offline.
+const localData=(()=>{
+  let store=null,ready=null,lastSync=0,persisted=null,lastOpenBefore=null,lastError=null;
+  const call=(name,data)=>Basma.timeout(Basma.call(name,data),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,name);
+  const get=()=>{if(store)return store;if(!window.BasmaLocal||!window.indexedDB||!window.crypto?.subtle)return null;try{store=BasmaLocal.create({call,companyId:()=>typeof COMPANY_ID==='undefined'?null:COMPANY_ID});}catch{store=null;}return store;};
+  async function open(force=false){
+    const s=get();if(!s)return null;
+    if(!force&&ready&&Date.now()-lastSync<120000)return ready;
+    ready=(async()=>{
+      if(persisted===null)persisted=await s.persist();
+      try{
+        if(lastOpenBefore===null){try{await s.unlockOffline(COMPANY_ID);lastOpenBefore=(await s.meta()).lastOpenAt||0;}catch{lastOpenBefore=0;}}
+        await s.sync();lastSync=Date.now();lastError=null;
+      }catch(error){lastError=error;if(!(await s.unlockOffline(COMPANY_ID)))throw error;} // offline: read the device copy
+      return s;
+    })();
+    try{return await ready;}catch(error){ready=null;throw error;}
+  }
+  async function warnings(){
+    const s=await open().catch(()=>null),out=[];if(!s)return ['هذا المتصفح لا يدعم الحفظ المحلي؛ تُعرض آخر 45 يومًا فقط من الخادم.'];
+    const m=await s.meta(),day=86400000,now=Date.now();
+    if(lastOpenBefore&&now-lastOpenBefore>30*day)out.push(`لم تفتح البرنامج منذ ${Math.floor((now-lastOpenBefore)/day)} يومًا. الخادم يحذف كل سجل أقدم من 45 يومًا، فربما ضاع بعضها.`);
+    if(!m.lastBackupAt||now-m.lastBackupAt>30*day)out.push(m.lastBackupAt?`آخر نسخة احتياطية قبل ${Math.floor((now-m.lastBackupAt)/day)} يومًا. صدّر نسخة جديدة.`:'لم تُصدِّر أي نسخة احتياطية بعد. إن ضاع هذا الهاتف ضاعت السجلات القديمة.');
+    if(persisted===false)out.push('المتصفح لم يضمن حفظ البيانات دائمًا؛ صدّر نسخة احتياطية بانتظام.');
+    if(!s.verifiable&&!s.info?.offline)out.push('هذا المتصفح لا يتحقق من تواقيع السجلات؛ حدّث المتصفح.');
+    if(lastError)out.push('تعذّرت المزامنة الآن؛ تُعرض البيانات المحفوظة على الجهاز.');
+    return out;
+  }
+  return {get,open,warnings,get persisted(){return persisted;}};
+})();
+async function deviceRange(from,to){
+  const s=await localData.open().catch(()=>null);if(!s)return null;
+  const [records,leaves,excuses]=await Promise.all(['records','leaves','excuses'].map(col=>s.range(col,from,to)));
+  return {records,leaves,excuses};
+}
+// Records, leaves and excuses for any range: the device copy (v6.0); without it, managerRecords (last 45 days only).
 async function managerRange(from,to){
+  const device=await deviceRange(from,to);if(device)return device;
   const merged={records:{},leaves:{},excuses:{}};let start=Date.parse(`${from}T00:00:00Z`);const end=Date.parse(`${to}T00:00:00Z`);
   if(!Number.isFinite(start)||!Number.isFinite(end)||start>end)throw Error('نطاق التاريخ غير صالح');
   while(start<=end){
@@ -148,6 +185,18 @@ generateReport=async function(){
     document.getElementById('report-output').style.display='block';
   }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();}
 };
+// v6.0: payroll from the device copy (same rules file). A closed month uses the server's signed snapshot pulled earlier.
+async function devicePayroll(month,from,to){
+  const s=await localData.open().catch(()=>null);if(!s)return null;
+  const saved=(await s.range('payroll',`${month}-01`,`${month}-01`))[month];
+  if(saved)return {...saved,frozen:true};
+  const base=await managerData.base(),zone=COMPANY_INFO.timeZone||'UTC',today=secureManagerView.today();
+  const days=await secureManagerView.dataset(from,to);
+  const all=(await Basma.timeout(Basma.call('managerList',{kind:'payrollAll'}),Number(window.BASMA_LIST_TIMEOUT_MS)||20000,'managerList')).items||{};
+  const result=BasmaReports.payrollV2(days,base.employees,all,{month,settings:base.settings||{},warehouses:base.warehouses||{},timeZone:zone});
+  const closed=month<today.slice(0,7);
+  return {month,rows:result.rows,missing:result.missing.map(id=>base.employees[id]?.name||id),frozen:false,closed,graceUntil:closed?`${today.slice(0,7)}-05`:null,device:true};
+}
 calculatePayroll=async function(){
   const ticket=++payrollTicket;
   payrollData={};document.getElementById('payroll-output').style.display='none';
@@ -161,7 +210,7 @@ calculatePayroll=async function(){
   // saved after its 5-day grace and never recalculated. Earlier months keep the old calculation below, unchanged.
   if(from>=BasmaReports.RULES_FROM){
     try{
-      const result=await Basma.timeout(Basma.call('managerList',{kind:'payrollMonth',month}),Number(window.BASMA_LIST_TIMEOUT_MS)||30000,'managerList');
+      const result=await devicePayroll(month,from,to)||await Basma.timeout(Basma.call('managerList',{kind:'payrollMonth',month}),Number(window.BASMA_LIST_TIMEOUT_MS)||30000,'managerList');
       if(ticket!==payrollTicket)return;
       const wh=document.getElementById('pr-wh').value,eid=document.getElementById('pr-emp').value;
       const rows=(result.rows||[]).filter(r=>(eid==='all'||r.employeeId===eid)&&(wh==='all'||ALL_EMPLOYEES[r.employeeId]?.warehouseId===wh));
@@ -258,6 +307,8 @@ loadAllData=async function(){
   showLoading('جاري تحميل البيانات...');
   try{managerData.invalidate();await loadDashboard();populateWHSelects();loadBadges();loadAdminNotifBadge();}
   finally{hideLoading();}
+  // v6.0: after the dashboard, pull what is new into this device (one call) and warn once if something needs attention.
+  localData.warnings().then(list=>{if(list.length)showToast('⚠️ '+list[0],'info');}).catch(()=>{});
 };
 const requestTickets={leaves:0,excuses:0};
 async function loadManagerRequests(collection){
@@ -353,6 +404,43 @@ if(typeof clearEmpSchedule==='function'){const originalClear=clearEmpSchedule;cl
   if(eid&&ALL_EMPLOYEES[eid]&&!ALL_EMPLOYEES[eid].schedule){ALL_EMPLOYEES[eid].geoZone=null;delete ALL_EMPLOYEES[eid].workDays;empLocDraft=null;setNote('sched-overlap-note','');refreshOverlapWarnings();const mode=document.getElementById('sched-loc-mode');if(mode)mode.value='branch';renderDays('sched-days',null);showEmpLoc();}
   return result;};}
 
+async function renderLocalCard(){
+  const status=document.getElementById('local-data-status');if(!status)return;
+  const s=await localData.open().catch(error=>{status.textContent='تعذّر فتح البيانات المحلية: '+(window.BasmaErrors?.message(error)??error.message);return null;});
+  const warn=await localData.warnings();setNote('local-data-warn',warn.join(' • '));
+  if(!s)return;const st=await s.stats(),when=t=>t?new Date(t).toLocaleString('ar',{timeZone:COMPANY_INFO.timeZone||'UTC'}):'—',info=s.info||{};
+  status.replaceChildren(...[
+    `السجلات على هذا الجهاز: حضور ${st.counts.records} • إجازات ${st.counts.leaves} • أعذار ${st.counts.excuses} • رواتب أشهر مغلقة ${st.counts.payroll}`,
+    `آخر مزامنة: ${when(st.lastPullAt)} • آخر نسخة احتياطية: ${when(st.lastBackupAt)}`,
+    `الحفظ الدائم في المتصفح: ${localData.persisted?'مضمون':'غير مضمون'}`,
+    `الخادم يحتفظ بآخر ${info.keepDays||45} يومًا فقط${info.purgeStart?` (يبدأ الحذف ${info.purgeStart})`:''}. الأقدم يبقى على هذا الجهاز وفي النسخ الاحتياطية فقط.`
+  ].map(line=>secureManagerView.text('div',line)));
+}
+window.localSyncNow=async function(){
+  showLoading('جاري المزامنة...');
+  try{await localData.open(true);showToast('تمت المزامنة','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();await renderLocalCard();}
+};
+window.localExport=async function(){
+  const s=await localData.open().catch(()=>null);if(!s){showToast('البيانات المحلية غير متاحة','error');return;}
+  if(!await BasmaDialogs.confirm('تصدير نسخة احتياطية','ستُحفظ كل سجلات الشركة الموجودة على هذا الجهاز في ملف مشفّر بكلمة سر تختارها. ⚠️ إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا، ولا يستطيع أحد استرجاعها، وتضيع النسخة نهائيًا. احفظ كلمة السر في مكان آمن.','متابعة','btn-gold'))return;
+  const answer=await BasmaDialogs.form('كلمة سر النسخة',[{id:'p1',label:'كلمة السر (8 أحرف على الأقل)',type:'password'},{id:'p2',label:'أعد كتابة كلمة السر',type:'password'}]);
+  if(!answer)return;if(answer.p1!==answer.p2){showToast('كلمتا السر غير متطابقتين','error');return;}
+  showLoading('جاري تجهيز النسخة...');
+  try{
+    const file=await s.exportBackup(answer.p1),blob=new Blob([JSON.stringify(file)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=`basma-backup-${secureManagerView.today()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    showToast(`تم تصدير ${file.count} سجلًا في ملف مشفّر`,'success');
+  }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();await renderLocalCard();}
+};
+window.localImport=function(){const input=document.getElementById('local-import-file');if(input){input.value='';input.click();}};
+document.getElementById('local-import-file')?.addEventListener('change',async event=>{
+  const file=event.target.files?.[0];if(!file)return;const s=await localData.open().catch(()=>null);if(!s){showToast('البيانات المحلية غير متاحة','error');return;}
+  let parsed;try{parsed=JSON.parse(await file.text());}catch{showToast('الملف ليس نسخة احتياطية صالحة','error');return;}
+  const answer=await BasmaDialogs.form('كلمة سر النسخة',[{id:'p',label:'كلمة السر التي اخترتها عند التصدير',type:'password'}]);if(!answer)return;
+  showLoading('جاري الاستيراد...');
+  try{const r=await s.importBackup(parsed,answer.p);showToast(`تم استيراد ${r.imported} سجلًا${r.rejected.length?`؛ رُفض ${r.rejected.length} غير موقَّع أو معدَّل`:''}`,r.rejected.length?'info':'success');}
+  catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();await renderLocalCard();}
+});
 // Direct database mutations in the original manager UI must also evict cached metadata.
 for(const name of ['saveEmpSchedule','clearEmpSchedule','addWarehouse','editWH','saveWhSchedule','clearWhSchedule','whGzSave','saveTimeWindows','addHoliday','deleteHoliday','saveGeoZone','approveEmp','rejectEmp']){
   const original=window[name];if(typeof original!=='function')continue;
@@ -647,6 +735,6 @@ loadAdminNotifPage=async function(){
   list.replaceChildren();if(!(value.order||[]).length){managerListState(list,'empty',{text:'🔕 لا توجد إشعارات'});return;}draw(value);
 };
 // The inline page map holds the original functions; point it at the server-backed loaders.
-if(typeof pageLoaders!=='undefined'){pageLoaders.emps=()=>loadEmployees();pageLoaders.warehouses=()=>loadWarehouses();pageLoaders.messages=()=>loadMessages();pageLoaders.settings=async()=>{refreshOverlapWarnings();updateRepDates();await loadSettings();const v=id=>document.getElementById(id)?.value;setNote('tw-overlap-note',overlapsPair({from:v('ci-from'),to:v('ci-to')},{from:v('co-from')})?overlapText({checkIn:{from:v('ci-from'),to:v('ci-to')},checkOut:{from:v('co-from')}}):'');};pageLoaders['admin-notifs']=()=>loadAdminNotifPage();}
+if(typeof pageLoaders!=='undefined'){pageLoaders.emps=()=>loadEmployees();pageLoaders.warehouses=()=>loadWarehouses();pageLoaders.messages=()=>loadMessages();pageLoaders.settings=async()=>{refreshOverlapWarnings();renderLocalCard();updateRepDates();await loadSettings();const v=id=>document.getElementById(id)?.value;setNote('tw-overlap-note',overlapsPair({from:v('ci-from'),to:v('ci-to')},{from:v('co-from')})?overlapText({checkIn:{from:v('ci-from'),to:v('ci-to')},checkOut:{from:v('co-from')}}):'');};pageLoaders['admin-notifs']=()=>loadAdminNotifPage();}
 // Leaflet is served from this site (/manager/assets/leaflet/); marker images come from the same folder.
 if(window.L?.Icon?.Default)window.L.Icon.Default.imagePath='/manager/assets/leaflet/images/';
