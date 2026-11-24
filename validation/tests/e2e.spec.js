@@ -232,6 +232,20 @@ test.describe('full flow on local emulators', () => {
       await show(manager, 'showPage', 'attend'); await expect(manager.locator('#att-tbody')).toContainText('e2e الفرع الرئيسي'); // today's record keeps the old branch
       await gm.verify(manager, 'manager transfer');
     }, { timeout: 90000 });
+    await test.step('manager: company records on this device; encrypted backup export (v6.0)', async () => {
+      await show(manager, 'showPage', 'settings');
+      await expect(manager.locator('#local-data-status')).toContainText('السجلات على هذا الجهاز', { timeout: 20000 });
+      await expect(manager.locator('#local-data-status')).not.toContainText('حضور 0 ');
+      await manager.click('[data-basma-click="localExport()"]');
+      await expect(manager.getByText('إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا')).toBeVisible();
+      await manager.getByRole('button', { name: 'متابعة' }).click();
+      const pw = manager.locator('input[type="password"]'); await pw.nth(0).fill('e2e-backup-pass'); await pw.nth(1).fill('e2e-backup-pass');
+      const [download] = await Promise.all([manager.waitForEvent('download', { timeout: 30000 }), manager.getByRole('button', { name: 'موافق' }).click()]);
+      const file = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+      expect(file.format).toBe('basma-backup-v1'); expect(file.count).toBeGreaterThan(0); expect(JSON.stringify(file)).not.toContain('e2e موظف');
+      await expect(manager.locator('#local-data-status')).not.toContainText('آخر نسخة احتياطية: —', { timeout: 15000 });
+      await gm.verify(manager, 'manager device backup');
+    }, { timeout: 90000 });
     await test.step('manager: add, rename and delete a branch', async () => {
       await show(manager, 'showPage', 'warehouses'); await expect(manager.locator('#warehouses-list .wh-card-admin').first()).toBeVisible();
       await manager.fill('#new-wh-name', 'e2e فرع مؤقت'); await manager.click('[data-basma-click="addWarehouse()"]');
@@ -402,7 +416,10 @@ test.describe('account switch and open-app updates (local emulators)', () => {
 // Calls and response bytes per page open and while idle, on 10,000-employee data (333 companies x 30). The server's own
 // database reads are not visible to the browser; response bytes are the measured stand-in.
 const BUDGET_COST = {
-  employeeOpen: { calls: 4, kb: 8 }, employeeIdle30min: { calls: 15 }, managerOpen: { calls: 2, kb: 120 }, managerIdle30min: { calls: 15 },
+  // v6.0 (owner decision 24 Nov 2026): the manager's phone keeps the records and pulls new ones on every open. The FIRST
+  // open on a phone pulls the whole 45-day mailbox once (here ~2,250 signed records: was 2 calls / 120 KB); every later
+  // open is checked separately and must stay at 1 call / 60 KB. Reports and closed months then read the phone copy.
+  employeeOpen: { calls: 4, kb: 8 }, employeeIdle30min: { calls: 15 }, managerOpen: { calls: 4, kb: 1000 }, managerLaterOpenSync: { calls: 1, kb: 60 }, managerIdle30min: { calls: 15 },
   dayView: { calls: 1, kb: 60 }, monthPayroll: { calls: 2, kb: 900 }, closedMonthFirst: { calls: 3, kb: 1200 }, closedMonthRepeat: { calls: 2, kb: 12 }
 };
 function costCheck(label, calls, budget) {
@@ -432,6 +449,8 @@ test.describe('cost budgets (local emulators, 10,000 employees)', () => {
       costCheck('manager open', g.calls, BUDGET_COST.managerOpen);
       g.resetCalls(); await page.clock.runFor(30 * 60000); await settleCalls(page);
       costCheck('manager idle 30 min', g.calls, BUDGET_COST.managerIdle30min);
+      g.resetCalls(); await page.evaluate(() => localData.open(true)); await settleCalls(page);
+      costCheck('manager later open: device sync', g.calls, BUDGET_COST.managerLaterOpenSync);
     }, { timeout: 60000 });
     await test.step('manager: day view, this month\'s payroll, a closed month twice (second time from the phone cache)', async () => {
       g.resetCalls(); await show(page, 'showPage', 'attend'); await expect(page.locator('#att-tbody')).toContainText('e2e حجم 3', { timeout: 15000 }); await settleCalls(page);

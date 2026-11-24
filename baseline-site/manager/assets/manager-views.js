@@ -325,30 +325,32 @@ if(typeof pageLoaders!=='undefined'){pageLoaders.leaves=()=>loadLeaves();pageLoa
 saveTimeWindows=async function(){
   const v=id=>document.getElementById(id).value,checkIn={from:v('ci-from'),to:v('ci-to')},checkOut={from:v('co-from'),to:v('co-to')};
   if(crossesMidnight(checkIn,checkOut)){showToast(MIDNIGHT_MSG,'error');return;}
-  try{await Basma.call('managerSettings',{action:'timeWindows',checkIn,checkOut,startTime:v('start-time')||null});showToast('تم حفظ نوافذ الوقت','success');}
+  if(checkOut.from<checkIn.to){showToast(OVERLAP_MSG,'error');setNote('tw-overlap-note',OVERLAP_MSG);return;}
+  try{await Basma.call('managerSettings',{action:'timeWindows',checkIn,checkOut,startTime:v('start-time')||null});setNote('tw-overlap-note','');showToast('تم حفظ نوافذ الوقت','success');}
   catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
 if(typeof loadEmpSchedule==='function'){const originalLoad=loadEmpSchedule;loadEmpSchedule=function(...args){const result=originalLoad.apply(this,args);const emp=ALL_EMPLOYEES[document.getElementById('sched-emp-sel')?.value]||{};
   const start=document.getElementById('sched-start');if(start)start.value=emp.schedule?.startTime||'';renderDays('sched-days',emp.workDays);
   empLocDraft=emp.geoZone?.lat!=null?{lat:emp.geoZone.lat,lng:emp.geoZone.lng,radius:emp.geoZone.radius}:null;
-  const mode=document.getElementById('sched-loc-mode');if(mode)mode.value=empLocDraft?'other':'branch';showEmpLoc();return result;};}
+  const mode=document.getElementById('sched-loc-mode');if(mode)mode.value=empLocDraft?'other':'branch';showEmpLoc();setNote('sched-overlap-note',overlaps(emp.schedule)?overlapText(emp.schedule):'');return result;};}
 saveEmpSchedule=async function(){
   const eid=document.getElementById('sched-emp-sel').value;if(!eid)return;const v=id=>document.getElementById(id).value;
   const schedule={checkIn:{from:v('sched-ci-from'),to:v('sched-ci-to')},checkOut:{from:v('sched-co-from'),to:v('sched-co-to')},startTime:v('sched-start')||null,workDays:readDays('sched-days')};
   if(!schedule.checkIn.from||!schedule.checkIn.to||!schedule.checkOut.from||!schedule.checkOut.to){showToast('أدخل جميع الأوقات','error');return;}
   if(crossesMidnight(schedule.checkIn,schedule.checkOut)){showToast(MIDNIGHT_MSG,'error');return;}
+  if(schedule.checkOut.from<schedule.checkIn.to){showToast(OVERLAP_MSG,'error');setNote('sched-overlap-note',OVERLAP_MSG);return;}
   const other=document.getElementById('sched-loc-mode')?.value==='other';
   if(other&&!empLocDraft){showToast('اختر نقطة موقع العمل على الخريطة أولًا','error');return;}
   schedule.location=other?empLocDraft:'branch';
   try{await Basma.call('managerSettings',{action:'employeeSchedule',employeeId:eid,schedule});
-    ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],schedule:{checkIn:schedule.checkIn,checkOut:schedule.checkOut,...(schedule.startTime?{startTime:schedule.startTime}:{})},workDays:schedule.workDays,geoZone:other?{...empLocDraft,enabled:true}:null};showToast('تم حفظ جدول الموظف ✅','success');}
+    ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],schedule:{checkIn:schedule.checkIn,checkOut:schedule.checkOut,...(schedule.startTime?{startTime:schedule.startTime}:{})},workDays:schedule.workDays,geoZone:other?{...empLocDraft,enabled:true}:null};setNote('sched-overlap-note','');refreshOverlapWarnings();showToast('تم حفظ جدول الموظف ✅','success');}
   catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}
 };
 
 if(typeof clearEmpSchedule==='function'){const originalClear=clearEmpSchedule;clearEmpSchedule=async function(...args){
   const eid=document.getElementById('sched-emp-sel')?.value,result=await originalClear.apply(this,args);
   // The server returns him to his branch location as well (v5.18).
-  if(eid&&ALL_EMPLOYEES[eid]&&!ALL_EMPLOYEES[eid].schedule){ALL_EMPLOYEES[eid].geoZone=null;delete ALL_EMPLOYEES[eid].workDays;empLocDraft=null;const mode=document.getElementById('sched-loc-mode');if(mode)mode.value='branch';renderDays('sched-days',null);showEmpLoc();}
+  if(eid&&ALL_EMPLOYEES[eid]&&!ALL_EMPLOYEES[eid].schedule){ALL_EMPLOYEES[eid].geoZone=null;delete ALL_EMPLOYEES[eid].workDays;empLocDraft=null;setNote('sched-overlap-note','');refreshOverlapWarnings();const mode=document.getElementById('sched-loc-mode');if(mode)mode.value='branch';renderDays('sched-days',null);showEmpLoc();}
   return result;};}
 
 // Direct database mutations in the original manager UI must also evict cached metadata.
@@ -436,7 +438,9 @@ loadWarehouses=async function(){
     const badges=document.createElement('div');badges.style.cssText='margin-top:4px;display:flex;flex-direction:column;gap:2px';
     const gz=wh.geoZone?.lat?secureManagerView.text('span',`📍 موقع محدد (${wh.geoZone.radius||300}م)`):secureManagerView.text('span','📍 لا يوجد موقع');gz.style.cssText=`font-size:11px;color:var(${wh.geoZone?.lat?'--green':'--text2'})`;
     const sc=wh.schedule?secureManagerView.text('span',`⏰ ${wh.schedule.checkIn?.from||'--'} – ${wh.schedule.checkOut?.to||'--'}`):secureManagerView.text('span','⏰ لا يوجد دوام خاص');sc.style.cssText=`font-size:11px;color:var(${wh.schedule?'--gold':'--text2'})`;
-    badges.append(gz,sc);info.append(name,meta,badges);
+    badges.append(gz,sc);
+    if(overlaps(wh.schedule)){const warn=secureManagerView.text('span','⚠️ أوقات متداخلة — صحّح دوام الفرع');warn.style.cssText='font-size:11px;color:var(--red);font-weight:700';badges.append(warn);}
+    info.append(name,meta,badges);
     const actions=document.createElement('div');actions.className='wh-actions';
     for(const [label,cls,fn]of [['⏰','btn-gold',()=>showWhScheduleModal(id)],['📍','btn-green',()=>whSetGeoZone(id)],['✏️','btn-gray',()=>editWH(id)],['🗑','btn-red',()=>deleteWH(id)]]){const button=secureManagerView.text('button',label);button.className=`modal-btn ${cls}`;button.addEventListener('click',fn);actions.appendChild(button);}
     card.append(info,actions);return card;
@@ -474,9 +478,20 @@ const dayInputs={};
 const readDays=id=>{const list=(dayInputs[id]||[]).filter(x=>x.checked).map(x=>Number(x.value));return list.length?list:null;};
 const crossesMidnight=(...windows)=>windows.some(w=>w.from&&w.to&&w.from>=w.to);
 const MIDNIGHT_MSG='كل نافذة يجب أن تبدأ وتنتهي في اليوم نفسه (مثل 08:00 إلى 09:00)';
+// v5.19 (owner, 24 Nov 2026): the check-out window starts at or after the check-in window ends (same day).
+// New saves are refused (here and on the server). Existing overlaps are NOT changed: the manager sees a warning.
+const OVERLAP_MSG='أوقات متداخلة: وقت الانصراف يجب أن يبدأ عند نهاية وقت الحضور أو بعده';
+const overlapsPair=(i,o)=>!!(i?.from&&i?.to&&o?.from&&i.from<=o.from&&o.from<i.to); // overnight pairs (out earlier on the clock) are not flagged
+const overlaps=s=>overlapsPair(s?.checkIn,s?.checkOut);
+const overlapText=s=>`⚠️ أوقات متداخلة: الحضور ${s.checkIn.from}–${s.checkIn.to} والانصراف يبدأ ${s.checkOut.from}. يعمل الجدول كما هو، لكن صحّحه ليبدأ الانصراف عند ${s.checkIn.to} أو بعده.`;
+function setNote(id,text){const el=document.getElementById(id);if(!el)return;el.textContent=text||'';el.style.display=text?'block':'none';}
+function refreshOverlapWarnings(){
+  const names=Object.values(typeof ALL_EMPLOYEES==='object'?ALL_EMPLOYEES:{}).filter(e=>e?.status!=='rejected'&&overlaps(e.schedule)).map(e=>e.name||'');
+  setNote('sched-overlap-warn',names.length?`⚠️ أوقات متداخلة في الجدول الخاص لـ: ${names.join('، ')}. اختر كل موظف وصحّح أوقاته.`:'');
+}
 showWhScheduleModal=function(id){
   whSchedCurrentId=id;const sc=ALL_WAREHOUSES[id]?.schedule||{};
-  document.getElementById('wh-start').value=sc.startTime||'';renderDays('wh-days',ALL_WAREHOUSES[id]?.workDays);
+  document.getElementById('wh-start').value=sc.startTime||'';renderDays('wh-days',ALL_WAREHOUSES[id]?.workDays);setNote('wh-overlap-note',overlaps(sc)?overlapText(sc):'');
   document.getElementById('wh-sched-modal-title').textContent='⏰ دوام: '+(ALL_WAREHOUSES[id]?.name||'');
   for(const [field,value]of [['wh-ci-from',sc.checkIn?.from],['wh-ci-to',sc.checkIn?.to],['wh-co-from',sc.checkOut?.from],['wh-co-to',sc.checkOut?.to]])document.getElementById(field).value=value||'';
   document.getElementById('wh-sched-modal').style.display='flex';
@@ -485,6 +500,7 @@ saveWhSchedule=async function(){
   const v=id=>document.getElementById(id).value,schedule={checkIn:{from:v('wh-ci-from'),to:v('wh-ci-to')},checkOut:{from:v('wh-co-from'),to:v('wh-co-to')}};
   if(!schedule.checkIn.from||!schedule.checkIn.to||!schedule.checkOut.from||!schedule.checkOut.to){showToast('أدخل جميع الأوقات','error');return;}
   if(crossesMidnight(schedule.checkIn,schedule.checkOut)){showToast(MIDNIGHT_MSG,'error');return;}
+  if(schedule.checkOut.from<schedule.checkIn.to){showToast(OVERLAP_MSG,'error');setNote('wh-overlap-note',OVERLAP_MSG);return;}
   Object.assign(schedule,{startTime:v('wh-start')||null,workDays:readDays('wh-days')});
   if(await branchChange({action:'schedule',id:whSchedCurrentId,schedule},'تم حفظ أوقات الدوام')){
     const w=ALL_WAREHOUSES[whSchedCurrentId];if(w){w.schedule={checkIn:schedule.checkIn,checkOut:schedule.checkOut,...(schedule.startTime?{startTime:schedule.startTime}:{})};w.workDays=schedule.workDays;}document.getElementById('wh-sched-modal').style.display='none';}
@@ -631,6 +647,6 @@ loadAdminNotifPage=async function(){
   list.replaceChildren();if(!(value.order||[]).length){managerListState(list,'empty',{text:'🔕 لا توجد إشعارات'});return;}draw(value);
 };
 // The inline page map holds the original functions; point it at the server-backed loaders.
-if(typeof pageLoaders!=='undefined'){pageLoaders.emps=()=>loadEmployees();pageLoaders.warehouses=()=>loadWarehouses();pageLoaders.messages=()=>loadMessages();pageLoaders.settings=()=>{loadSettings();updateRepDates();};pageLoaders['admin-notifs']=()=>loadAdminNotifPage();}
+if(typeof pageLoaders!=='undefined'){pageLoaders.emps=()=>loadEmployees();pageLoaders.warehouses=()=>loadWarehouses();pageLoaders.messages=()=>loadMessages();pageLoaders.settings=async()=>{refreshOverlapWarnings();updateRepDates();await loadSettings();const v=id=>document.getElementById(id)?.value;setNote('tw-overlap-note',overlapsPair({from:v('ci-from'),to:v('ci-to')},{from:v('co-from')})?overlapText({checkIn:{from:v('ci-from'),to:v('ci-to')},checkOut:{from:v('co-from')}}):'');};pageLoaders['admin-notifs']=()=>loadAdminNotifPage();}
 // Leaflet is served from this site (/manager/assets/leaflet/); marker images come from the same folder.
 if(window.L?.Icon?.Default)window.L.Icon.Default.imagePath='/manager/assets/leaflet/images/';

@@ -1,5 +1,5 @@
 'use strict';
-const { randomUUID, createHash } = require('node:crypto');
+const { randomUUID, createHash, randomBytes, generateKeyPairSync, createPrivateKey, sign: edSign } = require('node:crypto');
 const { initializeApp } = require('firebase-admin/app');
 const { getDatabase } = require('firebase-admin/database');
 const { getAuth } = require('firebase-admin/auth');
@@ -146,11 +146,29 @@ async function payrollMonth(cid, info, month) {
   if (`${month}-01` < rules.RULES_FROM) throw new p.PolicyError('failed-precondition', 'رواتب هذا الشهر بالقواعد السابقة', { reason: 'v1-month' });
   const zone = info.timeZone, today = companyToday(zone);
   if (month > today.slice(0, 7)) p.fail('لا يمكن احتساب شهر مستقبلي', 'invalid-argument');
+  const [py, pm] = month.split('-').map(Number);
+  if (purgeActive(zone) && new Date(Date.UTC(py, pm, 0)).toISOString().slice(0, 10) < purgeCutoff(zone)) throw new p.PolicyError('failed-precondition', 'رواتب هذا الشهر محفوظة على جهاز المدير فقط', { reason: 'device-only' });
   const frozen = month < today.slice(0, 7) && !inLeaveGrace(`${month}-01`, zone);
   if (frozen) { const saved = await read(`payrollSnapshots/${cid}/${month}`); if (saved) return { ...saved, frozen: true }; }
   const value = await computePayrollMonth(cid, zone, month);
   if (frozen) { await db.ref(`payrollSnapshots/${cid}/${month}`).transaction(old => old || { ...value, savedAt: Date.now() }); return { ...(await read(`payrollSnapshots/${cid}/${month}`)), frozen: true }; }
   return { ...value, frozen: false, closed: month < today.slice(0, 7), graceUntil: month < today.slice(0, 7) ? `${today.slice(0, 7)}-05` : null };
+}
+// One signed page of a collection, oldest first, from a date (cursor = last date + key). Own company only.
+async function syncPage(cid, data) {
+  const fields = { records: 'dateKey', leaves: 'date', excuses: 'date' };
+  if (data.collection === 'payroll') return { items: signItems(cid, 'payroll', (await read(`payrollSnapshots/${cid}`)) || {}, await signingKey()), next: null };
+  const field = fields[data.collection];
+  if (!field) p.fail('طلب غير صالح', 'invalid-argument');
+  const from = data.from == null ? '' : isoDay(data.from);
+  let query = db.ref(`companies/${cid}/${data.collection}`).orderByChild(field);
+  if (data.after) query = query.startAfter(String(data.after.date || ''), p.key(data.after.key)); else query = query.startAt(from);
+  const raw = (await query.limitToFirst(SYNC_PAGE + 1).get()).val() || {};
+  const entries = Object.entries(raw).sort(([ka, a], [kb, b]) => String(a?.[field] || '').localeCompare(String(b?.[field] || '')) || ka.localeCompare(kb));
+  const page = entries.slice(0, SYNC_PAGE), more = entries.length > SYNC_PAGE, last = page.at(-1);
+  const clean = data.collection === 'records' ? r => Object.fromEntries(RECORD_FIELDS.filter(k => r?.[k] !== undefined).map(k => [k, r[k]])) : r => r;
+  const items = signItems(cid, data.collection, Object.fromEntries(page.map(([id, v]) => [id, clean(v)])), await signingKey());
+  return { items, next: more && last ? { date: last[1]?.[field] || '', key: last[0] } : null };
 }
 exports.managerList = endpoint(['manager'], async ({ member, info, data }) => {
   const cid = member.companyId;
@@ -158,6 +176,28 @@ exports.managerList = endpoint(['manager'], async ({ member, info, data }) => {
   // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
   if (data.kind === 'status') return { value: (await read(`companies/${cid}/info/status`)) ?? null };
   if (data.kind === 'payrollMonth') return payrollMonth(cid, info, data.month);
+  if (data.kind === 'syncKeys') {
+    const [signing, store] = await Promise.all([signingKey(), storeKey(cid)]);
+    return { companyId: cid, publicKey: signing.publicKey, storeKey: store.key, keepDays: KEEP_DAYS, purgeStart: PURGE_START, cutoff: purgeCutoff(info.timeZone), today: companyToday(info.timeZone) };
+  }
+  if (data.kind === 'sync') return syncPage(cid, { ...data, from: data.from === 'mailbox' ? daysBefore(companyToday(info.timeZone), KEEP_DAYS + 2) : data.from });
+  // One call per open (cost guard): keys + the first page of every collection + the acknowledgement of the last pull.
+  if (data.kind === 'syncAll') {
+    const from = data.from || {}, mailbox = daysBefore(companyToday(info.timeZone), KEEP_DAYS + 2), pick = v => (v === 'mailbox' ? mailbox : v ?? null);
+    if (data.ack?.syncedTo) {
+      const state = { lastPullAt: Date.now(), syncedTo: isoDay(data.ack.syncedTo) };
+      if (Number.isFinite(data.ack.lastBackupAt) && data.ack.lastBackupAt <= Date.now()) state.lastBackupAt = data.ack.lastBackupAt;
+      await db.ref(`companies/${cid}/syncState`).update(state);
+    }
+    const [signing, store, records, leaves, excuses, payroll] = await Promise.all([signingKey(), storeKey(cid), ...['records', 'leaves', 'excuses'].map(c => syncPage(cid, { collection: c, from: pick(from[c]) })), syncPage(cid, { collection: 'payroll' })]);
+    return { keys: { companyId: cid, publicKey: signing.publicKey, storeKey: store.key, keepDays: KEEP_DAYS, purgeStart: PURGE_START, cutoff: purgeCutoff(info.timeZone), today: companyToday(info.timeZone) }, pages: { records, leaves, excuses, payroll } };
+  }
+  if (data.kind === 'syncAck') {
+    const now = Date.now(), state = { lastPullAt: now, syncedTo: isoDay(data.syncedTo) };
+    if (Number.isFinite(data.lastBackupAt) && data.lastBackupAt <= now) state.lastBackupAt = data.lastBackupAt;
+    await db.ref(`companies/${cid}/syncState`).update(state);
+    return { ok: true };
+  }
   if (data.kind === 'employeeLog') {
     const eid = p.key(data.employeeId);
     const items = (await db.ref(`employeeLog/${cid}/${eid}`).orderByKey().limitToLast(50).get()).val() || {};
@@ -703,6 +743,27 @@ function dayPair(checkIn, checkOut) {
   return { checkIn: i, checkOut: o };
 }
 const MIN_WORK_MS = 10 * 60000; // a check-out needs at least 10 minutes after the check-in
+// ---- v6.0 (owner, 24 Nov 2026): records live on the manager's device; Firebase keeps a 45-day mailbox. ----
+const KEEP_DAYS = 45, PURGE_START = '2026-12-10', SYNC_PAGE = 2000;
+const daysBefore = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) - n * 86400000).toISOString().slice(0, 10);
+const purgeCutoff = zone => daysBefore(companyToday(zone), KEEP_DAYS); // records dated BEFORE this are removed
+const purgeActive = zone => companyToday(zone) >= PURGE_START;
+// Deterministic JSON (sorted keys) so the page can verify exactly what the server signed.
+const stable = v => (v === null || typeof v !== 'object' ? JSON.stringify(v) : Array.isArray(v) ? `[${v.map(stable).join(',')}]` : `{${Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => `${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`);
+// Server-only keys (root rules deny every client path that is not listed). Created once, on first use.
+async function serverKey(path, make) {
+  const ref = db.ref(path);
+  await ref.transaction(old => old || make());
+  return read(path);
+}
+const signingKey = () => serverKey('serverKeys/signing', () => { const { publicKey, privateKey } = generateKeyPairSync('ed25519'); return { publicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('base64'), privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }), createdAt: Date.now() }; });
+const storeKey = cid => serverKey(`serverKeys/store/${cid}`, () => ({ key: randomBytes(32).toString('base64'), createdAt: Date.now() }));
+const signedMessage = (cid, collection, id, value) => `${cid}\n${collection}\n${id}\n${stable(value)}`;
+function signItems(cid, collection, items, key) {
+  const pk = createPrivateKey(key.privateKey), out = {};
+  for (const [id, value] of Object.entries(items)) out[id] = { d: value, s: edSign(null, Buffer.from(signedMessage(cid, collection, id, value)), pk).toString('base64') };
+  return out;
+}
 // Per company and month: changes whenever records/leaves/excuses of that month change. The manager page caches CLOSED
 // months on the phone and re-downloads a month only when this number differs (v5.16 cost).
 const bumpMonth = (cid, date) => (typeof date === 'string' && /^\d{4}-\d{2}/.test(date) ? db.ref(`recordsVersions/${cid}/${date.slice(0, 7)}`).set(Date.now()) : null);
@@ -1044,7 +1105,43 @@ exports.cleanupSecurityState = onSchedule({ schedule: 'every 24 hours', region, 
     if (ids.length < 100) break;
   } while (cursor);
   await freezeClosedPayrolls();
+  try { await purgeOldRecords(); } catch (error) { console.error('purge_failed', { code: error.code || 'internal' }); }
 });
+// Owner decision (24 Nov 2026, s1 = A + hard cap): every record older than 45 days is removed from Firebase, even if
+// the manager has not pulled it. Only accounts, settings, branches and subscription stay. Chunked; continues next day.
+async function purgeOldRecords({ budget = 50000 } = {}) {
+  const directory = (await read('companyDirectory')) || {};
+  let left = budget;
+  for (const [cid, info] of Object.entries(directory)) {
+    const zone = info?.timeZone || 'UTC';
+    if (!purgeActive(zone) || left <= 0) continue;
+    const cutoff = purgeCutoff(zone), base = `companies/${cid}`;
+    const older = async (path, field) => {
+      const q = field ? db.ref(path).orderByChild(field).endBefore(cutoff) : db.ref(path).orderByKey().endBefore(cutoff);
+      return (await q.limitToFirst(Math.min(2000, left)).get()).val() || {};
+    };
+    const flush = async updates => { const n = Object.keys(updates).length; if (n) { await db.ref().update(updates); left -= n; } return n; };
+    for (let n = 1; n && left > 0;) { // attendance: records + their ledger days + timed-leave records
+      const updates = {};
+      for (const [id, r] of Object.entries(await older(`${base}/records`, 'dateKey'))) {
+        updates[`${base}/records/${id}`] = null;
+        if (r?.empId && r?.dateKey && r.dateKey < cutoff) { updates[`attendanceLedger/${cid}/${r.empId}/${r.dateKey}`] = null; updates[`${base}/partialLeaveRecords/${r.empId}/${r.dateKey}`] = null; }
+      }
+      n = await flush(updates);
+    }
+    for (const collection of ['leaves', 'excuses']) for (let n = 1; n && left > 0;) {
+      const updates = {};
+      for (const [id, r] of Object.entries(await older(`${base}/${collection}`, 'date'))) {
+        updates[`${base}/${collection}/${id}`] = null;
+        if (collection === 'leaves' && r?.empId && r?.date) updates[`fullDayLeaveIndex/${cid}/${r.empId}/${r.date}`] = null;
+      }
+      n = await flush(updates);
+    }
+    { const updates = {}; for (const date of Object.keys(await older(`${base}/adjustments`))) updates[`${base}/adjustments/${date}`] = null; await flush(updates); }
+    { const updates = {}; for (const month of Object.keys((await read(`payrollSnapshots/${cid}`)) || {})) { const [y, m] = month.split('-').map(Number); if (new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10) < cutoff) updates[`payrollSnapshots/${cid}/${month}`] = null; } await flush(updates); }
+  }
+  return budget - left;
+}
 async function freezeClosedPayrolls() {
   const directory = (await read('companyDirectory')) || {};
   let done = 0;

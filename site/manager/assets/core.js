@@ -114,6 +114,9 @@ window.Basma = (() => {
   // Firebase's own sign-in record is removed by signOut(); page memory is cleared by the reload.
   function clearLocalState(keep = []) {
     try { indexedDB.deleteDatabase('basma-month-cache'); } catch {} // the manager's closed-month cache
+    // v6.0: the company's records on this phone are KEPT (the only copy after 45 days); only the decryption key is removed,
+    // so nobody can read them until the manager signs in again. Never delete basma-local-v1 here.
+    try { if (indexedDB.databases) indexedDB.databases().then(list => { if (!list.some(x => x.name === 'basma-local-v1')) return; const r = indexedDB.open('basma-local-v1'); r.onsuccess = () => { const db = r.result; try { if (db.objectStoreNames.contains('keys')) db.transaction('keys', 'readwrite').objectStore('keys').clear(); } catch {} db.close(); }; }).catch(() => {}); } catch {}
     for (const storage of [localStorage, sessionStorage]) {
       try { for (const key of Object.keys(storage)) if (/^basma_/.test(key) && !keep.includes(key)) storage.removeItem(key); } catch {}
     }

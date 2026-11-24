@@ -56,6 +56,8 @@
 
 
 
+
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>لوحة تحكم المدير — النسخة المخصصة</title>
 <link rel="manifest" href="./manifest.json">
@@ -568,6 +570,18 @@ tr:hover td{background:#1a1f30}
 
     <!-- SETTINGS (مخصص — يضيف جدول مواعيد الموظف + الجيو-زون) -->
     <div class="page" id="page-settings">
+      <!-- v6.0: the company's records live on this device; Firebase keeps 45 days only -->
+      <div class="section-card" id="local-data-card" style="border:1px solid var(--gold)">
+        <div class="section-title">💾 بيانات الشركة على هذا الجهاز</div>
+        <div id="local-data-status" style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:10px">جاري التحقق...</div>
+        <div id="local-data-warn" style="display:none;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:12px;margin-bottom:10px"></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="action-btn-full" data-basma-click="localSyncNow()">🔄 مزامنة الآن</button>
+          <button class="action-btn-full" data-basma-click="localExport()">⬇️ تصدير نسخة احتياطية</button>
+          <button class="modal-btn btn-gold" data-basma-click="localImport()">⬆️ استيراد نسخة احتياطية</button>
+          <input type="file" id="local-import-file" accept=".json,application/json" style="display:none">
+        </div>
+      </div>
       <div class="section-card" style="border:1px solid var(--gold);background:linear-gradient(135deg,#1a1600,var(--card))">
         <div class="section-title">👤 الحساب</div>
         <div style="margin-top:4px">
@@ -1950,6 +1964,7 @@ function copyLink(elementId){
 <div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>الموظف</th><th>الفرع</th><th>الحالة</th><th>الحضور الفعلي</th><th>الانصراف الفعلي</th><th>الساعات الفعلية</th><th>التأخير</th></tr></thead><tbody id="daily-details-body"></tbody></table></div>
 </div></div>
 <script src="/manager/assets/report-model.js"></script>
+<script src="/manager/assets/local-store.js"></script>
 <script src="/manager/assets/manager.js"></script>
 <script src="/manager/assets/manager-data.js"></script>
 <script src="/manager/assets/manager-views.js"></script>

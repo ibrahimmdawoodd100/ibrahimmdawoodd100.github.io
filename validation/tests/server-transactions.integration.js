@@ -320,6 +320,70 @@ const scenarios = {
     assert.equal((await rec('2026-12-14T21:50:00Z', 'out', 'out1')).ok, true, 'exactly 10 minutes later the same proof works');
     assert.ok((await get(`attendanceLedger/${cid}/e1/2026-12-14`)).events.out);
   },
+  'local storage (owner, 24 Nov 2026): signed incremental sync of own company only, then every record older than 45 days is removed (not before 2026-12-10), settings/accounts kept': async (file, tag) => {
+    const { createPublicKey, verify } = require('node:crypto');
+    const cid = `cSync${tag}`, other = `cSyncO${tag}`, mgr = `syncM_${tag}`, mgrO = `syncMO_${tag}`;
+    await seedCompany(cid); await seedCompany(other);
+    for (const [uid, c] of [[mgr, cid], [mgrO, other]]) await seed.ref(`access/${uid}`).set({ role: 'manager', companyId: c, enabled: true, version: 1 });
+    for (const c of [cid, other]) await seed.ref(`companies/${c}/info/expiresAt`).set(Date.parse('2027-12-01T00:00:00Z'));
+    await seed.ref(`companies/${cid}/employees/e1`).set({ status: 'approved', name: 'E1', warehouseId: 'w1', warehouseName: 'Branch' });
+    const records = {};
+    for (let i = 0; i < 2003; i++) records[`r${String(i).padStart(4, '0')}`] = { empId: 'e1', type: 'in', dateKey: i < 3 ? '2026-10-0' + (i + 1) : '2027-01-20', timestamp: '2027-01-20T08:00:00.000Z', warehouseId: 'w1', warehouseName: 'Branch', secretField: 'never-synced' };
+    await seed.ref(`companies/${cid}/records`).set(records);
+    await seed.ref(`companies/${cid}/leaves`).set({ lOld: { empId: 'e1', date: '2026-10-05', status: 'approved', leaveType: 'paid' }, lNew: { empId: 'e1', date: '2027-01-25', status: 'pending', leaveType: 'paid' } });
+    await seed.ref(`companies/${cid}/excuses`).set({ xOld: { empId: 'e1', date: '2026-10-02', status: 'approved', type: 'late' } });
+    await seed.ref(`attendanceLedger/${cid}/e1`).set({ '2026-10-01': { events: { in: { type: 'in' } } }, '2027-01-20': { events: { in: { type: 'in' } } } });
+    await seed.ref(`companies/${cid}/partialLeaveRecords/e1/2026-10-01`).set({ returnAt: 'x' });
+    await seed.ref(`fullDayLeaveIndex/${cid}/e1`).set({ '2026-10-05': true, '2027-01-25': true });
+    await seed.ref(`payrollSnapshots/${cid}`).set({ '2026-10': { month: '2026-10', rows: [] }, '2026-12': { month: '2026-12', rows: [] } });
+    await seed.ref('companyDirectory').update({ [cid]: { timeZone: 'UTC', status: 'active' }, [other]: { timeZone: 'UTC', status: 'active' } });
+    const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await loadServer(file, { now: Date.parse(iso) }).invoke(name, uid, data)));
+    // 1) Keys: stable per company, different per company; the private signing key is never returned.
+    const k1 = await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'syncKeys' }), k2 = await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'syncKeys' });
+    const kO = await call('2026-12-01T08:00:00Z', 'managerList', mgrO, { kind: 'syncKeys' });
+    assert.equal(k1.storeKey, k2.storeKey); assert.notEqual(k1.storeKey, kO.storeKey); assert.equal(k1.publicKey, kO.publicKey);
+    assert.equal(k1.companyId, cid); assert.equal(JSON.stringify(k1).includes('PRIVATE'), false);
+    const pub = createPublicKey({ key: Buffer.from(k1.publicKey, 'base64'), format: 'der', type: 'spki' });
+    const stable = v => (v === null || typeof v !== 'object' ? JSON.stringify(v) : Array.isArray(v) ? `[${v.map(stable).join(',')}]` : `{${Object.keys(v).sort().map(k => `${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`);
+    const ok = (c, col, id, it) => verify(null, Buffer.from(`${c}\n${col}\n${id}\n${stable(it.d)}`), pub, Buffer.from(it.s, 'base64'));
+    // 2) Signed pages, oldest first, with a cursor; only listed record fields; own company only.
+    const all = {}; let next = null, pages = 0;
+    do { const pg = await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'sync', collection: 'records', from: null, after: next }); Object.assign(all, pg.items); next = pg.next; pages++; } while (next);
+    assert.equal(pages, 2); assert.equal(Object.keys(all).length, 2003);
+    for (const [id, it] of Object.entries(all)) assert.ok(ok(cid, 'records', id, it), `signature ${id}`);
+    assert.equal(all.r0000.d.secretField, undefined, 'only record fields are synced');
+    assert.equal(ok(cid, 'records', 'r0000', { ...all.r0000, d: { ...all.r0000.d, type: 'out' } }), false, 'a tampered record fails the check');
+    assert.equal(ok(other, 'records', 'r0000', all.r0000), false, 'a record cannot be moved to another company');
+    assert.deepEqual(Object.keys((await call('2026-12-01T08:00:00Z', 'managerList', mgrO, { kind: 'sync', collection: 'records', from: null })).items), [], 'other company sees nothing');
+    const inc = await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'sync', collection: 'records', from: '2027-01-01' });
+    assert.equal(Object.keys(inc.items).length, 2000, 'incremental from a date'); assert.equal(inc.next, null, 'exactly one full page left');
+    const pay = await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'sync', collection: 'payroll' });
+    assert.deepEqual(Object.keys(pay.items).sort(), ['2026-10', '2026-12']); assert.ok(ok(cid, 'payroll', '2026-10', pay.items['2026-10']));
+    await assert.rejects(call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'sync', collection: 'privatePayroll' }), e => e.code === 'invalid-argument');
+    // One call per open: keys + first page of every collection + ack of the previous pull.
+    const one = await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'syncAll', from: { records: null, leaves: 'mailbox', excuses: 'mailbox' }, ack: { syncedTo: '2026-11-30' } });
+    assert.equal(one.keys.storeKey, k1.storeKey); assert.equal(Object.keys(one.pages.records.items).length, 2000); assert.ok(one.pages.records.next);
+    assert.deepEqual(Object.keys(one.pages.leaves.items), ['lNew'], 'mailbox = the last 47 days'); assert.deepEqual(Object.keys(one.pages.payroll.items).sort(), ['2026-10', '2026-12']);
+    assert.equal((await get(`companies/${cid}/syncState`)).syncedTo, '2026-11-30');
+    await call('2026-12-01T08:00:00Z', 'managerList', mgr, { kind: 'syncAck', syncedTo: '2027-01-20', lastBackupAt: Date.parse('2026-12-01T07:00:00Z') });
+    assert.equal((await get(`companies/${cid}/syncState`)).lastBackupAt, Date.parse('2026-12-01T07:00:00Z'));
+    // 3) Before 2026-12-10 nothing is removed.
+    await loadServer(file, { now: Date.parse('2026-12-09T03:00:00Z') }).exports.cleanupSecurityState();
+    assert.equal(Object.keys(await get(`companies/${cid}/records`)).length, 2003);
+    // 4) From 2026-12-10: everything dated before (today - 45 days) is removed; recent data and the company setup stay.
+    await loadServer(file, { now: Date.parse('2027-01-30T03:00:00Z') }).exports.cleanupSecurityState(); // cutoff 2026-12-16
+    const left = await get(`companies/${cid}/records`);
+    assert.equal(Object.keys(left).length, 2000); assert.equal(left.r0000, undefined);
+    assert.deepEqual(Object.keys(await get(`companies/${cid}/leaves`)), ['lNew']); assert.equal(await get(`companies/${cid}/excuses`), null);
+    assert.deepEqual(Object.keys(await get(`attendanceLedger/${cid}/e1`)), ['2027-01-20']);
+    assert.equal(await get(`companies/${cid}/partialLeaveRecords/e1/2026-10-01`), null);
+    assert.deepEqual(await get(`fullDayLeaveIndex/${cid}/e1`), { '2027-01-25': true });
+    assert.deepEqual(Object.keys(await get(`payrollSnapshots/${cid}`)), ['2026-12'], 'old payroll snapshots are removed too (owner s2 = B)');
+    for (const kept of ['info', 'settings', 'warehouses', 'employees']) assert.ok(await get(`companies/${cid}/${kept}`), `${kept} kept`);
+    assert.ok(await get(`access/${mgr}`), 'accounts kept');
+    // 5) A month whose records are gone is never recalculated on the server.
+    await assert.rejects(call('2027-02-20T08:00:00Z', 'managerList', mgr, { kind: 'payrollMonth', month: '2026-12' }), e => e.details?.reason === 'device-only');
+  },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;
     await seedCompany(cid);
