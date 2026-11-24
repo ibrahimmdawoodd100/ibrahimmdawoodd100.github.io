@@ -2,8 +2,16 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com 'sha256-XYkjsFu8PxVLwbktMDx3U1Ahco6nUC1iHSDEyZnyn+0=' 'sha256-eH65mNLmi1QJMveJhF4q9ie4ax0SGbNT8mgJei2omu0=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://www.google.com/recaptcha/; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com 'sha256-1BeDzXd1VmaDH01eINp4y79aREiAV1c5yJX7mIhXW9g=' 'sha256-EfJgAvpHkJ0HxfEz2yIw+LbvafR+Lvg83t0gFHQW7LA=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://www.google.com/recaptcha/; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
+
+
+
+
 
 
 
@@ -429,6 +437,11 @@ tr:hover td{background:#1a1f30}
 
     <!-- DASHBOARD -->
     <div class="page active" id="page-dash">
+      <!-- v6.1: monthly backup reminder (last export older than 30 days, or none yet) -->
+      <div id="backup-banner" style="display:none;margin:12px 16px 0;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:12px;padding:12px;font-size:13px;font-weight:700;align-items:center;justify-content:space-between;gap:10px">
+        <span id="backup-banner-text">💾 صدّر نسخة احتياطية</span>
+        <button class="modal-btn btn-gold" data-basma-click="localExport()" style="flex-shrink:0">صدّر الآن</button>
+      </div>
       <div class="stats-grid">
         <div class="stat-card"><div class="sc-icon">👥</div><div class="sc-num" id="ds-total">-</div><div class="sc-label">إجمالي الموظفين</div></div>
         <div class="stat-card"><div class="sc-icon">✅</div><div class="sc-num" id="ds-present">-</div><div class="sc-label">حاضرون اليوم</div></div>
@@ -765,7 +778,7 @@ let cachedAdminPin = null;
 let pinChecking = false;
 let inactivityTimer = null;
 let reportData = [];
-let adminSoundEnabled = localStorage.getItem('admin_sound') !== 'false';
+let adminSoundEnabled = basmaPref('admin_sound') !== 'false';
 let adminNotifCount = 0;
 let adminNotifBadgeListener = null;
 let adminPopupTimer = null;
@@ -906,7 +919,7 @@ function playNotifSound() {
 
 function toggleAdminSound() {
   adminSoundEnabled = !adminSoundEnabled;
-  localStorage.setItem('admin_sound', adminSoundEnabled ? 'true' : 'false');
+  basmaPrefSet('admin_sound', adminSoundEnabled ? 'true' : 'false');
   const btn = document.getElementById('sound-toggle-btn');
   if (btn) btn.textContent = adminSoundEnabled ? '🔊' : '🔇';
   showToast(adminSoundEnabled ? 'تم تشغيل صوت الإشعارات' : 'تم إيقاف صوت الإشعارات', 'success');

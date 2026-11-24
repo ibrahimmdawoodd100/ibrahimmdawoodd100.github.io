@@ -84,8 +84,10 @@ async function measure(source,role){
  context.window=context;context.BASMA_CONFIG={firebase:{databaseURL:'https://fixture.firebaseio.com'},appCheckSiteKey:'fixture-public',region:'us-central1'};
  const ctx=vm.createContext(context),run=(text,file)=>vm.runInContext(text,ctx,{filename:file});
  const file=path.join(source,'public',role,'index.html'),html=fs.readFileSync(file,'utf8');
+ // Same order as the real page: core.js is loaded in <head>, before the inline scripts.
+ run(fs.readFileSync(path.join(source,'public/assets/core.js'),'utf8'),path.join(source,'public/assets/core.js'));
  for(const match of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi))if(!/\bsrc=/.test(match[1]))run(match[2],file);
- for(const name of ['report-model','core',role,...(role==='employee'?['attendance-clock','employee-views']:[...(fs.existsSync(path.join(source,'public/assets/manager-data.js'))?['manager-data']:[]),'manager-views'])])run(fs.readFileSync(path.join(source,'public/assets',name+'.js'),'utf8'),name+'.js');
+ for(const name of ['report-model',role,...(role==='employee'?['attendance-clock','employee-views']:[...(fs.existsSync(path.join(source,'public/assets/manager-data.js'))?['manager-data']:[]),'manager-views'])])run(fs.readFileSync(path.join(source,'public/assets',name+'.js'),'utf8'),name+'.js');
  // Keep business/loading paths real; stub only interactions whose DOM templates require a browser parser.
  for(const name of ['showScreen','showTab','showLoading','hideLoading','showToast','populateWHSelects'])ctx[name]=(...args)=>{if(name==='showToast'&&args[1]==='error')errors.push(args[0]);};
  ctx.Basma.controls=()=>{};

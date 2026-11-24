@@ -431,9 +431,18 @@ document.addEventListener?.('visibilitychange',()=>{
   if(hiddenAt&&Date.now()-hiddenAt>=5*60000&&typeof COMPANY_ID!=='undefined'&&COMPANY_ID)autoSync('resume');
   hiddenAt=null;
 });
+// v6.1: the dashboard banner "صدّر نسخة احتياطية" while the last export is older than 30 days (or there is none yet).
+async function renderBackupBanner(){
+  const banner=document.getElementById('backup-banner');if(!banner)return;
+  const s=localData.get();let last=null;try{last=s?.companyId?(await s.meta()).lastBackupAt:null;}catch{}
+  const days=last?Math.floor((Date.now()-last)/86400000):null,show=!!s&&(!last||days>=30);
+  const text=document.getElementById('backup-banner-text');if(text)text.textContent=last?`💾 صدّر نسخة احتياطية (آخر نسخة قبل ${days} يومًا)`:'💾 صدّر نسخة احتياطية (لا توجد نسخة بعد)';
+  banner.style.display=show?'flex':'none';
+}
 // Shown on EVERY manager open (owner 3a); in the 30 days before deletion starts it is a dialog that must be answered.
 async function openNotices(){
   await autoSync('open');
+  await renderBackupBanner();
   const s=localData.get(),start=s?.info?.purgeStart||'2027-01-10',today=secureManagerView.today();
   const daysLeft=Math.round((Date.parse(`${start}T00:00:00Z`)-Date.parse(`${today}T00:00:00Z`))/86400000);
   const others=(await localData.warnings()).filter(w=>w!==SYNC_FAILED);
@@ -451,7 +460,7 @@ window.localExport=async function(){
   try{
     const file=await s.exportBackup(answer.p1),blob=new Blob([JSON.stringify(file)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=`basma-backup-${secureManagerView.today()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-    showToast(`تم تصدير ${file.count} سجلًا في ملف مشفّر`,'success');
+    showToast(`تم تصدير ${file.count} سجلًا في ملف مشفّر`,'success');renderBackupBanner();
   }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();await renderLocalCard();}
 };
 window.localImport=function(){const input=document.getElementById('local-import-file');if(input){input.value='';input.click();}};

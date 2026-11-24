@@ -1,4 +1,12 @@
 'use strict';
+// v6.1 (owner, 25 Nov 2026): every value Basma keeps in this browser has a name starting with "basma" (shared site).
+// Small page preferences live under "basma.<name>" (kept across logout). Old unprefixed values move over once.
+function basmaPref(name) {
+  try { const key = `basma.${name}`, value = localStorage.getItem(key); if (value !== null) return value;
+    const old = localStorage.getItem(name); if (old !== null) { localStorage.setItem(key, old); localStorage.removeItem(name); } return old; } catch { return null; }
+}
+function basmaPrefSet(name, value) { try { localStorage.setItem(`basma.${name}`, value); localStorage.removeItem(name); } catch {} }
+function basmaPrefDel(name) { try { localStorage.removeItem(`basma.${name}`); localStorage.removeItem(name); } catch {} }
 window.Basma = (() => {
   let app, profile, ready, selectedRole, persistenceMode;
   function init(role) {

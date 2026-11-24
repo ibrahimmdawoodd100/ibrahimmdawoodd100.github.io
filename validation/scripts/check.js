@@ -52,4 +52,19 @@ JSON.parse(fs.readFileSync(path.join(root, 'database.rules.json')));
   for (const page of ['manager', 'employee']) if (fs.readFileSync(path.join(root, 'public', page, 'sw.js'), 'utf8') !== build(page)) throw new Error(`Stale service worker: public/${page}/sw.js (run node scripts/refresh-sw.js)`);
   if (fs.existsSync(path.join(root, 'public', 'sw.js'))) throw new Error('A root service worker would control every app on the shared site');
 }
+
+// v6.1 (owner, 25 Nov 2026): this site is shared with other apps, so every browser storage name Basma uses must start
+// with "basma" (localStorage/sessionStorage keys, IndexedDB names, Cache Storage names). Literal names are checked here.
+{
+  const files = ['public/seller.html', 'public/manager/index.html', 'public/employee/index.html', 'public/manager/sw.js', 'public/employee/sw.js', ...fs.readdirSync(path.join(root, 'public/assets')).filter(f => f.endsWith('.js')).map(f => 'public/assets/' + f)];
+  const bad = [];
+  for (const file of files) {
+    const text = fs.readFileSync(path.join(root, file), 'utf8');
+    for (const m of text.matchAll(/(?:localStorage|sessionStorage)\.(?:setItem|getItem|removeItem)\(\s*(['"`])([^'"`$]+)\1|indexedDB\.(?:open|deleteDatabase)\(\s*(['"`])([^'"`$]+)\3|caches\.(?:open|delete)\(\s*(['"`])([^'"`$]+)\5|const CACHE = (['"`])([^'"`]+)\7/g)) {
+      const name = m[2] || m[4] || m[6] || m[8];
+      if (!/^basma/.test(name)) bad.push(`${file}: "${name}"`);
+    }
+  }
+  if (bad.length) throw new Error(`Browser storage names must start with "basma" (shared site): ${bad.join(', ')}`);
+}
 console.log(`Syntax, CSP hashes, and legacy-path checks passed (${scripts} scripts).`);

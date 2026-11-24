@@ -161,13 +161,17 @@ async function employeeLogin({ g, page }, account, ready = '#act-bio-btn') {
 }
 // v6.1: a manager's FIRST sign-in shows the one-time written consent; later sign-ins do not. After the dashboard, the
 // retention notice is a toast, or (30 days before deletion starts) a dialog that the test answers with «إلغاء».
+// Our CSP forbids eval, so Playwright's waitForFunction cannot run on our pages: poll with page.evaluate instead.
+async function basmaNotice(page) {
+  for (let i = 0; i < 60; i++) { const v = await page.evaluate(() => window.__basmaNotice || null); if (v) return v; await page.waitForTimeout(500); }
+  throw new Error('the retention notice (toast or dialog) was not shown within 30 s');
+}
 async function managerSignedIn(page, { expectConsent = null } = {}) {
   const consent = page.getByRole('button', { name: 'أوافق', exact: true }), dash = page.locator('#dash-tbody').filter({ hasText: 'e2e' });
   const first = await Promise.race([consent.waitFor({ timeout: 25000 }).then(() => 'consent'), dash.waitFor({ timeout: 25000 }).then(() => 'dash')]);
   if (expectConsent !== null) expect(first === 'consent', expectConsent ? 'the one-time consent is shown on the first sign-in' : 'no consent screen after it was accepted').toBe(expectConsent);
   if (first === 'consent') { await expect(page.getByText('مسؤولية الشركة')).toBeVisible(); await consent.click(); await dash.waitFor({ timeout: 25000 }); }
-  await page.waitForFunction(() => window.__basmaNotice, null, { timeout: 30000 });
-  if (await page.evaluate(() => window.__basmaNotice) === 'dialog') await page.getByRole('button', { name: 'إلغاء' }).click();
+  if (await basmaNotice(page) === 'dialog') await page.getByRole('button', { name: 'إلغاء' }).click();
   return first;
 }
 async function managerSession(browser) {
@@ -212,6 +216,7 @@ test.describe('full flow on local emulators', () => {
       const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST || '127.0.0.1:9000';
       let consents = null; for (const ns of ['demo-basma-default-rtdb', 'demo-basma']) { const v = await (await fetch(`http://${host}/companies/e2e-co/consents.json?ns=${ns}`, { headers: { Authorization: 'Bearer owner' } })).json(); if (v) consents = v; }
       const c = Object.values(consents || {})[0]; expect(c?.uid).toBeTruthy(); expect(Number.isFinite(c?.at)).toBe(true); expect(c?.version).toBe(1);
+      await expect(manager.locator('#backup-banner')).toBeVisible({ timeout: 20000 }); await expect(manager.locator('#backup-banner')).toContainText('صدّر نسخة احتياطية'); // v6.1: no export yet
       await shot(manager, 'manager-dashboard'); await gm.verify(manager, 'manager dashboard');
     }, { timeout: 60000 });
     await test.step('manager: employees, branches, attendance, leaves, excuses, payroll lists are filled', async () => {
@@ -268,6 +273,7 @@ test.describe('full flow on local emulators', () => {
       expect(file.format).toBe('basma-backup-v1'); expect(file.count).toBeGreaterThan(0); expect(JSON.stringify(file)).not.toContain('e2e موظف');
       await expect(manager.locator('#local-data-status')).not.toContainText('آخر نسخة احتياطية: —', { timeout: 15000 });
       await expect(manager.locator('#local-data-warn')).not.toContainText('لم تُصدِّر أي نسخة احتياطية بعد'); // gone after the first export
+      await expect(manager.locator('#backup-banner')).toBeHidden(); // the monthly reminder hides after an export
       await gm.verify(manager, 'manager device backup');
     }, { timeout: 90000 });
     await test.step('manager: add, rename and delete a branch', async () => {
@@ -305,7 +311,7 @@ test.describe('full flow on local emulators', () => {
       const g2 = await guarded(browser, { storageState: state }), again = await g2.context.newPage();
       const t = Date.now(); await again.goto(BASE + '/manager/', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await expect(again.locator('#dash-tbody')).toContainText('e2e موظف السجلات', { timeout: 20000 }); timing('manager: reopen with saved session (warm)', Date.now() - t, BUDGET.warm);
-      await again.waitForFunction(() => window.__basmaNotice, null, { timeout: 30000 }); if (await again.evaluate(() => window.__basmaNotice) === 'dialog') await again.getByRole('button', { name: 'إلغاء' }).click(); // v6.1 retention notice on every open
+      if (await basmaNotice(again) === 'dialog') await again.getByRole('button', { name: 'إلغاء' }).click(); // v6.1 retention notice on every open
       await expect(again.locator('#dl-username')).toBeHidden(); await shot(again, 'manager-reopened'); await g2.verify(again, 'manager reopen'); await g2.context.close();
     }, { timeout: 60000 });
 

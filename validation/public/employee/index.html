@@ -2,8 +2,14 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com 'sha256-XYkjsFu8PxVLwbktMDx3U1Ahco6nUC1iHSDEyZnyn+0=' 'sha256-eH65mNLmi1QJMveJhF4q9ie4ax0SGbNT8mgJei2omu0=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://www.google.com/recaptcha/; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com 'sha256-1BeDzXd1VmaDH01eINp4y79aREiAV1c5yJX7mIhXW9g=' 'sha256-EfJgAvpHkJ0HxfEz2yIw+LbvafR+Lvg83t0gFHQW7LA=' 'sha256-dfS6ebUu6sWuNX394n7GqEgb+akzX5zeBOi5oRa+TmE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://nominatim.openstreetmap.org https://www.google.com/recaptcha/; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+
+
+
+
+
+
 
 
 
@@ -685,8 +691,8 @@ let GEO_ZONE_OK = null;
 function serverNow() { return new Date(Date.now() + SERVER_TIME_OFFSET); }
 
 function getDeviceFingerprint() {
-  let id = localStorage.getItem('ap_device_id');
-  if (!id) { id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('ap_device_id', id); }
+  let id = basmaPref('ap_device_id');
+  if (!id) { id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36); basmaPrefSet('ap_device_id', id); }
   return id;
 }
 
@@ -746,7 +752,7 @@ function selectWH(card, id, wh) {
 
 function enterWarehouse() {
   if (!SELECTED_WH) return;
-  const savedEmp = localStorage.getItem('ap_emp');
+  const savedEmp = basmaPref('ap_emp');
   if (savedEmp) { try { if (JSON.parse(savedEmp).id) { showScreen('s-login'); return; } } catch(_) {} }
   showPinModal();
 }
@@ -779,7 +785,7 @@ async function checkPin() {
     closePinModal();
     showScreen('s-reg');
     document.getElementById('reg-wh-name').textContent = SELECTED_WH.name;
-    localStorage.setItem('ap_wh', JSON.stringify({ id: SELECTED_WH.id, name: SELECTED_WH.name }));
+    basmaPrefSet('ap_wh', JSON.stringify({ id: SELECTED_WH.id, name: SELECTED_WH.name }));
   } else if (pinVal.length >= 4) {
     document.getElementById('pin-error').textContent = 'رمز خاطئ — حاول مجدداً';
     pinVal = ''; updatePinDisplay();
@@ -808,7 +814,7 @@ function listenPending() {
   pendingListener = DB.ref(`companies/${COMPANY_ID}/employees/${EMP.id}/status`).on('value', snap => {
     const s = snap.val();
     if (s === 'approved') { EMP.status = 'approved'; showToast('تمت الموافقة على حسابك!', 'success'); setupMainScreen(); }
-    else if (s === 'rejected') { showToast('تم رفض طلب تسجيلك', 'error'); localStorage.removeItem('ap_emp'); loadWarehouses(); }
+    else if (s === 'rejected') { showToast('تم رفض طلب تسجيلك', 'error'); basmaPrefDel('ap_emp'); loadWarehouses(); }
   });
 }
 
