@@ -211,6 +211,7 @@ test.describe('full flow on local emulators', () => {
       await gm.open(manager, '/manager/', '#dl-username', 'manager login'); await manager.fill('#dl-username', accounts.manager); await manager.fill('#dl-password', password);
       const t = Date.now(); await manager.click('#dl-submit-btn');
       await managerSignedIn(manager, { expectConsent: true }); // v6.1: one-time written consent on the first sign-in
+      gm.expectRefusal('/managerHome', 400); // the server refused company data BEFORE the consent (asserted); any OTHER problem still fails
       await expect(manager.locator('#dash-tbody')).toContainText('e2e موظف السجلات', { timeout: 20000 }); timing('manager: login → consent → dashboard (cold)', Date.now() - t, BUDGET.cold);
       // The consent is stored on the server (who + when): read from the LOCAL emulator only.
       const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST || '127.0.0.1:9000';
@@ -264,7 +265,7 @@ test.describe('full flow on local emulators', () => {
       await expect(manager.locator('#local-data-warn')).toContainText('لم تُصدِّر أي نسخة احتياطية بعد'); // red until the first export
       await expect(manager.locator('#local-data-status')).not.toContainText('آخر مزامنة: —');
       await expect(manager.locator('#local-data-status')).not.toContainText('حضور 0 ');
-      await manager.click('[data-basma-click="localExport()"]');
+      await manager.click('#local-data-card [data-basma-click="localExport()"]'); // the settings button (the dashboard banner has one too)
       await expect(manager.getByText('إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا')).toBeVisible();
       await manager.getByRole('button', { name: 'متابعة' }).click();
       const pw = manager.locator('input[type="password"]:visible'); await expect(pw).toHaveCount(2); await pw.nth(0).fill('e2e-backup-pass'); await pw.nth(1).fill('e2e-backup-pass'); // the dialog's two fields, not the hidden login field
