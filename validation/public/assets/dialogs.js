@@ -7,7 +7,7 @@ window.BasmaDialogs = (() => {
   const toast = (message, type) => { try { if (typeof window.showToast === 'function') window.showToast(message, type); else if (typeof showToast === 'function') showToast(message, type); } catch {} };
   function modal(title) {
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:#000a;z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px';
+    overlay.style.cssText = 'position:fixed;inset:0;background:#000a;z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px';
     const box = document.createElement('div');
     box.style.cssText = 'background:var(--surface,#1a1a1a);color:var(--text,inherit);border:1px solid var(--border,#333);border-radius:14px;padding:18px;width:100%;max-width:380px;max-height:90vh;overflow:auto;direction:rtl;display:grid;gap:10px';
     const heading = document.createElement('h3'); heading.textContent = title; heading.style.margin = '0'; box.appendChild(heading);
