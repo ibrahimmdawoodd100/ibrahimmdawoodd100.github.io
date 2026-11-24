@@ -56,6 +56,14 @@ jobs:
             validation/rules-emulator-result.txt
             validation/*debug.log
           if-no-files-found: ignore
+      # The Pages bundle is uploaded HERE, minutes before the deploy job, so GitHub already lists it when deploy-pages
+      # looks for it. Uploading it seconds before deploy-pages failed 3 times: "Found 2 artifact(s)" (24 Nov 2026).
+      # It is only published by the deploy job, which still needs BOTH gates (verify + e2e) and the manual approval.
+      - name: Upload the Pages bundle (published only after both gates and approval)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+          retention-days: 7
   # Browser E2E (Playwright + Chromium) on LOCAL Firebase emulators: real pages from site/, real server code, real
   # rules, App Check enforced with a local test token. No production accounts, data or secrets. Blocks the deploy.
   e2e:
@@ -139,9 +147,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node validation/scripts/prepare-pages.js --preflight .
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
