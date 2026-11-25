@@ -383,7 +383,7 @@ const scenarios = {
     // 5) A month whose records are gone is never recalculated on the server.
     await assert.rejects(call('2027-02-20T08:00:00Z', 'managerList', mgr, { kind: 'payrollMonth', month: '2026-12' }), e => e.details?.reason === 'device-only');
   },
-  'v6.1 (owner, 25 Nov 2026): one-time written consent before company data, incremental sync of ONLY new/changed items, closed-month pay statement saved before deletion, change list purged': async (file, tag) => {
+  'v6.1/v6.2 (owner, 25 Nov 2026): no consent gate, incremental sync of ONLY new/changed items, closed-month pay statement saved before deletion, change list purged': async (file, tag) => {
     const cid = `cInc${tag}`, mgr = `incM_${tag}`, emp = `incE_${tag}`;
     await seedCompany(cid);
     await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-12-01T00:00:00Z'));
@@ -395,19 +395,10 @@ const scenarios = {
     await seed.ref(`companies/${cid}/records/old1`).set({ empId: 'e1', type: 'in', dateKey: '2026-12-01', timestamp: '2026-12-01T08:00:00.000Z' });
     await seed.ref('companyDirectory').update({ [cid]: { timeZone: 'UTC', status: 'active' } });
     const call = async (iso, name, uid, data) => JSON.parse(JSON.stringify(await loadServer(file, iso ? { now: Date.parse(iso) } : {}).invoke(name, uid, data)));
-    // 1) Consent: nothing of the company before it; the text is shown; who/when stored once.
-    const blocked = e => e.details?.reason === 'consent-required';
-    await assert.rejects(call(null, 'managerHome', mgr, {}), blocked);
-    await assert.rejects(call(null, 'managerList', mgr, { kind: 'syncAll' }), blocked);
-    await assert.rejects(call(null, 'managerRecords', mgr, { from: '2026-12-01', to: '2026-12-01' }), blocked);
-    const status = await call(null, 'managerList', mgr, { kind: 'consentStatus' });
-    assert.equal(status.accepted, false); assert.match(status.text, /45 يومًا/); assert.match(status.text, /مسؤولية الشركة/);
-    await assert.rejects(call(null, 'managerList', mgr, { kind: 'consentAccept', version: 99 }), e => e.code === 'failed-precondition');
-    const accepted = await call(null, 'managerList', mgr, { kind: 'consentAccept', version: status.version });
-    const stored = await get(`companies/${cid}/consents/${mgr}`);
-    assert.equal(stored.uid, mgr); assert.equal(stored.at, accepted.at); assert.equal(stored.version, 1); assert.equal(stored.text, status.text);
-    assert.equal((await call(null, 'managerList', mgr, { kind: 'consentStatus' })).accepted, true);
-    assert.ok(await call(null, 'managerHome', mgr, {}), 'company data after consent');
+    // 1) v6.2 (owner): NO consent gate. A manager who never accepted anything uses the app normally; old consent records do not block.
+    await seed.ref(`companies/${cid}/consents/old`).set({ uid: 'old', at: 1, version: 1 });
+    assert.ok(await call(null, 'managerHome', mgr, {}), 'company data without any consent');
+    assert.ok(await call(null, 'managerRecords', mgr, { from: '2026-12-01', to: '2026-12-01' }));
     // 2) Full sync once; then an incremental sync sends ONLY what changed since the cursor.
     const full = await call(null, 'managerList', mgr, { kind: 'syncAll' });
     assert.equal(full.full, true); assert.deepEqual(Object.keys(full.pages.records.items), ['old1']);
@@ -437,6 +428,29 @@ const scenarios = {
     await seed.ref(`changeLog/${cid}/-AAAAAAAoldentry000000`).set({ col: 'records', id: 'x', at: 1 });
     await loadServer(file, { now: Date.parse('2027-03-01T03:00:00Z') }).exports.cleanupSecurityState();
     assert.equal(await get(`changeLog/${cid}/-AAAAAAAoldentry000000`), null);
+  },
+  'rolling retention (owner, 25 Nov 2026): from 2027-01-10 each daily run deletes exactly the day that turned 46 days old; the server keeps the last 45 days': async (file, tag) => {
+    const cid = `cRoll${tag}`;
+    await seedCompany(cid);
+    await seed.ref('companyDirectory').update({ [cid]: { timeZone: 'UTC', status: 'active' } });
+    const day = (base, n) => new Date(Date.parse(`${base}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
+    const records = {}, leaves = {}; // one record and one leave for EVERY day from 2026-12-01 to 2027-02-28
+    for (let i = 0; day('2026-12-01', i) <= '2027-02-28'; i++) { const d = day('2026-12-01', i); records[`r${d}`] = { empId: 'e1', type: 'in', dateKey: d, timestamp: `${d}T08:00:00.000Z` }; leaves[`l${d}`] = { empId: 'e1', date: d, status: 'approved', leaveType: 'paid' }; }
+    await seed.ref(`companies/${cid}/records`).set(records); await seed.ref(`companies/${cid}/leaves`).set(leaves);
+    const run = iso => loadServer(file, { now: Date.parse(iso) }).exports.cleanupSecurityState();
+    const dates = async col => Object.values((await get(`companies/${cid}/${col}`)) || {}).map(v => v.dateKey || v.date).sort();
+    // Before the start date nothing is deleted, even data far older than 45 days.
+    await run('2027-01-09T03:00:00Z'); assert.equal((await dates('records'))[0], '2026-12-01');
+    // Day after day from 2027-02-10 (after the first run's catch-up): exactly ONE day per run, always 45 days back.
+    await run('2027-02-09T03:00:00Z');
+    for (const today of ['2027-02-10', '2027-02-11', '2027-02-12']) {
+      const before = await dates('records');
+      await run(`${today}T03:00:00Z`);
+      const after = await dates('records'), gone = before.filter(d => !after.includes(d));
+      assert.deepEqual(gone, [day(today, -46)], `${today}: only the day that is now 46 days old`);
+      assert.equal(after[0], day(today, -45), `${today}: the oldest kept day is exactly 45 days old`);
+      assert.deepEqual((await dates('leaves')).filter(d => d <= today)[0], day(today, -45));
+    }
   },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;

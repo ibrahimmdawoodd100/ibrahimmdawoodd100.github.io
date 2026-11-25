@@ -5,19 +5,19 @@
 // network untouched. A new release changes VERSION, so the browser installs a fresh cache and deletes the old one.
 // v5.16: each file has its own content hash; on a new release UNCHANGED files are copied from the previous cache and
 // only changed files are downloaded (a typical release: a few KB per phone instead of the whole app).
-const VERSION = '0f1f10196c973463';
+const VERSION = 'd5d04c610066b309';
 const SCOPE = '/manager/';
 const FILES = {
-  "/manager/": "1f5e674c1cf4",
+  "/manager/": "ce634f9f1d15",
   "/manager/assets/actions.js": "192bb05e32cc",
   "/manager/assets/config.js": "01501064d14f",
-  "/manager/assets/core.js": "76da0a5171d1",
+  "/manager/assets/core.js": "726ec6cbf5cf",
   "/manager/assets/dialogs.js": "da1a518e7035",
   "/manager/assets/leaflet/leaflet.css": "a78371028241",
   "/manager/assets/leaflet/leaflet.js": "db49d009c841",
   "/manager/assets/local-store.js": "da364cc043ea",
   "/manager/assets/manager-data.js": "7a91ada56dfe",
-  "/manager/assets/manager-views.js": "317243d56de2",
+  "/manager/assets/manager-views.js": "2d5b9c68751e",
   "/manager/assets/manager.js": "16ff39557051",
   "/manager/assets/report-model.js": "347bd34a83ae",
   "/manager/assets/safe-dom.js": "a9347101b27d",

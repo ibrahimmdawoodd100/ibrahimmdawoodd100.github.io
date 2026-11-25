@@ -84,24 +84,26 @@
     }
     async function meta() { return (await backend.get('meta', need().cid)) || { cid: need().cid }; }
     async function saveMeta(patch) { const m = { ...(await meta()), ...patch }; await backend.put('meta', m); return m; }
-    // Incremental, ONE call per open (cost guard): records from the last pulled date (minus 1 day for late writes);
-    // leaves/excuses re-read for the 45-day mailbox (their status changes). The first sync pulls EVERYTHING still on the
-    // server (owner s4 = A). More calls only when a collection has more than one page (2,000 items).
+    // v6.1 (owner, 25 Nov 2026): ONE call per open. The first sync on a phone is FULL (everything still on the server).
+    // After that it is INCREMENTAL: the server sends only items changed since this phone's cursor, in pages. The cursor
+    // moves only after a successful sync, so an offline or failed sync is simply retried on the next open.
+    // Every phone keeps its own cursor (several manager phones never conflict).
     async function sync({ onProgress } = {}) {
       const cid0 = keys?.cid || companyId(), m0 = cid0 ? ((await backend.get('meta', cid0)) || {}) : {};
-      const from = m0.syncedTo ? { records: daysBefore(m0.syncedTo, 1), leaves: 'mailbox', excuses: 'mailbox' } : { records: null, leaves: null, excuses: null };
-      const res = await call('managerList', { kind: 'syncAll', from, ack: m0.syncedTo ? { syncedTo: m0.syncedTo, lastBackupAt: m0.lastBackupAt } : null });
-      const k = await unlock(res.keys), result = { stored: 0, rejected: [] };
-      for (const col of COLLECTIONS) {
-        let page = res.pages[col];
-        for (;;) {
-          const part = await store(col, page.items); result.stored += part.stored; result.rejected.push(...part.rejected.map(id => `${col}/${id}`)); onProgress?.(col, result.stored);
-          if (!page.next) break;
-          page = await call('managerList', { kind: 'sync', collection: col, from: from[col] ?? null, after: page.next });
+      const result = { stored: 0, rejected: [] };
+      const take = async (col, page) => { const part = await store(col, page.items); result.stored += part.stored; result.rejected.push(...part.rejected.map(id => `${col}/${id}`)); onProgress?.(col, result.stored); };
+      let res = await call('managerList', { kind: 'syncAll', cursor: Number.isFinite(m0.cursor?.at) ? { at: m0.cursor.at } : null, lastBackupAt: m0.lastBackupAt });
+      const k = await unlock(res.keys), full = !!res.full;
+      for (let guard = 0; guard < 50; guard++) {
+        for (const col of COLLECTIONS) {
+          let page = res.pages[col] || { items: {}, next: null };
+          for (;;) { await take(col, page); if (!page.next) break; page = await call('managerList', { kind: 'sync', collection: col, from: null, after: page.next }); }
         }
+        if (full || !res.more) break;
+        res = await call('managerList', { kind: 'syncAll', cursor: res.cursor, lastBackupAt: m0.lastBackupAt }); // next page of changes
       }
-      const saved = await saveMeta({ syncedTo: k.today, lastPullAt: now(), lastOpenAt: now() });
-      return { ...result, meta: saved };
+      const saved = await saveMeta({ cursor: { at: res.cursor.at }, syncedTo: k.today, lastPullAt: now(), lastOpenAt: now(), lastFull: full ? now() : m0.lastFull });
+      return { ...result, full, meta: saved };
     }
     async function range(col, from, to) { const out = {}; for (const row of await backend.range(need().cid, col, from, to)) out[row.id] = (await open(row)).d; return out; }
     async function stats() { const m = await meta(), counts = {}; for (const col of COLLECTIONS) counts[col] = await backend.count(need().cid, col); return { ...m, counts }; }
@@ -125,12 +127,14 @@
       let plain;
       try { plain = JSON.parse(dec.decode(await subtle.decrypt({ name: 'AES-GCM', iv: unb64(file.iv) }, await passwordKey(password, unb64(file.kdf.salt)), unb64(file.ct)))); }
       catch { throw Error('كلمة السر غير صحيحة أو الملف تالف'); }
-      let imported = 0; const rejected = [];
+      // Owner 5: import only ADDS. Items already on this phone are kept as they are (never replaced, never wiped).
+      let imported = 0, kept = 0; const rejected = [];
       for (const x of plain.items || []) {
         if (!COLLECTIONS.includes(x.col) || (await verify(x.col, x.id, x)) !== true) { rejected.push(`${x.col}/${x.id}`); continue; }
+        if (await backend.get('items', `${cid}|${x.col}|${x.id}`)) { kept++; continue; }
         await backend.put('items', await seal(x.col, x.id, x, true)); imported++;
       }
-      return { imported, rejected };
+      return { imported, kept, rejected };
     }
     // Logout: the key goes, the encrypted data stays.
     async function lock() { if (keys?.cid) await backend.del('keys', keys.cid); keys = null; }

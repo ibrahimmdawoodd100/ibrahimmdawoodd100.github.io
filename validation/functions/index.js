@@ -82,7 +82,6 @@ async function badgesOf(cid) {
   return { status: status ?? null, leaves, excuses, assigned, started, unread, devices };
 }
 exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
-  requireConsent(member);
   const cid = member.companyId, stamp = Date.now(), date = p.dateParts(new Date(stamp), info.timeZone).date;
   const sameDay = (collection, field) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).equalTo(date).limitToFirst(20000).get().then(s => s.val() || {});
   const [settings, warehouses, employees, records, leaves, excuses, badges] = await Promise.all([
@@ -104,7 +103,6 @@ function isoDay(value) {
   return value;
 }
 exports.managerRecords = endpoint(['manager'], async ({ member, data }) => {
-  requireConsent(member);
   const cid = member.companyId, MAX = 20000;
   const query = (collection, field, from, to) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).startAt(from).endAt(to).limitToFirst(MAX + 1).get().then(s => s.val() || {});
   const bounded = value => { if (Object.keys(value).length > MAX) p.fail('عدد السجلات كبير؛ اختر فترة أقصر', 'invalid-argument'); return value; };
@@ -210,17 +208,6 @@ async function ensureClosedSnapshots(cid, zone) {
   }
 }
 exports.managerList = endpoint(['manager'], async ({ uid, member, info, data }) => {
-  // Owner 3b: the consent screen is the only thing available before the one-time written consent.
-  if (data.kind === 'consentStatus') return { accepted: member.retentionConsent === RETENTION_VERSION, version: RETENTION_VERSION, text: RETENTION_TEXT, purgeStart: PURGE_START, keepDays: KEEP_DAYS };
-  if (data.kind === 'consentAccept') {
-    if (data.version !== RETENTION_VERSION) p.fail('نص الموافقة تغيّر؛ أعد فتح البرنامج', 'failed-precondition');
-    const user = await auth.getUser(uid).catch(() => null), username = String(user?.email || '').split('@')[0] || null;
-    const at = Date.now();
-    await db.ref().update({ [`access/${uid}/retentionConsent`]: RETENTION_VERSION, [`companies/${member.companyId}/consents/${uid}`]: { uid, username, at, version: RETENTION_VERSION, text: RETENTION_TEXT } });
-    await audit(uid, 'retention.consent', member.companyId, { version: RETENTION_VERSION });
-    return { ok: true, at };
-  }
-  requireConsent(member);
   const cid = member.companyId;
   if (data.kind === 'settings') return { settings: (await read(`companies/${cid}/settings`)) || {} };
   // v5.11: the remaining small manager reads (company status, one employee's payroll, badge counts).
@@ -806,10 +793,7 @@ const pushPrefix = ms => { let out = ''; for (let i = 0; i < 8; i++) { out = PUS
 // Keys = server time (8 chars, same alphabet/order as push ids) + 12 random chars, so key order = time order.
 const noteChange = (updates, cid, col, id) => { const now = Date.now(); updates[`changeLog/${cid}/${pushPrefix(now)}${randomBytes(9).toString('base64url').slice(0, 12)}`] = { col, id, at: now }; return updates; };
 const noteChanges = (cid, list) => (list.length ? db.ref().update(list.reduce((u, [col, id]) => noteChange(u, cid, col, id), {})) : null);
-// Owner decision 3b: one written consent per manager account before company data is served.
-const RETENTION_VERSION = 1;
-const RETENTION_TEXT = 'يحتفظ الخادم بآخر 45 يومًا فقط من سجلات الشركة (الحضور والإجازات والأعذار والرواتب). ابتداءً من 10 يناير 2027 يُحذف من الخادم كل ما هو أقدم من 45 يومًا، سواء سُحب إلى جهاز المدير أم لا. حفظ البيانات الأقدم مسؤولية الشركة: على جهاز المدير أو في النسخ الاحتياطية التي تصدّرها. إن ضاع الجهاز أو مُسحت بياناته ولا توجد نسخة احتياطية، فلا يمكن استرجاع تلك البيانات.';
-const requireConsent = member => { if (member.role === 'manager' && member.retentionConsent !== RETENTION_VERSION) throw new p.PolicyError('failed-precondition', 'وافق على شروط حفظ البيانات أولًا', { reason: 'consent-required' }); };
+// v6.2 (owner, 25 Nov 2026): no consent screen and no consent gate. Old consent records stay in the database, unused.
 // Per company and month: changes whenever records/leaves/excuses of that month change. The manager page caches CLOSED
 // months on the phone and re-downloads a month only when this number differs (v5.16 cost).
 const bumpMonth = (cid, date) => (typeof date === 'string' && /^\d{4}-\d{2}/.test(date) ? db.ref(`recordsVersions/${cid}/${date.slice(0, 7)}`).set(Date.now()) : null);

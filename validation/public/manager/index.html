@@ -68,6 +68,8 @@
 
 
 
+
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>لوحة تحكم المدير — النسخة المخصصة</title>
 <link rel="manifest" href="./manifest.json">
@@ -437,11 +439,6 @@ tr:hover td{background:#1a1f30}
 
     <!-- DASHBOARD -->
     <div class="page active" id="page-dash">
-      <!-- v6.1: monthly backup reminder (last export older than 30 days, or none yet) -->
-      <div id="backup-banner" style="display:none;margin:12px 16px 0;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:12px;padding:12px;font-size:13px;font-weight:700;align-items:center;justify-content:space-between;gap:10px">
-        <span id="backup-banner-text">💾 صدّر نسخة احتياطية</span>
-        <button class="modal-btn btn-gold" data-basma-click="localExport()" style="flex-shrink:0">صدّر الآن</button>
-      </div>
       <div class="stats-grid">
         <div class="stat-card"><div class="sc-icon">👥</div><div class="sc-num" id="ds-total">-</div><div class="sc-label">إجمالي الموظفين</div></div>
         <div class="stat-card"><div class="sc-icon">✅</div><div class="sc-num" id="ds-present">-</div><div class="sc-label">حاضرون اليوم</div></div>
@@ -588,7 +585,6 @@ tr:hover td{background:#1a1f30}
       <!-- v6.0: the company's records live on this device; Firebase keeps 45 days only -->
       <div class="section-card" id="local-data-card" style="border:1px solid var(--gold)">
         <div class="section-title">💾 بيانات الشركة على هذا الجهاز</div>
-        <div style="font-size:12px;color:var(--gold);font-weight:700;margin-bottom:8px">⚠️ بياناتك الأقدم من 45 يوماً تُحذف من السيرفر، صدّر نسخة</div>
         <div id="local-data-status" style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:10px">جاري التحقق...</div>
         <div id="local-data-warn" style="display:none;background:rgba(255,80,80,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;font-size:12px;margin-bottom:10px"></div>
         <div style="display:flex;flex-direction:column;gap:8px">
