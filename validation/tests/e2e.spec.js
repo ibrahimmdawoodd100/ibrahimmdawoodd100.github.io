@@ -252,8 +252,11 @@ test.describe('full flow on local emulators', () => {
       // v6.3: export WITHOUT password: one short note, then the file is saved.
       await manager.click('#local-data-card [data-basma-click="localExport()"]');
       await expect(manager.getByText('هذا الملف يحوي بيانات موظفيك، احفظه في مكان آمن')).toBeVisible();
+      // The export dialog's own box (the page has other «حفظ» buttons): the innermost element that holds the note.
+      const exportDialog = manager.locator('div', { has: manager.getByText('هذا الملف يحوي بيانات موظفيك، احفظه في مكان آمن') }).last();
+      await expect(exportDialog.getByRole('button', { name: 'حفظ', exact: true })).toHaveCount(1);
       await expect(manager.locator('input[type="password"]:visible')).toHaveCount(0);
-      const [download] = await Promise.all([manager.waitForEvent('download', { timeout: 30000 }), manager.getByRole('button', { name: 'حفظ' }).click()]);
+      const [download] = await Promise.all([manager.waitForEvent('download', { timeout: 30000 }), exportDialog.getByRole('button', { name: 'حفظ', exact: true }).click()]);
       const file = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
       expect(file.format).toBe('basma-backup-v2'); expect(file.companyId).toBe('e2e-co'); expect(file.count).toBe(file.items.length); expect(file.integrity.value).toMatch(/^[0-9a-f]{64}$/);
       await expect(manager.locator('#local-data-status')).not.toContainText('آخر نسخة احتياطية: —', { timeout: 15000 });
