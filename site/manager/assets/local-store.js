@@ -108,37 +108,47 @@
     async function range(col, from, to) { const out = {}; for (const row of await backend.range(need().cid, col, from, to)) out[row.id] = (await open(row)).d; return out; }
     async function stats() { const m = await meta(), counts = {}; for (const col of COLLECTIONS) counts[col] = await backend.count(need().cid, col); return { ...m, counts }; }
     async function persist() { try { if (await storage?.persisted?.()) return true; return !!(await storage?.persist?.()); } catch { return false; } }
-    // ---- encrypted backup (owner s3 = A): PBKDF2-SHA256 (310,000 rounds) + AES-GCM. Lost password = file lost. ----
+    // ---- backup file (v6.3, owner 25 Nov 2026): a PLAIN file, no password. Inside: the company ID, an integrity
+    // check (SHA-256 of the whole content) against damage, and the server's signature on every item against editing
+    // (a signature also binds the item to its company). Old password-protected files (v1) can still be imported. ----
     async function passwordKey(password, salt) { const base = await subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']); return subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 310000 }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']); }
-    async function exportBackup(password) {
-      if (typeof password !== 'string' || password.length < 8) throw Error('كلمة السر 8 أحرف على الأقل');
+    const sha256 = async text => [...new Uint8Array(await subtle.digest('SHA-256', enc.encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
+    const bodyOf = f => stable({ format: f.format, companyId: f.companyId, createdAt: f.createdAt, count: f.count, items: f.items });
+    async function exportBackup() {
       const { cid } = need(), items = [];
-      for (const col of COLLECTIONS) for (const row of await backend.range(cid, col, '', '￿')) { const x = await open(row); items.push({ col, id: row.id, d: x.d, s: x.s }); }
-      const salt = root.crypto.getRandomValues(new Uint8Array(16)), iv = root.crypto.getRandomValues(new Uint8Array(12));
-      const ct = await subtle.encrypt({ name: 'AES-GCM', iv }, await passwordKey(password, salt), enc.encode(JSON.stringify({ companyId: cid, createdAt: now(), items })));
+      for (const col of COLLECTIONS) for (const row of await backend.range(cid, col, '', '\uffff')) { const x = await open(row); items.push({ col, id: row.id, d: x.d, s: x.s }); }
+      const file = { format: 'basma-backup-v2', companyId: cid, createdAt: now(), count: items.length, items };
+      file.integrity = { algorithm: 'SHA-256', value: await sha256(bodyOf(file)) };
       await saveMeta({ lastBackupAt: now() });
-      return { format: 'basma-backup-v1', companyId: cid, createdAt: now(), count: items.length, kdf: { name: 'PBKDF2', hash: 'SHA-256', iterations: 310000, salt: b64(salt) }, iv: b64(iv), ct: b64(ct) };
+      return file;
     }
+    const needsPassword = file => file?.format === 'basma-backup-v1';
+    // Import is ALL OR NOTHING: a file of another company, a damaged or edited file, or one bad signature = nothing is
+    // added and a clear Arabic message is returned. A valid file only ADDS what this phone does not have yet.
     async function importBackup(file, password) {
-      const { cid, verifier } = need();
-      if (file?.format !== 'basma-backup-v1') throw Error('ليس ملف نسخة احتياطية من بصمة');
-      if (file.companyId !== cid) throw Error('هذه النسخة لشركة أخرى');
-      if (!verifier) throw Error('هذا المتصفح لا يستطيع التحقق من التواقيع؛ لا يمكن الاستيراد');
-      let plain;
-      try { plain = JSON.parse(dec.decode(await subtle.decrypt({ name: 'AES-GCM', iv: unb64(file.iv) }, await passwordKey(password, unb64(file.kdf.salt)), unb64(file.ct)))); }
-      catch { throw Error('كلمة السر غير صحيحة أو الملف تالف'); }
-      // Owner 5: import only ADDS. Items already on this phone are kept as they are (never replaced, never wiped).
-      let imported = 0, kept = 0; const rejected = [];
-      for (const x of plain.items || []) {
-        if (!COLLECTIONS.includes(x.col) || (await verify(x.col, x.id, x)) !== true) { rejected.push(`${x.col}/${x.id}`); continue; }
-        if (await backend.get('items', `${cid}|${x.col}|${x.id}`)) { kept++; continue; }
-        await backend.put('items', await seal(x.col, x.id, x, true)); imported++;
+      const { cid, verifier } = need(), refuse = text => { throw Object.assign(new Error(text), { code: 'basma/import-refused' }); };
+      if (!file || typeof file !== 'object' || !['basma-backup-v1', 'basma-backup-v2'].includes(file.format)) refuse('هذا الملف ليس نسخة احتياطية من بصمة؛ لم يُستورد أي شيء');
+      if (file.companyId !== cid) refuse('هذه النسخة لشركة أخرى؛ لم يُستورد أي شيء');
+      let items;
+      if (file.format === 'basma-backup-v1') {
+        if (!password) refuse('هذه نسخة قديمة محمية بكلمة سر؛ اكتب كلمة السر');
+        let plain; try { plain = JSON.parse(dec.decode(await subtle.decrypt({ name: 'AES-GCM', iv: unb64(file.iv) }, await passwordKey(password, unb64(file.kdf.salt)), unb64(file.ct)))); } catch { refuse('كلمة السر غير صحيحة أو الملف تالف؛ لم يُستورد أي شيء'); }
+        if (plain.companyId !== cid) refuse('هذه النسخة لشركة أخرى؛ لم يُستورد أي شيء');
+        items = plain.items;
+      } else {
+        if (!Array.isArray(file.items) || file.count !== file.items.length || file.integrity?.algorithm !== 'SHA-256' || file.integrity.value !== await sha256(bodyOf(file))) refuse('الملف تالف أو معدَّل؛ لم يُستورد أي شيء');
+        items = file.items;
       }
-      return { imported, kept, rejected };
+      if (!verifier) refuse('هذا المتصفح لا يستطيع التحقق من التواقيع؛ حدّث المتصفح ثم أعد المحاولة. لم يُستورد أي شيء');
+      for (const x of items || []) if (!x || !COLLECTIONS.includes(x.col) || typeof x.id !== 'string' || (await verify(x.col, x.id, x)) !== true) refuse('في الملف سجل معدَّل أو غير موقَّع من الخادم؛ لم يُستورد أي شيء');
+      let imported = 0, kept = 0; const rows = [];
+      for (const x of items || []) { if (await backend.get('items', `${cid}|${x.col}|${x.id}`)) { kept++; continue; } rows.push(await seal(x.col, x.id, x, true)); imported++; }
+      if (rows.length) await backend.putMany('items', rows);
+      return { imported, kept, rejected: [] };
     }
     // Logout: the key goes, the encrypted data stays.
     async function lock() { if (keys?.cid) await backend.del('keys', keys.cid); keys = null; }
-    return { unlock, unlockOffline, sync, range, stats, meta, saveMeta, persist, exportBackup, importBackup, lock, get companyId() { return keys?.cid; }, get verifiable() { return !!keys?.verifier; }, get info() { return keys; } };
+    return { unlock, unlockOffline, sync, range, stats, meta, saveMeta, persist, exportBackup, importBackup, needsPassword, lock, get companyId() { return keys?.cid; }, get verifiable() { return !!keys?.verifier; }, get info() { return keys; } };
   }
   const api = { create, idbBackend, memoryBackend, stable, DB_NAME, COLLECTIONS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.BasmaLocal = api;

@@ -249,13 +249,32 @@ test.describe('full flow on local emulators', () => {
       await expect(manager.locator('#local-data-warn')).toContainText('لم تُصدِّر أي نسخة احتياطية بعد'); // red until the first export
       await expect(manager.locator('#local-data-status')).not.toContainText('آخر مزامنة: —');
       await expect(manager.locator('#local-data-status')).not.toContainText('حضور 0 ');
-      await manager.click('#local-data-card [data-basma-click="localExport()"]'); // the settings button (the dashboard banner has one too)
-      await expect(manager.getByText('إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا')).toBeVisible();
-      await manager.getByRole('button', { name: 'متابعة' }).click();
-      const pw = manager.locator('input[type="password"]:visible'); await expect(pw).toHaveCount(2); await pw.nth(0).fill('e2e-backup-pass'); await pw.nth(1).fill('e2e-backup-pass'); // the dialog's two fields, not the hidden login field
-      const [download] = await Promise.all([manager.waitForEvent('download', { timeout: 30000 }), manager.getByRole('button', { name: 'موافق' }).click()]);
+      // v6.3: export WITHOUT password: one short note, then the file is saved.
+      await manager.click('#local-data-card [data-basma-click="localExport()"]');
+      await expect(manager.getByText('هذا الملف يحوي بيانات موظفيك، احفظه في مكان آمن')).toBeVisible();
+      await expect(manager.locator('input[type="password"]:visible')).toHaveCount(0);
+      const [download] = await Promise.all([manager.waitForEvent('download', { timeout: 30000 }), manager.getByRole('button', { name: 'حفظ' }).click()]);
       const file = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
-      expect(file.format).toBe('basma-backup-v1'); expect(file.count).toBeGreaterThan(0); expect(JSON.stringify(file)).not.toContain('e2e موظف');
+      expect(file.format).toBe('basma-backup-v2'); expect(file.companyId).toBe('e2e-co'); expect(file.count).toBe(file.items.length); expect(file.integrity.value).toMatch(/^[0-9a-f]{64}$/);
+      await expect(manager.locator('#local-data-status')).not.toContainText('آخر نسخة احتياطية: —', { timeout: 15000 });
+      const counts = async () => (await manager.locator('#local-data-status').innerText()).split('\n')[0]; // "السجلات على هذا الجهاز: ..."
+      const countsBefore = await counts();
+      const toast = manager.locator('#toast-container');
+      const importFile = async (name, value) => manager.setInputFiles('#local-import-file', { name, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(value)) });
+      // A file of ANOTHER company is rejected completely, with a clear Arabic message.
+      await importFile('other.json', { ...file, companyId: 'another-company' });
+      await expect(toast).toContainText('هذه النسخة لشركة أخرى؛ لم يُستورد أي شيء', { timeout: 15000 });
+      // A damaged/edited file is rejected completely (integrity check, no password).
+      const edited = JSON.parse(JSON.stringify(file)); edited.items[0].d = { ...edited.items[0].d, edited: true };
+      await importFile('edited.json', edited);
+      await expect(toast).toContainText('الملف تالف أو معدَّل؛ لم يُستورد أي شيء', { timeout: 15000 });
+      expect(await counts(), 'nothing added by a rejected file').toBe(countsBefore);
+      // The phone's own file: no password asked; it only adds (everything is already here, so nothing new).
+      const verifiable = await manager.evaluate(async () => { try { await crypto.subtle.importKey('raw', new Uint8Array(32), { name: 'Ed25519' }, false, ['verify']); return true; } catch { return false; } });
+      await importFile('own.json', file);
+      await expect(manager.locator('input[type="password"]:visible')).toHaveCount(0);
+      await expect(toast).toContainText(verifiable ? 'موجودة أصلًا على هذا الجهاز' : 'هذا المتصفح لا يستطيع التحقق من التواقيع', { timeout: 20000 });
+      await manager.waitForTimeout(1000); expect(await counts(), 'own file: nothing duplicated or removed').toBe(countsBefore);
       await expect(manager.locator('#local-data-status')).not.toContainText('آخر نسخة احتياطية: —', { timeout: 15000 });
       await expect(manager.locator('#local-data-warn')).not.toContainText('لم تُصدِّر أي نسخة احتياطية بعد'); // gone after the first export
       await expect(manager.locator('#local-data-warn')).toBeHidden(); // v6.2: the red box disappears after the first export

@@ -23,7 +23,7 @@ async function closedMonth(a,b,fetchPart){
 }
 // v6.0 (owner, 24 Nov 2026): the company's records live on THIS device (encrypted IndexedDB, signed by the server).
 // Firebase keeps 45 days. Each open pulls only what is new; reports and payroll read the device copy, also offline.
-const RETENTION_MSG='بياناتك الأقدم من 45 يوماً تُحذف من السيرفر، صدّر نسخة',SYNC_FAILED='تعذّرت المزامنة؛ ستُعاد تلقائيًا عند الفتح القادم. تُعرض البيانات المحفوظة على الجهاز.';
+const SYNC_FAILED='تعذّرت المزامنة؛ ستُعاد تلقائيًا عند الفتح القادم. تُعرض البيانات المحفوظة على الجهاز.';
 const localData=(()=>{
   let store=null,ready=null,lastSync=0,persisted=null,lastOpenBefore=null,lastError=null;
   const call=(name,data)=>Basma.timeout(Basma.call(name,data),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,name);
@@ -41,13 +41,12 @@ const localData=(()=>{
     })();
     try{return await ready;}catch(error){ready=null;throw error;}
   }
+  // v6.2 (owner): the red box shows ONLY the backup reminder (none yet, or older than 30 days) and a failed sync.
   async function warnings(){
-    const s=await open().catch(()=>null),out=[];if(!s)return ['هذا المتصفح لا يدعم الحفظ المحلي؛ تُعرض آخر 45 يومًا فقط من الخادم.'];
+    const s=await open().catch(()=>null),out=[];if(!s)return out;
     const m=await s.meta(),day=86400000,now=Date.now();
-    if(lastOpenBefore&&now-lastOpenBefore>30*day)out.push(`لم تفتح البرنامج منذ ${Math.floor((now-lastOpenBefore)/day)} يومًا. الخادم يحذف كل سجل أقدم من 45 يومًا، فربما ضاع بعضها.`);
-    if(!m.lastBackupAt||now-m.lastBackupAt>30*day)out.push(m.lastBackupAt?`آخر نسخة احتياطية قبل ${Math.floor((now-m.lastBackupAt)/day)} يومًا. صدّر نسخة جديدة.`:'لم تُصدِّر أي نسخة احتياطية بعد. إن ضاع هذا الهاتف ضاعت السجلات القديمة.');
-    if(persisted===false)out.push('المتصفح لم يضمن حفظ البيانات دائمًا؛ صدّر نسخة احتياطية بانتظام.');
-    if(!s.verifiable&&!s.info?.offline)out.push('هذا المتصفح لا يتحقق من تواقيع السجلات؛ حدّث المتصفح.');
+    if(!m.lastBackupAt)out.push('لم تُصدِّر أي نسخة احتياطية بعد. إن ضاع هذا الهاتف ضاعت السجلات القديمة.');
+    else if(now-m.lastBackupAt>30*day)out.push(`آخر نسخة احتياطية قبل ${Math.floor((now-m.lastBackupAt)/day)} يومًا. صدّر نسخة جديدة.`);
     if(lastError)out.push(SYNC_FAILED);
     return out;
   }
@@ -431,26 +430,8 @@ document.addEventListener?.('visibilitychange',()=>{
   if(hiddenAt&&Date.now()-hiddenAt>=5*60000&&typeof COMPANY_ID!=='undefined'&&COMPANY_ID)autoSync('resume');
   hiddenAt=null;
 });
-// v6.1: the dashboard banner "صدّر نسخة احتياطية" while the last export is older than 30 days (or there is none yet).
-async function renderBackupBanner(){
-  const banner=document.getElementById('backup-banner');if(!banner)return;
-  const s=localData.get();let last=null;try{last=s?.companyId?(await s.meta()).lastBackupAt:null;}catch{}
-  const days=last?Math.floor((Date.now()-last)/86400000):null,show=!!s&&(!last||days>=30);
-  const text=document.getElementById('backup-banner-text');if(text)text.textContent=last?`💾 صدّر نسخة احتياطية (آخر نسخة قبل ${days} يومًا)`:'💾 صدّر نسخة احتياطية (لا توجد نسخة بعد)';
-  banner.style.display=show?'flex':'none';
-}
-// Shown on EVERY manager open (owner 3a); in the 30 days before deletion starts it is a dialog that must be answered.
-async function openNotices(){
-  await autoSync('open');
-  await renderBackupBanner();
-  const s=localData.get(),start=s?.info?.purgeStart||'2027-01-10',today=secureManagerView.today();
-  const daysLeft=Math.round((Date.parse(`${start}T00:00:00Z`)-Date.parse(`${today}T00:00:00Z`))/86400000);
-  const others=(await localData.warnings()).filter(w=>w!==SYNC_FAILED);
-  window.__basmaNotice=daysLeft>0&&daysLeft<=30?'dialog':'toast'; // read by the browser test only
-  if(daysLeft>0&&daysLeft<=30){
-    if(await BasmaDialogs.confirm('تنبيه مهم',`${RETENTION_MSG}.\nيبدأ الحذف بعد ${daysLeft} يومًا (${start}).${others.length?'\n'+others.join('\n'):''}`,'صدّر الآن','btn-gold'))window.localExport();
-  } else showToast(`⚠️ ${RETENTION_MSG}${others[0]?' — '+others[0]:''}`,'info');
-}
+// v6.2 (owner, 25 Nov 2026): on open the phone only syncs by itself; no retention notice, no consent.
+async function openNotices(){ await autoSync('open'); }
 window.localExport=async function(){
   const s=await localData.open().catch(()=>null);if(!s){showToast('البيانات المحلية غير متاحة','error');return;}
   if(!await BasmaDialogs.confirm('تصدير نسخة احتياطية','ستُحفظ كل سجلات الشركة الموجودة على هذا الجهاز في ملف مشفّر بكلمة سر تختارها. ⚠️ إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا، ولا يستطيع أحد استرجاعها، وتضيع النسخة نهائيًا. احفظ كلمة السر في مكان آمن.','متابعة','btn-gold'))return;
@@ -460,7 +441,7 @@ window.localExport=async function(){
   try{
     const file=await s.exportBackup(answer.p1),blob=new Blob([JSON.stringify(file)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=`basma-backup-${secureManagerView.today()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-    showToast(`تم تصدير ${file.count} سجلًا في ملف مشفّر`,'success');renderBackupBanner();
+    showToast(`تم تصدير ${file.count} سجلًا في ملف مشفّر`,'success');
   }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();await renderLocalCard();}
 };
 window.localImport=function(){const input=document.getElementById('local-import-file');if(input){input.value='';input.click();}};

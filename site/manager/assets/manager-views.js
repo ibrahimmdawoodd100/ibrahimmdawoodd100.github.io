@@ -432,26 +432,28 @@ document.addEventListener?.('visibilitychange',()=>{
 });
 // v6.2 (owner, 25 Nov 2026): on open the phone only syncs by itself; no retention notice, no consent.
 async function openNotices(){ await autoSync('open'); }
+// v6.3 (owner, 25 Nov 2026): no password. One short note before saving; the file is plain (company ID, integrity check
+// and the server's signatures inside).
 window.localExport=async function(){
   const s=await localData.open().catch(()=>null);if(!s){showToast('البيانات المحلية غير متاحة','error');return;}
-  if(!await BasmaDialogs.confirm('تصدير نسخة احتياطية','ستُحفظ كل سجلات الشركة الموجودة على هذا الجهاز في ملف مشفّر بكلمة سر تختارها. ⚠️ إن نسيت كلمة السر فلا يمكن فتح الملف أبدًا، ولا يستطيع أحد استرجاعها، وتضيع النسخة نهائيًا. احفظ كلمة السر في مكان آمن.','متابعة','btn-gold'))return;
-  const answer=await BasmaDialogs.form('كلمة سر النسخة',[{id:'p1',label:'كلمة السر (8 أحرف على الأقل)',type:'password'},{id:'p2',label:'أعد كتابة كلمة السر',type:'password'}]);
-  if(!answer)return;if(answer.p1!==answer.p2){showToast('كلمتا السر غير متطابقتين','error');return;}
+  if(!await BasmaDialogs.confirm('تصدير نسخة احتياطية','هذا الملف يحوي بيانات موظفيك، احفظه في مكان آمن','حفظ','btn-gold'))return;
   showLoading('جاري تجهيز النسخة...');
   try{
-    const file=await s.exportBackup(answer.p1),blob=new Blob([JSON.stringify(file)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+    const file=await s.exportBackup(),blob=new Blob([JSON.stringify(file)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=`basma-backup-${secureManagerView.today()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-    showToast(`تم تصدير ${file.count} سجلًا في ملف مشفّر`,'success');
+    showToast(`تم حفظ نسخة فيها ${file.count} سجلًا`,'success');
   }catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();await renderLocalCard();}
 };
 window.localImport=function(){const input=document.getElementById('local-import-file');if(input){input.value='';input.click();}};
 document.getElementById('local-import-file')?.addEventListener('change',async event=>{
   const file=event.target.files?.[0];if(!file)return;const s=await localData.open().catch(()=>null);if(!s){showToast('البيانات المحلية غير متاحة','error');return;}
-  let parsed;try{parsed=JSON.parse(await file.text());}catch{showToast('الملف ليس نسخة احتياطية صالحة','error');return;}
-  const answer=await BasmaDialogs.form('كلمة سر النسخة',[{id:'p',label:'كلمة السر التي اخترتها عند التصدير',type:'password'}]);if(!answer)return;
+  let parsed;try{parsed=JSON.parse(await file.text());}catch{showToast('هذا الملف ليس نسخة احتياطية من بصمة؛ لم يُستورد أي شيء','error');return;}
+  // Only an OLD password-protected file (v1) asks for its password.
+  let password=null;
+  if(s.needsPassword(parsed)){const answer=await BasmaDialogs.form('نسخة قديمة محمية',[{id:'p',label:'كلمة سر هذه النسخة القديمة',type:'password'}]);if(!answer)return;password=answer.p;}
   showLoading('جاري الاستيراد...');
-  try{const r=await s.importBackup(parsed,answer.p);showToast(`تم استيراد ${r.imported} سجلًا${r.rejected.length?`؛ رُفض ${r.rejected.length} غير موقَّع أو معدَّل`:''}`,r.rejected.length?'info':'success');}
-  catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{hideLoading();await renderLocalCard();}
+  try{const r=await s.importBackup(parsed,password);showToast(r.imported?`تمت إضافة ${r.imported} سجلًا${r.kept?`، و${r.kept} موجودة أصلًا بقيت كما هي`:''}`:`لا جديد: كل السجلات (${r.kept}) موجودة أصلًا على هذا الجهاز`,'success');}
+  catch(error){showToast(error?.code==='basma/import-refused'?String(error.message):(window.BasmaErrors?.message(error)??'تعذّر الاستيراد؛ لم يُستورد أي شيء'),'error');}finally{hideLoading();await renderLocalCard();} // our own Arabic refusal texts
 });
 // Direct database mutations in the original manager UI must also evict cached metadata.
 for(const name of ['saveEmpSchedule','clearEmpSchedule','addWarehouse','editWH','saveWhSchedule','clearWhSchedule','whGzSave','saveTimeWindows','addHoliday','deleteHoliday','saveGeoZone','approveEmp','rejectEmp']){
