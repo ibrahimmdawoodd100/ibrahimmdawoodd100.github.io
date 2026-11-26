@@ -22,6 +22,7 @@ async function secureEmployeeOpen(profile) {
   // Start the check-in functions' instances now, while the employee reads the screen (saves ~2 s per cold start).
   Basma.warm?.(home.employee?.status==='approved'&&home.employee?.credId?['beginWebAuthn','finishWebAuthn','recordAttendance']:['beginWebAuthn','finishWebAuthn']);
   const employee=home.employee;
+  try{localStorage.setItem('basma_emp_view',JSON.stringify({company:home.info?.nameAr||'',logo:home.info?.logo||'',name:employee?.name||'',branch:home.warehouse?.name||employee?.warehouseName||''}));}catch{} // v6.4: shown at once on the next open (removed on logout)
   if(!employee||!['approved','pending_activation'].includes(employee.status))throw new Error('حساب الموظف غير مفعّل');
   secureAttendanceWindows.seed(home);
   DB.prime('employeeList', { kind: 'today' }, { value: home.today || null });
@@ -41,6 +42,12 @@ async function secureEmployeeOpen(profile) {
 }
 let employeeStatusListener = null;
 initFirebase = async function() {
+  // v6.4 (owner, 26 Nov 2026): draw at once what this phone already knows (company, name, branch) instead of a blank
+  // "connecting" screen; the server answer replaces it. The buttons stay off until the server confirms.
+  try { const v = JSON.parse(localStorage.getItem('basma_emp_view') || 'null'); if (v) {
+    const set = (id, text) => { const el = document.getElementById(id); if (el && text) el.textContent = text; };
+    set('splash-company-name', v.company); set('splash-logo', v.logo); set('splash-status', `${v.name ? 'مرحبًا ' + v.name + ' — ' : ''}${v.branch ? v.branch + ' — ' : ''}جاري التحقق…`);
+  } } catch {}
   try { const profile = await Basma.session('employee'); if (profile) await secureEmployeeOpen(profile); else showScreen('s-dirlogin'); }
   catch (error) { if (Basma.signedIn) { Basma.reopenError(error); return; } showScreen('s-dirlogin'); Basma.banner(window.BasmaErrors?.message(error) ?? error.message); }
 };

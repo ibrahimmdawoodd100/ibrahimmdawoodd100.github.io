@@ -81,7 +81,10 @@ async function badgesOf(cid) {
   const devices = Object.entries((await read(`deviceApprovals/${cid}`)) || {}).filter(([, d]) => d?.status === 'pending').map(([eid]) => eid);
   return { status: status ?? null, leaves, excuses, assigned, started, unread, devices };
 }
-exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
+exports.managerHome = endpoint(['manager'], async ({ uid, member, info, data }) => {
+  // v6.4 (owner, 26 Nov 2026): the manager page opens with ONE call. When the phone already has its copy (a cursor),
+  // the incremental sync rides along, in parallel with the home reads (one server wake-up instead of two).
+  const syncing = data?.sync?.cursor && Number.isFinite(Number(data.sync.cursor.at)) ? syncAll(member.companyId, uid, info, { cursor: { at: Number(data.sync.cursor.at) }, lastBackupAt: data.sync.lastBackupAt }).catch(() => null) : null;
   const cid = member.companyId, stamp = Date.now(), date = p.dateParts(new Date(stamp), info.timeZone).date;
   const sameDay = (collection, field) => db.ref(`companies/${cid}/${collection}`).orderByChild(field).equalTo(date).limitToFirst(20000).get().then(s => s.val() || {});
   const [settings, warehouses, employees, records, leaves, excuses, badges] = await Promise.all([
@@ -92,7 +95,7 @@ exports.managerHome = endpoint(['manager'], async ({ member, info }) => {
   const staff = Object.fromEntries(Object.entries(employees || {}).map(([eid, e]) => [eid, pick(e, MANAGER_EMPLOYEE_FIELDS)]));
   return { serverTime: Date.now(), date, companyId: cid,
     info: pick(info, ['nameAr', 'nameEn', 'logo', 'industry', 'timeZone', 'status', 'expiresAt', 'maxEmployees', 'plan']),
-    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records: Object.fromEntries(Object.entries(records || {}).map(([id, r]) => [id, pick(r, RECORD_FIELDS)])), leaves, excuses, badges, profile: sessionOf(member, info) };
+    settings: settings || {}, warehouses: warehouses || {}, employees: staff, records: Object.fromEntries(Object.entries(records || {}).map(([id, r]) => [id, pick(r, RECORD_FIELDS)])), leaves, excuses, ...(syncing ? { sync: await syncing } : {}), badges, profile: sessionOf(member, info) };
 });
 // Manager attendance records, reports, payroll and request lists through ONE call per range (no direct database
 // reads, which stall on networks where the realtime connection does not establish). Indexed queries only

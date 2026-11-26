@@ -156,7 +156,10 @@ test('CSP: Esri tiles allowed, Leaflet served from this site, no third-party scr
     const html = read(page); assert.match(html, /img-src 'self' data: https:\/\/server\.arcgisonline\.com;/, page); assert.doesNotMatch(html, /unpkg\.com|cdnjs/, page);
   }
   const manager = read('public/manager/index.html');
-  assert.match(manager, /<link rel="stylesheet" href="\/manager\/assets\/leaflet\/leaflet\.css"\/>/); assert.match(manager, /<script src="\/manager\/assets\/leaflet\/leaflet\.js"><\/script>/);
+  // v6.4: Leaflet is still served from this site, but loaded only when a map opens (not a blocking <script> on every open).
+  assert.doesNotMatch(manager, /<script src="\/manager\/assets\/leaflet\/leaflet\.js"><\/script>/, 'no blocking Leaflet script on open');
+  const views = read('public/assets/manager-views.js');
+  assert.match(views, /script\.src='\/manager\/assets\/leaflet\/leaflet\.js'/); assert.match(views, /css\.href='\/manager\/assets\/leaflet\/leaflet\.css'/);
   for (const f of ['leaflet.js', 'leaflet.css', 'images/marker-icon.png', 'images/marker-icon-2x.png', 'images/marker-shadow.png', 'images/layers.png', 'images/layers-2x.png']) assert.ok(fs.statSync(path.join(root, 'public/assets/leaflet', f)).size > 500, f);
   assert.match(read('public/assets/leaflet/leaflet.css'), /url\(images\/marker-icon\.png\)/, 'marker path is relative to the self-hosted CSS');
   assert.match(read('public/assets/manager-views.js'), /L\.Icon\.Default\.imagePath='\/manager\/assets\/leaflet\/images\/'/);

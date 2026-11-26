@@ -402,6 +402,10 @@ const scenarios = {
     // 2) Full sync once; then an incremental sync sends ONLY what changed since the cursor.
     const full = await call(null, 'managerList', mgr, { kind: 'syncAll' });
     assert.equal(full.full, true); assert.deepEqual(Object.keys(full.pages.records.items), ['old1']);
+    // v6.4: ONE opening call: with the phone's cursor, managerHome also carries the incremental sync (signed, same keys).
+    const boot = await call(null, 'managerHome', mgr, { sync: { cursor: full.cursor } });
+    assert.ok(boot.employees && boot.sync, 'home + sync together'); assert.equal(boot.sync.full, false); assert.equal(boot.sync.keys.storeKey, full.keys.storeKey);
+    assert.equal((await call(null, 'managerHome', mgr, {})).sync, undefined, 'no cursor (first open): no sync inside, the page syncs in the background');
     const quiet = await call(null, 'managerList', mgr, { kind: 'syncAll', cursor: full.cursor });
     assert.equal(quiet.full, false); for (const col of ['records', 'leaves', 'excuses', 'payroll']) assert.deepEqual(Object.keys(quiet.pages[col].items), [], `nothing new: ${col}`);
     const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);

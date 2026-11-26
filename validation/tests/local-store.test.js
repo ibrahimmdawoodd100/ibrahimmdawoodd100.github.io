@@ -188,3 +188,23 @@ test('import only ADDS: existing items on the phone are kept, nothing is wiped',
   assert.equal((await b.range('leaves', '2026-12-22', '2026-12-22')).l1.status, 'approved', 'the newer state on the phone is kept');
   assert.ok((await b.range('records', '2026-12-23', '2026-12-23')).r7, 'items that are not in the backup stay');
 });
+
+// v6.4 (owner, 26 Nov 2026): faster open.
+test('the last screen is saved ENCRYPTED and read back offline; it is not a record (not exported, not counted)', async () => {
+  const backend = L.memoryBackend(), srv = server({ data }), a = L.create({ call: srv.call, backend });
+  await a.sync(); await a.saveSnapshot('managerHome', { date: '2026-12-20', employees: { e1: { name: 'أحمد' } } });
+  assert.ok(!JSON.stringify([...backend.stores.items.values()]).includes('أحمد'), 'encrypted at rest');
+  const b = L.create({ call: async () => { throw Error('offline'); }, backend }); await b.unlockOffline('c1');
+  assert.equal((await b.loadSnapshot('managerHome')).employees.e1.name, 'أحمد', 'drawn before any server answer');
+  assert.equal((await a.stats()).counts.records, 2); assert.equal((await a.exportBackup()).count, 4, 'the snapshot is not in the backup');
+  await a.lock(); const c = L.create({ call: srv.call, backend }); assert.equal(await c.unlockOffline('c1'), null, 'after logout: no key, nothing readable');
+});
+
+test('a sync that came with the opening call is used as is: no extra call', async () => {
+  const backend = L.memoryBackend(), srv = server({ data: JSON.parse(JSON.stringify(data)) }), local = L.create({ call: srv.call, backend });
+  await local.sync(); srv.change('records', 'r8', { empId: 'e1', type: 'in', dateKey: '2026-12-24', timestamp: '2026-12-24T08:00:00Z' });
+  const { cursor } = await local.cursorOf('c1'); assert.ok(cursor);
+  const prefetched = await srv.call('managerList', { kind: 'syncAll', cursor }); srv.calls.length = 0;
+  const out = await local.sync({ prefetched });
+  assert.equal(srv.calls.length, 0, 'no call: the data was already here'); assert.equal(out.stored, 1);
+});

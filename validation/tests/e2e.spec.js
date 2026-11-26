@@ -128,6 +128,7 @@ test(`${MODE}: branch map — satellite tiles and the marker image load, no brok
   const g = await guarded(browser), page = await g.context.newPage();
   test.setTimeout(150000);
   await g.open(page, '/manager/', '#dl-username', 'map check');
+  await page.evaluate(() => window.basmaLoadLeaflet()); // v6.4: Leaflet loads when a map is needed (same file, same CSP)
   // Same tile URL and default marker as the branch location modal; the page's own CSP and Leaflet copy apply.
   const result = await page.evaluate(url => new Promise(resolve => {
     if (!window.L) { resolve({ leaflet: false }); return; }

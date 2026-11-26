@@ -25,7 +25,7 @@ async function closedMonth(a,b,fetchPart){
 // Firebase keeps 45 days. Each open pulls only what is new; reports and payroll read the device copy, also offline.
 const SYNC_FAILED='تعذّرت المزامنة؛ ستُعاد تلقائيًا عند الفتح القادم. تُعرض البيانات المحفوظة على الجهاز.';
 const localData=(()=>{
-  let store=null,ready=null,lastSync=0,persisted=null,lastOpenBefore=null,lastError=null;
+  let store=null,ready=null,lastSync=0,persisted=null,lastOpenBefore=null,lastError=null,prefetched=null;
   const call=(name,data)=>Basma.timeout(Basma.call(name,data),Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000,name);
   const get=()=>{if(store)return store;if(!window.BasmaLocal||!window.indexedDB||!window.crypto?.subtle)return null;try{store=BasmaLocal.create({call,companyId:()=>typeof COMPANY_ID==='undefined'?null:COMPANY_ID});}catch{store=null;}return store;};
   async function open(force=false){
@@ -35,7 +35,8 @@ const localData=(()=>{
       if(persisted===null)persisted=await s.persist();
       try{
         if(lastOpenBefore===null){try{await s.unlockOffline(COMPANY_ID);lastOpenBefore=(await s.meta()).lastOpenAt||0;}catch{lastOpenBefore=0;}}
-        await s.sync();lastSync=Date.now();lastError=null;
+        const given=prefetched;prefetched=null;await s.sync(given?{prefetched:given}:{});lastSync=Date.now();lastError=null;
+        if(lastManagerHome)s.saveSnapshot('managerHome',(({sync,...rest})=>rest)(lastManagerHome)).catch(()=>{});
       }catch(error){lastError=error;if(!(await s.unlockOffline(COMPANY_ID)))throw error;} // offline: read the device copy
       return s;
     })();
@@ -50,7 +51,7 @@ const localData=(()=>{
     if(lastError)out.push(SYNC_FAILED);
     return out;
   }
-  return {get,open,warnings,get persisted(){return persisted;},get failed(){return !!lastError;}};
+  return {get,open,warnings,prefetch(value){prefetched=value;},get persisted(){return persisted;},get failed(){return !!lastError;}};
 })();
 async function deviceRange(from,to){
   const s=await localData.open().catch(()=>null);if(!s)return null;
@@ -148,6 +149,14 @@ loadDashboard=async function(){
   try{home=Basma.takeHome?.('managerHome')||await Basma.timeout(Basma.call('managerHome'),managerHomeTimeoutMs(),'managerHome');token.check();Basma.trace('الدالة managerHome',t0,true);}
   catch(error){if(error?.code==='stale-manager-scope'||ticket!==dashboardTicket)return;Basma.trace('الدالة managerHome',t0,false,error?.code||'error');dashboardError(error);return;}
   if(ticket!==dashboardTicket)return;
+  if(home.sync)localData.prefetch(home.sync); // v6.4: the sync came with the opening call
+  window.__basmaLiveHome=true;lastManagerHome=home;setDashState('');
+  renderDashboard(home);
+};
+// v6.4: draw the dashboard from a home value (fresh from the server, or the last copy saved on this phone).
+let lastManagerHome=null;
+function setDashState(text){let chip=document.getElementById('dash-state');if(!chip){const dash=document.getElementById('page-dash');if(!dash)return;chip=document.createElement('div');chip.id='dash-state';chip.style.cssText='margin:8px 16px 0;font-size:12px;color:var(--text2)';dash.prepend(chip);}chip.textContent=text||'';chip.style.display=text?'block':'none';}
+function renderDashboard(home){
   const t1=Basma.clock();
   try{
     applyManagerHome(home);
@@ -159,6 +168,24 @@ loadDashboard=async function(){
     secureManagerView.table('dash-tbody',rows,r=>[r.name,r.role,r.warehouseName,r.statusLabel,secureManagerView.time(r.checkIn),secureManagerView.time(r.checkOut),r.locationName||'—'],r=>showEmpModal(r.employeeId));
     secureManagerView.filters();Basma.trace('عرض لوحة التحكم',t1,true);
   }catch(error){Basma.trace('عرض لوحة التحكم',t1,false,error?.code||'error');dashboardError(error);}
+}
+// v6.4: before the server answers, draw at once: the last screen saved (encrypted) on this phone, else a skeleton.
+// Only possible while this phone keeps the key (signed in); after logout nothing can be read.
+window.basmaDrawFromPhone=async function(){
+  const cid=typeof basmaPref==='function'?basmaPref('lastCompany'):null;if(!cid)return false;
+  tableLoading('dash-tbody',7);for(const id of ['ds-total','ds-present','ds-absent','ds-leave']){const el=document.getElementById(id);if(el)el.textContent='…';}
+  try{
+    const s=localData.get();if(!s||!(await s.unlockOffline(cid)))return false;
+    const home=await s.loadSnapshot('managerHome');if(!home||window.__basmaLiveHome)return false;
+    COMPANY_ID=cid;COMPANY_INFO={...(home.info||{}),timeZone:home.info?.timeZone||'UTC'};
+    const name=document.getElementById('sb-company');if(name)name.textContent=home.info?.nameAr||'';
+    renderDashboard(home);setDashState(`آخر بيانات محفوظة (${home.date||''}) — يتم التحديث…`);return true;
+  }catch{return false;}
+};
+// v6.4: the opening call carries this phone's sync cursor, so the incremental sync rides along (one call, one wake-up).
+window.basmaHomeParams=async function(){
+  const cid=typeof basmaPref==='function'?basmaPref('lastCompany'):null,s=cid?localData.get():null;if(!s)return null;
+  const c=await s.cursorOf(cid);return c.cursor?{sync:c}:null;
 };
 loadAttendance=async function(){
   const ticket=++attendanceTicket;
@@ -613,7 +640,8 @@ clearWhSchedule=async function(){
 // The map opens with a saved zone from the loaded list (no database read). One map, two uses (v5.18):
 // a branch location (saved at once) or an employee's special work location (kept in the schedule form until "save").
 let gzMode='branch',empLocDraft=null;
-function openGzMap(title,zone,saveLabel){
+async function openGzMap(title,zone,saveLabel){
+  try{await window.basmaLoadLeaflet();}catch{showToast('تعذر تحميل الخريطة؛ تحقق من الاتصال','error');return;}
   whGzLat=null;whGzLng=null;
   document.getElementById('wh-gz-modal-title').textContent=title;
   const save=document.getElementById('wh-gz-save-btn');if(save)save.textContent=saveLabel;
@@ -749,6 +777,17 @@ loadAdminNotifPage=async function(){
   list.replaceChildren();if(!(value.order||[]).length){managerListState(list,'empty',{text:'🔕 لا توجد إشعارات'});return;}draw(value);
 };
 // The inline page map holds the original functions; point it at the server-backed loaders.
-if(typeof pageLoaders!=='undefined'){pageLoaders.emps=()=>loadEmployees();pageLoaders.warehouses=()=>loadWarehouses();pageLoaders.messages=()=>loadMessages();pageLoaders.settings=async()=>{refreshOverlapWarnings();renderLocalCard();updateRepDates();await loadSettings();const v=id=>document.getElementById(id)?.value;setNote('tw-overlap-note',overlapsPair({from:v('ci-from'),to:v('ci-to')},{from:v('co-from')})?overlapText({checkIn:{from:v('ci-from'),to:v('ci-to')},checkOut:{from:v('co-from')}}):'');};pageLoaders['admin-notifs']=()=>loadAdminNotifPage();}
-// Leaflet is served from this site (/manager/assets/leaflet/); marker images come from the same folder.
-if(window.L?.Icon?.Default)window.L.Icon.Default.imagePath='/manager/assets/leaflet/images/';
+if(typeof pageLoaders!=='undefined'){pageLoaders.emps=()=>loadEmployees();pageLoaders.warehouses=()=>{window.basmaLoadLeaflet().catch(()=>{});return loadWarehouses();};pageLoaders.messages=()=>loadMessages();pageLoaders.settings=async()=>{window.basmaLoadLeaflet().catch(()=>{});refreshOverlapWarnings();renderLocalCard();updateRepDates();await loadSettings();const v=id=>document.getElementById(id)?.value;setNote('tw-overlap-note',overlapsPair({from:v('ci-from'),to:v('ci-to')},{from:v('co-from')})?overlapText({checkIn:{from:v('ci-from'),to:v('ci-to')},checkOut:{from:v('co-from')}}):'');};pageLoaders['admin-notifs']=()=>loadAdminNotifPage();}
+// v6.4 (owner, 26 Nov 2026): Leaflet (148 KB) is loaded only when a map is needed, not on every open. Same file on
+// this site (/manager/assets/leaflet/), same CSP; marker images come from the same folder.
+let leafletLoading=null;
+window.basmaLoadLeaflet=function(){
+  if(window.L)return Promise.resolve(window.L);
+  return leafletLoading||(leafletLoading=new Promise((resolve,reject)=>{
+    const css=document.createElement('link');css.rel='stylesheet';css.href='/manager/assets/leaflet/leaflet.css';document.head.appendChild(css);
+    const script=document.createElement('script');script.src='/manager/assets/leaflet/leaflet.js';
+    script.onload=()=>{if(window.L?.Icon?.Default)window.L.Icon.Default.imagePath='/manager/assets/leaflet/images/';resolve(window.L);};
+    script.onerror=()=>{leafletLoading=null;reject(new Error('تعذر تحميل الخريطة؛ تحقق من الاتصال'));};document.head.appendChild(script);
+  }));
+};
+if(typeof _initLeafletMap==='function'){const originalInitMap=_initLeafletMap;window._initLeafletMap=async function(...args){try{await window.basmaLoadLeaflet();}catch{showToast('تعذر تحميل الخريطة؛ تحقق من الاتصال','error');return;}return originalInitMap.apply(this,args);};}

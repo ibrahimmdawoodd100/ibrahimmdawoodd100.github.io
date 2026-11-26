@@ -77,18 +77,20 @@ window.Basma = (() => {
     rememberUser(app.auth().currentUser.uid);
     try {
       traceStart(`فتح صفحة ${role}`);
-      // App Check token and the forced ID-token refresh (fresh claims) are independent: run them in parallel.
+      // v6.4 (owner, 26 Nov 2026): no forced token refresh before every open (one round trip less). The opening call
+      // starts at once; the SDK attaches the cached App Check and login tokens. Only if the server refuses the token
+      // (claims changed after a reset: 'permission-denied') is the token refreshed ONCE and the call retried.
       const t0 = clock();
-      await Promise.all([
-        Promise.resolve(app.appCheck().getToken?.(false)).then(() => trace('رمز App Check', t0), error => trace('رمز App Check', t0, false, error?.code || 'error')),
-        app.auth().currentUser.getIdToken(true).then(() => trace('تجديد رمز الدخول', t0))
-      ]);
+      Promise.resolve(app.appCheck().getToken?.(false)).then(() => trace('رمز App Check', t0), error => trace('رمز App Check', t0, false, error?.code || 'error'));
       // Employee and manager pages open with their home call, which also carries the profile fields:
       // ONE server call (one cold start) instead of profile + home.
       const homeName = HOME_CALL[role], t1 = clock();
       let candidate;
       try {
-        const openHome = () => timeout(call(homeName), Number(window.BASMA_HOME_TIMEOUT_MS) || 25000, homeName);
+        // The page may add data to the opening call (the manager page: its sync cursor), at most 300 ms of waiting.
+        const extra = await Promise.race([Promise.resolve(window.basmaHomeParams?.()).catch(() => null), new Promise(r => setTimeout(() => r(null), 300))]) || {};
+        const once = () => timeout(call(homeName, extra), Number(window.BASMA_HOME_TIMEOUT_MS) || 25000, homeName);
+        const openHome = async () => { try { return await once(); } catch (error) { if (error?.code !== 'functions/permission-denied') throw error; const t2 = clock(); await app.auth().currentUser.getIdToken(true); trace('تجديد رمز الدخول (بعد رفض)', t2); return once(); } };
         if (homeName) {
           const home = await openHome();
           pendingHome = { name: homeName, value: home }; candidate = { ...home.profile, serverTime: home.serverTime };
@@ -178,7 +180,7 @@ window.Basma = (() => {
       trace('اتصال قاعدة البيانات (websocket) لم يكتمل', t0, false, 'db/connect-timeout');
       connection.state = 'reconnecting';
       try { database.goOffline(); database.goOnline(); } catch {}
-      setTimeout(() => { if (!done) { connection.state = 'stalled'; trace('اتصال قاعدة البيانات (websocket، محاولة ثانية) لم يكتمل', t0, false, 'db/connect-timeout'); } }, CONNECT_MS);
+      setTimeout(() => { if (!done) { connection.state = 'stalled'; trace('اتصال قاعدة البيانات (websocket، محاولة ثانية) لم يكتمل', t0, false, 'db/connect-timeout'); try { window.showToast?.('التحديث المباشر غير متاح على هذه الشبكة؛ البيانات تُجلب من الخادم', 'info'); } catch {} } }, CONNECT_MS);
     }, CONNECT_MS);
     void handler;
   }
