@@ -88,11 +88,12 @@
     // After that it is INCREMENTAL: the server sends only items changed since this phone's cursor, in pages. The cursor
     // moves only after a successful sync, so an offline or failed sync is simply retried on the next open.
     // Every phone keeps its own cursor (several manager phones never conflict).
-    async function sync({ onProgress } = {}) {
+    async function sync({ onProgress, prefetched = null } = {}) {
       const cid0 = keys?.cid || companyId(), m0 = cid0 ? ((await backend.get('meta', cid0)) || {}) : {};
       const result = { stored: 0, rejected: [] };
       const take = async (col, page) => { const part = await store(col, page.items); result.stored += part.stored; result.rejected.push(...part.rejected.map(id => `${col}/${id}`)); onProgress?.(col, result.stored); };
-      let res = await call('managerList', { kind: 'syncAll', cursor: Number.isFinite(m0.cursor?.at) ? { at: m0.cursor.at } : null, lastBackupAt: m0.lastBackupAt });
+      // v6.4: the sync may already have come with the opening call (managerHome); then no extra call.
+      let res = prefetched?.keys && prefetched?.pages ? prefetched : await call('managerList', { kind: 'syncAll', cursor: Number.isFinite(m0.cursor?.at) ? { at: m0.cursor.at } : null, lastBackupAt: m0.lastBackupAt });
       const k = await unlock(res.keys), full = !!res.full;
       for (let guard = 0; guard < 50; guard++) {
         for (const col of COLLECTIONS) {
@@ -105,6 +106,11 @@
       const saved = await saveMeta({ cursor: { at: res.cursor.at }, syncedTo: k.today, lastPullAt: now(), lastOpenAt: now(), lastFull: full ? now() : m0.lastFull });
       return { ...result, full, meta: saved };
     }
+    // v6.4: the last screen of the page, saved ENCRYPTED on this phone, to draw the next open at once (before the
+    // server answers). Not a record: not exported, not counted. Readable only while the key is here (signed in).
+    async function saveSnapshot(name, value) { const { cid } = need(); const row = await seal('snapshot', name, { d: value, s: null }, false); row.col = 'snapshot'; row.date = ''; await backend.put('items', row); return cid; }
+    async function loadSnapshot(name) { const { cid } = need(); const row = await backend.get('items', `${cid}|snapshot|${name}`); if (!row) return null; try { return (await open(row)).d; } catch { return null; } }
+    async function cursorOf(cid) { const m = (await backend.get('meta', cid)) || {}; return { cursor: Number.isFinite(m.cursor?.at) ? { at: m.cursor.at } : null, lastBackupAt: m.lastBackupAt }; }
     async function range(col, from, to) { const out = {}; for (const row of await backend.range(need().cid, col, from, to)) out[row.id] = (await open(row)).d; return out; }
     async function stats() { const m = await meta(), counts = {}; for (const col of COLLECTIONS) counts[col] = await backend.count(need().cid, col); return { ...m, counts }; }
     async function persist() { try { if (await storage?.persisted?.()) return true; return !!(await storage?.persist?.()); } catch { return false; } }
@@ -148,7 +154,7 @@
     }
     // Logout: the key goes, the encrypted data stays.
     async function lock() { if (keys?.cid) await backend.del('keys', keys.cid); keys = null; }
-    return { unlock, unlockOffline, sync, range, stats, meta, saveMeta, persist, exportBackup, importBackup, needsPassword, lock, get companyId() { return keys?.cid; }, get verifiable() { return !!keys?.verifier; }, get info() { return keys; } };
+    return { unlock, unlockOffline, sync, range, stats, meta, saveMeta, persist, exportBackup, importBackup, needsPassword, saveSnapshot, loadSnapshot, cursorOf, lock, get companyId() { return keys?.cid; }, get verifiable() { return !!keys?.verifier; }, get info() { return keys; } };
   }
   const api = { create, idbBackend, memoryBackend, stable, DB_NAME, COLLECTIONS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.BasmaLocal = api;

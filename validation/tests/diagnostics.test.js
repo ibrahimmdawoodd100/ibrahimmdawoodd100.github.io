@@ -35,19 +35,20 @@ function runDiag(opts = {}, storageValue = '[]') {
   vm.runInNewContext(source, ctx);
   const { firebase, calls } = fakeFirebase(opts);
   const storage = { getItem: key => key === 'basma_diag_events' ? storageValue : key === 'basma_diag_trace' ? (opts.trace ?? null) : null };
-  return ctx.window.BasmaDiagnostics.run({ firebase, config: { firebase: { projectId: 'p' }, appCheckSiteKey: SITE_KEY, region: 'us-central1' }, document: dom.document, storage, region: 'us-central1' })
+  return ctx.window.BasmaDiagnostics.run({ firebase, config: { firebase: { projectId: 'p' }, appCheckSiteKey: SITE_KEY, region: 'us-central1' }, document: dom.document, storage, region: 'us-central1', ...(opts.fetch ? { fetch: opts.fetch } : {}) })
     .then(results => ({ results, dom, calls, text: ['diag-lines', 'diag-summary'].map(id => dom.all(dom.byId.get(id)).map(n => `${n.textContent} ${n.value}`).join('\n')).join('\n') }));
 }
 
 test('signed-in seller: one line per step, with times, and no token, key or full uid printed', async () => {
   const { results, text, calls } = await runDiag({}, JSON.stringify([{ at: '2026-11-11T13:20:00.000Z', operation: 'renewSubscription', code: 'basma/timeout' }]));
-  assert.deepEqual(plain(results.map(r => r.step)), ['تحميل مكتبات Firebase', 'حالة تسجيل الدخول', 'رمز App Check', 'الدالة profile', 'الدالة listCompanies', 'الدالة managerHome', 'قراءة صغيرة من قاعدة البيانات', 'حالة اتصال قاعدة البيانات', 'خطوات فتح الصفحات بعد الدخول', 'آخر أخطاء لوحة المورّد']);
-  assert.deepEqual(plain(results.map(r => r.status)), ['OK', 'OK', 'OK', 'OK', 'OK', 'SKIP', 'WARN', 'OK', 'SKIP', 'WARN']);
+  const P = n => `الشبكة فقط (ملف صغير من الموقع) ${n}/3`, F = (name, n) => `الدالة ${name} — المرة ${n}`;
+  assert.deepEqual(plain(results.map(r => r.step)), ['تحميل مكتبات Firebase', P(1), P(2), P(3), 'حالة تسجيل الدخول', 'استعادة تسجيل الدخول (seller)', 'رمز App Check', F('profile', 1), F('profile', 2), 'الدالة listCompanies', F('managerHome', 1), F('managerHome', 2), F('employeeHome', 1), F('employeeHome', 2), 'الملخص', 'قراءة صغيرة من قاعدة البيانات', 'حالة اتصال قاعدة البيانات', 'خطوات فتح الصفحات بعد الدخول', 'آخر أخطاء لوحة المورّد']);
+  assert.deepEqual(plain(results.map(r => r.status)), ['OK', 'SKIP', 'SKIP', 'SKIP', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'OK', 'WARN', 'OK', 'SKIP', 'WARN']);
   assert.ok(results.every(r => Number.isInteger(r.ms) && r.ms >= 0));
   assert.match(text, /uidS…/);
   for (const secret of [TOKEN, SITE_KEY, UID]) assert.equal(text.includes(secret), false, secret);
   assert.ok(calls.some(c => c[0] === 'activate' && c[1] === true), 'App Check activated with the configured key');
-  assert.deepEqual(plain(calls.filter(c => c[0] === 'call').map(c => c[1])), ['profile', 'listCompanies']);
+  assert.deepEqual(plain(calls.filter(c => c[0] === 'call').map(c => c[1])), ['profile', 'profile', 'listCompanies'], 'profile called twice in a row');
   assert.match(text, /renewSubscription: basma\/timeout/);
 });
 
@@ -55,7 +56,7 @@ test('not signed in: callables are skipped, App Check and connection still check
   const { results, calls } = await runDiag({ signedIn: 'nobody' });
   const by = Object.fromEntries(results.map(r => [r.step, r.status]));
   assert.equal(by['حالة تسجيل الدخول'], 'WARN');
-  assert.equal(by['الدالة profile'], 'SKIP');
+  assert.equal(by['الدالة profile — المرة 1'], 'SKIP'); assert.equal(by['الدالة profile — المرة 2'], 'SKIP');
   assert.equal(by['الدالة listCompanies'], 'SKIP');
   assert.equal(by['رمز App Check'], 'OK');
   assert.equal(calls.filter(c => c[0] === 'call').length, 0);
@@ -93,4 +94,28 @@ test('database connection step reports OK when the SDK calls back immediately (n
   const { results } = await runDiag({ connectedSync: true });
   const step = results.find(r => r.step === 'حالة اتصال قاعدة البيانات');
   assert.equal(step?.status, 'OK', JSON.stringify(step));
+});
+
+// v6.5 (owner, 26 Nov 2026): network separated from functions.
+test('network x3 from our own site, each function twice, sign-in restore, Arabic summary, dated old rows', async () => {
+  const urls = [];
+  const fetch = async (url, opts) => { urls.push([url, opts?.cache]); return { ok: true, status: 200, text: async () => 'x' }; };
+  const trace = JSON.stringify([{ at: '2026-11-20T08:15:30.000Z', page: 'manager', step: 'الدالة managerHome', ms: 6000, ok: true }]);
+  const { results, calls, text } = await runDiag({ signedIn: 'manager', profileRole: 'manager', fetch, trace });
+  assert.equal(urls.length, 3); assert.ok(urls.every(([u, c]) => /^\/manager\/assets\/config\.js\?ping=/.test(u) && c === 'no-store'), 'a tiny file from this site, never cached');
+  const by = Object.fromEntries(results.map(r => [r.step, r]));
+  for (const n of [1, 2, 3]) assert.equal(by[`الشبكة فقط (ملف صغير من الموقع) ${n}/3`].status, 'OK');
+  assert.equal(by['استعادة تسجيل الدخول (manager)'].status, 'OK');
+  assert.deepEqual(plain(calls.filter(c => c[0] === 'call').map(c => c[1])), ['profile', 'profile', 'managerHome', 'managerHome'], 'each function twice in a row');
+  assert.match(by['الدالة managerHome — المرة 1'].detail, /استيقاظ \+ شبكة/); assert.match(by['الدالة managerHome — المرة 2'].detail, /شبكة فقط/);
+  assert.equal(by['الدالة employeeHome — المرة 1'].status, 'SKIP', 'employee account only');
+  assert.match(by['الملخص'].detail, /^الشبكة: \d+\.\d ث، الاستيقاظ: \d+\.\d ث$/);
+  assert.match(text, /الشبكة: \d+\.\d ث، الاستيقاظ: \d+\.\d ث\./, 'also in the summary line');
+  assert.match(by['manager: الدالة managerHome'].detail, /^2026-11-20 08:15:30/, 'old rows show their date');
+});
+
+test('the page has the "clear old log" button, and it clears only the old step list', () => {
+  const html = fs.readFileSync(require.resolve('../public/manager/diagnostics.html'), 'utf8');
+  assert.match(html, /<button type="button" id="diag-clear">امسح السجل القديم<\/button>/);
+  assert.match(source, /getElementById\('diag-clear'\)\?\.addEventListener\('click', \(\) => \{ try \{ localStorage\.removeItem\('basma_diag_trace'\); \}/);
 });
