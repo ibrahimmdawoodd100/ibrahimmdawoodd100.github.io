@@ -1,7 +1,7 @@
 {
   "version": 5,
   "mode": "release",
-  "liveRevision": "deployment:8050042868:52a839c6c5cdae67ca9870c7c803e21b91b49716",
+  "liveRevision": "deployment:8057965844:a20bb794769c041509b34645943f4355d7f0b4e1",
   "origin": "https://ibrahimmdawoodd100.github.io",
   "baselineHashes": {
     ".nojekyll": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
@@ -27,9 +27,9 @@
     "manager/assets/leaflet/images/marker-shadow.png": "264f5c640339f042dd729062cfc04c17f8ea0f29882b538e3848ed8f10edb4da",
     "manager/assets/leaflet/leaflet.css": "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6",
     "manager/assets/leaflet/leaflet.js": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a",
-    "manager/assets/local-store.js": "da364cc043ea667db800b400550aae0ebea23930140a88deb0af48c7e6879761",
+    "manager/assets/local-store.js": "e74abf55bc7c61d78ddd9b3e4948676203bd9bfa560b2917dfbfba76a85e4427",
     "manager/assets/manager-data.js": "7a91ada56dfeced57867d600c18687f1596b16e7322c57a0b0260cbbe40fbf7b",
-    "manager/assets/manager-views.js": "2d5b9c68751e83199150e900365e6341097ff90164ed933ab78c10117f9ca738",
+    "manager/assets/manager-views.js": "6eefc9205180c8a9ee5c1cfa04c80a4fee816adb8e96a4174f8d1592cf79daba",
     "manager/assets/manager.js": "16ff395570519e3852f23b90d05df61c53250c3dad75f1a66291a3bae72ef734",
     "manager/assets/report-model.js": "347bd34a83aebe3fc92667ecf9800bee1906c67c2db1db0d5db0b39abb66b956",
     "manager/assets/safe-dom.js": "a9347101b27d111e21ac579e19e676c3faff52988e51c496d39ac0aa78fadb66",
@@ -39,7 +39,7 @@
     "manager/icon-manager-512.png": "92c5f11bb6dd49761fd8b40b2bbded4823b28d601d2fd1ad70fbbff5b7eee22a",
     "manager/index.html": "ce634f9f1d15a2bb767904dbf6933a1884353fc37f314d8df5448213b07b8080",
     "manager/manifest.json": "432c2c3d035a405772782c947c413ba0ac607c514c37431a19f85c76fa737f98",
-    "manager/sw.js": "9f1c74925c6b73837630906c178f5a02efdb534612dc71ddb9f10fdd88495005",
+    "manager/sw.js": "fdbcfeb5318c455056afcb09c3fefa9573185b0ca6e417590b2b25461d9b696e",
     "seller.html": "ea7bcc8569ab9988af8bf37c11fe12722329b5a8ebff0fc1713069f2ce75bede"
   },
   "expectedOwnedHashes": {

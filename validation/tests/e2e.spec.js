@@ -506,3 +506,75 @@ test.describe('cost budgets (local emulators, 10,000 employees)', () => {
     await g.verify(page, 'cost budgets'); await g.context.close();
   });
 });
+
+// ---------------- speed measurement (owner, 26 Nov 2026): information only ----------------
+// A mid-range Android phone: mobile network (150 ms round trip, 1.6 Mbit/s down, 0.75 up) and a 4x slower CPU.
+// Test-side probes only (no app change): page timings, every IndexedDB open and every network call, in seconds.
+test.describe('speed measurement on a throttled phone (local emulators, information only)', () => {
+  test.skip(MODE !== 'emulator', 'runs against the local emulators');
+  const probe = () => {
+    window.__perf = { idb: [], calls: [], marks: [] };
+    const mark = name => window.__perf.marks.push([name, performance.now()]);
+    document.addEventListener('DOMContentLoaded', () => mark('domcontentloaded')); addEventListener('load', () => mark('load'));
+    const open = indexedDB.open.bind(indexedDB);
+    indexedDB.open = function (name, v) { const s = performance.now(), r = v === undefined ? open(name) : open(name, v); r.addEventListener('success', () => window.__perf.idb.push([name, s, performance.now()])); return r; };
+    const f = window.fetch;
+    window.fetch = async function (u, o) { const s = performance.now(), url = String(u?.url || u); try { return await f.apply(this, arguments); } finally { window.__perf.calls.push([url.replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '').slice(0, 70), s, performance.now()]); } };
+  };
+  async function slowPhone(page) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Network.enable');
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 150, downloadThroughput: 1.6 * 1024 * 1024 / 8, uploadThroughput: 750 * 1024 / 8 });
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  }
+  const s = ms => Math.round(ms / 100) / 10;
+  async function timeline(page, label, startMs, shownMs, usableMs, extra = {}) {
+    const data = await page.evaluate(() => ({
+      perf: window.__perf, sw: !!navigator.serviceWorker?.controller,
+      nav: (() => { const n = performance.getEntriesByType('navigation')[0]; return n ? { html: n.responseEnd, dcl: n.domContentLoadedEventEnd, load: n.loadEventEnd } : null; })(),
+      scripts: performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script').map(r => [r.name.replace(/^https?:\/\/[^/]+/, ''), r.startTime, r.responseEnd, r.transferSize]),
+      trace: (() => { try { return JSON.parse(localStorage.getItem('basma_diag_trace') || '[]').slice(-12); } catch { return []; } })()
+    }));
+    const rel = t => s(t - startMs);
+    const lines = [`PERF ${label}: service worker in control=${data.sw}`];
+    if (data.nav) lines.push(`  html downloaded ${s(data.nav.html)}s, all scripts parsed (DOMContentLoaded) ${s(data.nav.dcl)}s, load ${s(data.nav.load)}s`);
+    if (data.scripts.length) { const last = Math.max(...data.scripts.map(x => x[2])); lines.push(`  ${data.scripts.length} scripts, last one downloaded at ${s(last)}s, ${Math.round(data.scripts.reduce((a, x) => a + (x[3] || 0), 0) / 1024)} KB over the network`); }
+    for (const [name, a, b] of data.perf.idb) lines.push(`  IndexedDB open ${name}: ${rel(a)}s -> ${rel(b)}s`);
+    for (const [url, a, b] of data.perf.calls.filter(c => c[2] >= startMs)) lines.push(`  call ${url}: ${rel(a)}s -> ${rel(b)}s (${s(b - a)}s)`);
+    for (const t of data.trace) lines.push(`  app step: ${t.step || t.label || JSON.stringify(t).slice(0, 60)} ${t.ms ?? t.duration ?? ''}`);
+    lines.push(`  FIRST SCREEN DRAWN ${s(shownMs - startMs)}s; SCREEN USABLE ${s(usableMs - startMs)}s`, ...Object.entries(extra).map(([k, v]) => `  ${k}: ${v}`));
+    console.log(lines.join('\n')); timings.push({ mode: MODE, name: `PERF ${label}: drawn ${s(shownMs - startMs)} s, usable ${s(usableMs - startMs)} s`, ms: usableMs - startMs });
+  }
+  test('manager and employee open: timeline on a mid-range phone (first open and normal open)', async ({ browser }) => {
+    const { accounts } = FIX;
+    test.setTimeout(420000);
+    // MANAGER, first open (nothing cached): start = pressing «login».
+    const g = await guarded(browser), page = await g.context.newPage(); await g.context.addInitScript(probe); await slowPhone(page);
+    await page.goto('/manager/'); await page.locator('#dl-username').waitFor({ timeout: 60000 });
+    await page.fill('#dl-username', accounts.manager); await page.fill('#dl-password', FIX.password);
+    let t0 = await page.evaluate(() => performance.now()); await page.click('#dl-submit-btn');
+    await page.locator('#dash-tbody').filter({ hasText: 'e2e' }).waitFor({ timeout: 90000 }); let shown = await page.evaluate(() => performance.now());
+    await page.waitForTimeout(300); let usable = await page.evaluate(() => performance.now());
+    let synced = null; for (let i = 0; i < 120 && synced === null; i++) { synced = await page.evaluate(async () => { const st = typeof localData !== 'undefined' ? localData.get() : null; if (!st?.companyId) return null; const m = await st.meta(); return m.lastPullAt ? performance.now() : null; }); if (synced === null) await page.waitForTimeout(500); }
+    await timeline(page, 'MANAGER first open (from «login»)', t0, shown, usable, { 'automatic sync finished': synced ? `${s(synced - t0)}s` : 'not within 60 s' });
+    // MANAGER, normal open: the saved session, the app shell from the service worker. Start = navigation.
+    await page.reload({ waitUntil: 'commit' }); t0 = 0;
+    await page.locator('#dash-tbody').filter({ hasText: 'e2e' }).waitFor({ timeout: 90000 }); shown = await page.evaluate(() => performance.now()); usable = shown;
+    synced = null; for (let i = 0; i < 120 && synced === null; i++) { synced = await page.evaluate(async () => { const st = typeof localData !== 'undefined' ? localData.get() : null; if (!st?.companyId) return null; return (await st.meta()).lastPullAt > Date.now() - 60000 ? performance.now() : null; }); if (synced === null) await page.waitForTimeout(500); }
+    await timeline(page, 'MANAGER normal open (saved session)', t0, shown, usable, { 'automatic sync finished': synced ? `${s(synced)}s` : 'not within 60 s' });
+    await g.context.close();
+    // EMPLOYEE, first open: start = pressing «login»; usable = the check-in button enabled.
+    const phone = await employeePhone(browser); await phone.g.context.addInitScript(probe); await slowPhone(phone.page);
+    const ep = phone.page; await ep.goto('/employee/'); await ep.locator('#dl-emp-username').waitFor({ timeout: 60000 });
+    await ep.fill('#dl-emp-username', accounts.employeeC); await ep.fill('#dl-emp-password', FIX.password);
+    t0 = await ep.evaluate(() => performance.now()); await ep.click('#dl-emp-submit');
+    await ep.locator('#btn-checkin').waitFor({ timeout: 90000 }); shown = await ep.evaluate(() => performance.now());
+    await expect(ep.locator('#btn-checkin')).toBeEnabled({ timeout: 90000 }); usable = await ep.evaluate(() => performance.now());
+    await timeline(ep, 'EMPLOYEE first open (from «login»)', t0, shown, usable);
+    await ep.reload({ waitUntil: 'commit' });
+    await ep.locator('#btn-checkin').waitFor({ timeout: 90000 }); shown = await ep.evaluate(() => performance.now());
+    await expect(ep.locator('#btn-checkin')).toBeEnabled({ timeout: 90000 }); usable = await ep.evaluate(() => performance.now());
+    await timeline(ep, 'EMPLOYEE normal open (saved session)', 0, shown, usable);
+    await phone.g.context.close();
+  });
+});
