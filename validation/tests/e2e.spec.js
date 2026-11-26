@@ -550,7 +550,7 @@ test.describe('speed measurement on a throttled phone (local emulators, informat
     test.setTimeout(420000);
     // MANAGER, first open (nothing cached): start = pressing «login».
     const g = await guarded(browser), page = await g.context.newPage(); await g.context.addInitScript(probe); await slowPhone(page);
-    await page.goto('/manager/'); await page.locator('#dl-username').waitFor({ timeout: 60000 });
+    await g.open(page, '/manager/', '#dl-username', 'speed: manager login');
     await page.fill('#dl-username', accounts.manager); await page.fill('#dl-password', FIX.password);
     let t0 = await page.evaluate(() => performance.now()); await page.click('#dl-submit-btn');
     await page.locator('#dash-tbody').filter({ hasText: 'e2e' }).waitFor({ timeout: 90000 }); let shown = await page.evaluate(() => performance.now());
@@ -565,7 +565,7 @@ test.describe('speed measurement on a throttled phone (local emulators, informat
     await g.context.close();
     // EMPLOYEE, first open: start = pressing «login»; usable = the check-in button enabled.
     const phone = await employeePhone(browser); await phone.g.context.addInitScript(probe); await slowPhone(phone.page);
-    const ep = phone.page; await ep.goto('/employee/'); await ep.locator('#dl-emp-username').waitFor({ timeout: 60000 });
+    const ep = phone.page; await phone.g.open(ep, '/employee/', '#dl-emp-username', 'speed: employee login');
     await ep.fill('#dl-emp-username', accounts.employeeC); await ep.fill('#dl-emp-password', FIX.password);
     t0 = await ep.evaluate(() => performance.now()); await ep.click('#dl-emp-submit');
     await ep.locator('#btn-checkin').waitFor({ timeout: 90000 }); shown = await ep.evaluate(() => performance.now());
