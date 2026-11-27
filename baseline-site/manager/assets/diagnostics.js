@@ -14,7 +14,7 @@ window.BasmaDiagnostics = (() => {
   const mask = id => (typeof id === 'string' && id.length > 4 ? id.slice(0, 4) + '…' : '…');
   const describe = e => String(e?.code || 'error') + (e?.code === 'diag/timeout' ? '' : (e?.message ? ': ' + String(e.message).slice(0, 120) : ''));
 
-  async function run({ firebase, config, document, storage, region } = {}) {
+  async function run({ firebase, config, document, storage, region, fetch: fetchFn = (typeof fetch === 'function' ? fetch : null) } = {}) {
     const results = [];
     const list = document.getElementById('diag-lines');
     const summary = document.getElementById('diag-summary');
@@ -43,14 +43,27 @@ window.BasmaDiagnostics = (() => {
     }
     add('تحميل مكتبات Firebase', 'OK', 0, 'المكتبات والإعدادات موجودة');
 
+    // v6.5 (owner, 26 Nov 2026) 1. Pure network: a tiny file from this site, 3 times, no cache, no function.
+    const pings = [];
+    for (let i = 1; i <= 3; i++) {
+      const r = await step(`الشبكة فقط (ملف صغير من الموقع) ${i}/3`, async () => {
+        if (!fetchFn) return { status: 'SKIP', detail: 'غير متاح' };
+        const res = await fetchFn(`/manager/assets/config.js?ping=${Date.now()}-${i}`, { cache: 'no-store' });
+        if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { code: 'net/http' });
+        await res.text(); return { detail: 'وصل' };
+      }, 10000);
+      if (r.status === 'OK') pings.push(r.ms);
+    }
+
     // 1. Auth state: the same app names the Basma pages use, so their saved session is visible here.
-    let app = null, user = null, role = null;
+    let app = null, user = null, role = null; const restored = [];
     await step('حالة تسجيل الدخول', async () => {
       const found = [];
       for (const r of ROLES) {
         const name = `secure-${r}`;
         const a = firebase.apps.find(x => x.name === name) || firebase.initializeApp(config.firebase, name);
-        const u = await withTimeout(new Promise(resolve => { const stop = a.auth().onAuthStateChanged(x => { stop(); resolve(x); }); }), STEP_MS);
+        const t = now(), u = await withTimeout(new Promise(resolve => { const stop = a.auth().onAuthStateChanged(x => { stop(); resolve(x); }); }), STEP_MS);
+        if (u) restored.push([r, now() - t]); // v6.5 3. the sign-in restore, separately
         if (u && !user) { app = a; user = u; role = r; }
         if (u) found.push(`${r} (${mask(u.uid)})`);
       }
@@ -58,6 +71,7 @@ window.BasmaDiagnostics = (() => {
       return found.length ? { detail: 'مسجّل: ' + found.join('، ') } : { status: 'WARN', detail: 'لا يوجد حساب مسجّل في هذا المتصفح. سجّل الدخول في لوحة المورّد ثم افتح هذه الصفحة.' };
     });
 
+    for (const [r, ms] of restored) add(`استعادة تسجيل الدخول (${r})`, 'OK', ms, 'من ذاكرة هذا المتصفح');
     if (!app) app = firebase.apps.find(x => x.name === 'secure-seller') || firebase.initializeApp(config.firebase, 'secure-seller');
     // 2. App Check token: only whether it exists. The token and the site key are never printed.
     await step('رمز App Check', async () => {
@@ -69,12 +83,17 @@ window.BasmaDiagnostics = (() => {
     });
 
     const callable = name => app.functions(region).httpsCallable(name, { limitedUseAppCheckTokens: false });
-    // 3. profile callable.
-    await step('الدالة profile', async () => {
-      if (!user) return { status: 'SKIP', detail: 'يحتاج تسجيل الدخول' };
-      const p = (await callable('profile')({})).data || {};
-      return { detail: `الدور: ${p.role || '؟'}` };
-    }, 20000);
+    // v6.5 2. Each function TWICE in a row: the 1st = waking the server + network, the 2nd = network + work only.
+    const wake = [];
+    const twice = async (name, need, call, detail) => {
+      const rows = [];
+      for (const n of [1, 2]) rows.push(await step(`الدالة ${name} — المرة ${n}`, async () => {
+        const why = need(); if (why) return { status: 'SKIP', detail: why };
+        const data = (await call()).data || {}; return { detail: n === 1 ? 'استيقاظ + شبكة' : `شبكة فقط${detail ? ' — ' + detail(data) : ''}` };
+      }, 25000));
+      if (rows[0].status === 'OK' && rows[1].status === 'OK') wake.push(Math.max(0, rows[0].ms - rows[1].ms));
+    };
+    await twice('profile', () => (user ? '' : 'يحتاج تسجيل الدخول'), () => callable('profile')({}), p => `الدور: ${p.role || '؟'}`);
     // 4. listCompanies callable (seller accounts only).
     await step('الدالة listCompanies', async () => {
       if (!user) return { status: 'SKIP', detail: 'يحتاج تسجيل دخول المورّد' };
@@ -83,13 +102,14 @@ window.BasmaDiagnostics = (() => {
       return { detail: `عدد الشركات في الصفحة الأولى: ${Object.keys(page.companies || {}).length}` };
     }, 20000);
 
-    // 4b. managerHome callable (manager accounts only): the manager dashboard's single server call.
-    await step('الدالة managerHome', async () => {
-      if (!user) return { status: 'SKIP', detail: 'يحتاج تسجيل دخول المدير' };
-      if (role !== 'manager') return { status: 'SKIP', detail: 'متاحة لحساب المدير فقط' };
-      const home = (await callable('managerHome')({})).data || {};
-      return { detail: `الموظفون: ${Object.keys(home.employees || {}).length}، سجلات اليوم: ${Object.keys(home.records || {}).length}` };
-    }, 25000);
+    await twice('managerHome', () => (!user ? 'يحتاج تسجيل دخول المدير' : role !== 'manager' ? 'متاحة لحساب المدير فقط' : ''), () => callable('managerHome')({}), h => `الموظفون: ${Object.keys(h.employees || {}).length}`);
+    await twice('employeeHome', () => (!user ? 'يحتاج تسجيل دخول الموظف' : role !== 'employee' ? 'متاحة لحساب الموظف فقط' : ''), () => callable('employeeHome')({}), h => `الفرع: ${h.warehouse?.name ? 'موجود' : '—'}`);
+    // v6.5 4. The summary line.
+    const median = list => { const v = [...list].sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
+    const sec = ms => (ms === null ? '—' : (Math.round(ms / 100) / 10).toFixed(1));
+    const networkMs = median(pings), wakeMs = wake.length ? wake.reduce((a, b) => a + b, 0) / wake.length : null;
+    const splitLine = `الشبكة: ${sec(networkMs)} ث، الاستيقاظ: ${sec(wakeMs)} ث`;
+    add('الملخص', 'OK', 0, splitLine);
 
     // 5. One small database read (10 s). A permission refusal still proves the server answered.
     const db = app.database();
@@ -117,7 +137,7 @@ window.BasmaDiagnostics = (() => {
     try {
       const trace = JSON.parse(storage?.getItem('basma_diag_trace') || '[]').slice(-20);
       if (!trace.length) add('خطوات فتح الصفحات بعد الدخول', 'SKIP', 0, 'لا توجد خطوات مسجلة. سجّل الدخول في صفحة المدير ثم افتح هذه الصفحة.');
-      for (const t of trace) add(`${t.page || ''}: ${t.step}`, t.ok ? 'OK' : 'FAIL', t.ms, `${t.at?.slice(11, 19) || ''}${t.code ? ' — ' + t.code : ''}`);
+      for (const t of trace) add(`${t.page || ''}: ${t.step}`, t.ok ? 'OK' : 'FAIL', t.ms, `${t.at ? t.at.slice(0, 10) + ' ' + t.at.slice(11, 19) : ''}${t.code ? ' — ' + t.code : ''}`);
     } catch { add('خطوات فتح الصفحات بعد الدخول', 'SKIP', 0, 'التخزين المحلي غير متاح'); }
 
     // 7. Recent errors recorded by the seller page (operation, code, time only).
@@ -127,7 +147,7 @@ window.BasmaDiagnostics = (() => {
     } catch { add('آخر أخطاء لوحة المورّد', 'SKIP', 0, 'التخزين المحلي غير متاح'); }
 
     const bad = results.filter(r => r.status === 'FAIL' || r.status === 'TIMEOUT').length;
-    if (summary) summary.textContent = bad ? `انتهى الفحص: ${bad} خطوة فشلت. انسخ النتيجة وأرسلها.` : 'انتهى الفحص: لا توجد أخطاء.';
+    if (summary) summary.textContent = `${splitLine}. ` + (bad ? `انتهى الفحص: ${bad} خطوة فشلت. انسخ النتيجة وأرسلها.` : 'انتهى الفحص: لا توجد أخطاء.');
     return results;
   }
   function reportText(results) { return results.map(r => `${r.status}\t${r.ms}ms\t${r.step}\t${r.detail}`).join('\n'); }
@@ -138,6 +158,8 @@ if (typeof document !== 'undefined' && document.getElementById?.('diag-lines')) 
   let last = [];
   const start = () => window.BasmaDiagnostics.run({ firebase: window.firebase, config: window.BASMA_CONFIG, document, storage: (() => { try { return localStorage; } catch { return null; } })(), region: window.BASMA_CONFIG?.region }).then(r => { last = r; });
   document.getElementById('diag-run').addEventListener('click', start);
+  // v6.5 5. Remove the old step rows recorded by the pages (only that list), then test again.
+  document.getElementById('diag-clear')?.addEventListener('click', () => { try { localStorage.removeItem('basma_diag_trace'); } catch {} document.getElementById('diag-summary').textContent = 'مُسح السجل القديم.'; start(); });
   document.getElementById('diag-copy').addEventListener('click', async () => {
     const text = `Basma diagnostics ${new Date().toISOString()}\n${navigator.userAgent}\n` + window.BasmaDiagnostics.reportText(last);
     try { await navigator.clipboard.writeText(text); document.getElementById('diag-summary').textContent = 'نُسخت النتيجة.'; }

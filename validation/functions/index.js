@@ -1,14 +1,19 @@
 'use strict';
+// v6.6 (owner, 27 Nov 2026): first-call timing. BOOT_AT = when this file starts loading; PROCESS_AGE = how long Node ran before.
+const BOOT_AT = Date.now(), PROCESS_AGE_MS = typeof process === 'object' && process.uptime ? Math.round(process.uptime() * 1000) : null;
 const { randomUUID, createHash, randomBytes, generateKeyPairSync, createPrivateKey, sign: edSign } = require('node:crypto');
 const { initializeApp } = require('firebase-admin/app');
 const { getDatabase } = require('firebase-admin/database');
 const { getAuth } = require('firebase-admin/auth');
-const { getStorage } = require('firebase-admin/storage');
+// v6.6: loaded only by the daily backup (saves module-load time on every other function's cold start).
+const getStorage = (...args) => require('firebase-admin/storage').getStorage(...args);
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onValueWritten } = require('firebase-functions/v2/database');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineString } = require('firebase-functions/params');
-const webauthn = require('@simplewebauthn/server');
+// v6.6: loaded only by the fingerprint functions (about 0.2 s less on every other cold start).
+let webauthnModule = null;
+const webauthn = new Proxy({}, { get: (_, key) => (webauthnModule ||= require('@simplewebauthn/server'))[key] });
 const p = require('./policy');
 const rules = require('./report-model'); // same file as public/assets/report-model.js (test-checked)
 initializeApp();
@@ -19,14 +24,18 @@ const backupBucket = defineString('BACKUP_BUCKET', { default: '' });
 const region = 'us-central1';
 const read = async path => (await db.ref(path).get()).val();
 const audit = (actor, action, target, details = {}) => db.ref('audit').push({ actor, action, target, details, at: Date.now() });
+let MODULE_READY_MS = null, firstRequest = true; // set after the whole file has loaded (end of file)
 function endpoint(roles, handler) {
   // v5.16 cost guards: explicit 1 vCPU / 256 MiB / 80 concurrent requests (as live), max 10 instances, no min
   // instances, 30 s timeout (calls take 30-500 ms; a stuck call no longer bills 60 s).
   return onCall({ region, enforceAppCheck: true, maxInstances: 10, concurrency: 80, cpu: 1, memory: '256MiB', timeoutSeconds: 30 }, async req => {
     try {
+      const t0 = Date.now(), cold = firstRequest; firstRequest = false;
       if (!req.auth) p.fail('سجّل الدخول', 'unauthenticated');
       const member = await read(`access/${req.auth.uid}`);
+      const t1 = Date.now();
       const info = member?.companyId ? await read(`companies/${member.companyId}/info`) : null;
+      const t2 = Date.now();
       p.authorize(member, req.auth.token, info, roles);
       const employee = member.role === 'employee' ? await employeeContext(req.auth.uid, member) : null;
       const now = Date.now(), bucket = Math.floor(now / 60000);
@@ -38,7 +47,10 @@ function endpoint(roles, handler) {
         return state.count >= 90 || hourCount >= 600 ? undefined : { ...state, count: state.count + 1, hour, hourCount: hourCount + 1, expiresAt: now + 3700000 };
       });
       if (!rate.committed) p.fail('طلبات كثيرة، حاول لاحقًا', 'resource-exhausted');
-      return await handler({ uid: req.auth.uid, token: req.auth.token, member, info, employee, data: req.data || {} });
+      const t3 = Date.now(), result = await handler({ uid: req.auth.uid, token: req.auth.token, member, info, employee, data: req.data || {} }), t4 = Date.now();
+      // Numbers only (no user data). On a cold instance: Node start + file load + first database reads are visible.
+      if (cold || Math.random() < 0.1) try { console.log(JSON.stringify({ basmaPerf: 1, fn: (typeof process === 'object' && process.env?.K_SERVICE) || 'local', cold, processAgeMs: PROCESS_AGE_MS, moduleLoadMs: MODULE_READY_MS, sinceLoadMs: t0 - BOOT_AT - (MODULE_READY_MS || 0), accessReadMs: t1 - t0, infoReadMs: t2 - t1, rateAndContextMs: t3 - t2, handlerMs: t4 - t3, totalMs: t4 - t0 })); } catch { /* a timing line never breaks a call */ }
+      return result;
     } catch (error) {
       if (error instanceof HttpsError) throw error;
       if (error instanceof p.PolicyError) throw new HttpsError(error.code, error.message, error.details);
@@ -1217,3 +1229,4 @@ exports.dailyBackup = onSchedule({ schedule: 'every day 02:00', timeZone: 'UTC',
   await bucket.file(`${prefix}/manifest.json`).save(JSON.stringify({ format:'basma-backup-v1', at:new Date().toISOString(), files, authIncluded:false }), { resumable:false, metadata:{contentType:'application/json',cacheControl:'no-store'} });
   console.info('backup_complete', { prefix, files:files.length });
 });
+MODULE_READY_MS = Date.now() - BOOT_AT; // v6.6: how long this file took to load (cold-start part)

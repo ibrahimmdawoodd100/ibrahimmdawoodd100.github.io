@@ -562,7 +562,8 @@ test.describe('speed measurement on a throttled phone (local emulators, informat
     await page.reload({ waitUntil: 'commit' }); t0 = 0;
     await page.locator('#dash-tbody').filter({ hasText: 'e2e' }).waitFor({ timeout: 90000 }); shown = await page.evaluate(() => performance.now()); usable = shown;
     synced = null; for (let i = 0; i < 120 && synced === null; i++) { synced = await page.evaluate(async () => { const st = typeof localData !== 'undefined' ? localData.get() : null; if (!st?.companyId) return null; return (await st.meta()).lastPullAt > Date.now() - 60000 ? performance.now() : null; }); if (synced === null) await page.waitForTimeout(500); }
-    await timeline(page, 'MANAGER normal open (saved session)', t0, shown, usable, { 'automatic sync finished': synced ? `${s(synced)}s` : 'not within 60 s' });
+    const fromPhone = await page.evaluate(() => window.__basmaDrawnFromPhone || null); // v6.6: drawn from this phone before the server answered
+    await timeline(page, 'MANAGER normal open (saved session)', t0, fromPhone || shown, usable, { 'automatic sync finished': synced ? `${s(synced)}s` : 'not within 60 s', 'drawn from the phone copy': fromPhone ? `${s(fromPhone)}s` : 'no', 'server data shown': `${s(shown)}s` });
     await g.context.close();
     // EMPLOYEE, first open: start = pressing «login»; usable = the check-in button enabled.
     const phone = await employeePhone(browser); await phone.g.context.addInitScript(probe); await slowPhone(phone.page);

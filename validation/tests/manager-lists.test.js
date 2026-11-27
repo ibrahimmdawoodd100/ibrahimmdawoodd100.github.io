@@ -233,3 +233,16 @@ test('schedule windows: an overlapping save sends nothing; an existing overlappi
   h.el('wh-co-from').value = '21:56'; await h.ctx.saveWhSchedule(); await settle(20);
   assert.equal(h.list('managerBranch').length, 1, 'check-out starting exactly when check-in ends is accepted');
 });
+
+// v6.6 (owner, 27 Nov 2026): the dashboard is drawn from the phone's saved copy BEFORE sign-in finishes (no session yet).
+test('the dashboard draws from a saved copy with no session and no server call, without an error', async () => {
+  const h = managerHarness(defaultServer);
+  const home = { date: '2026-11-27', info: { nameAr: 'شركة', timeZone: 'UTC' }, employees: { e1: { name: 'أحمد', status: 'approved', role: 'محاسب', warehouseId: 'w1', warehouseName: 'الفرع' } }, warehouses: { w1: { name: 'الفرع', active: true } }, settings: {}, records: {}, leaves: {}, excuses: {} };
+  h.ctx.DB = undefined; // before the session: no database adapter, no profile
+  for (const id of ['pr-wh', 'pr-emp']) h.el(id).options = []; // a real <select> has an options list (the fake page does not)
+  const before = h.calls.length;
+  h.ctx.renderDashboard(home, { offline: true }); await settle(20);
+  assert.match(h.texts(h.el('dash-tbody')), /أحمد/, 'drawn from the saved copy');
+  assert.equal(h.calls.length, before, 'no server call');
+  assert.equal(h.toasts.filter(t => t[0] === 'error').length, 0, 'no error');
+});

@@ -102,7 +102,8 @@ test('network x3 from our own site, each function twice, sign-in restore, Arabic
   const fetch = async (url, opts) => { urls.push([url, opts?.cache]); return { ok: true, status: 200, text: async () => 'x' }; };
   const trace = JSON.stringify([{ at: '2026-11-20T08:15:30.000Z', page: 'manager', step: 'الدالة managerHome', ms: 6000, ok: true }]);
   const { results, calls, text } = await runDiag({ signedIn: 'manager', profileRole: 'manager', fetch, trace });
-  assert.equal(urls.length, 3); assert.ok(urls.every(([u, c]) => /^\/manager\/assets\/config\.js\?ping=/.test(u) && c === 'no-store'), 'a tiny file from this site, never cached');
+  assert.equal(urls.length, 3); assert.ok(urls.every(([u, c]) => /^\/\.well-known\/assetlinks\.json\?ping=/.test(u) && c === 'no-store'), 'a file the service worker never serves, never cached');
+  assert.equal(new Set(urls.map(([u]) => u)).size, 3, 'a unique address each time');
   const by = Object.fromEntries(results.map(r => [r.step, r]));
   for (const n of [1, 2, 3]) assert.equal(by[`الشبكة فقط (ملف صغير من الموقع) ${n}/3`].status, 'OK');
   assert.equal(by['استعادة تسجيل الدخول (manager)'].status, 'OK');

@@ -5,10 +5,10 @@
 // network untouched. A new release changes VERSION, so the browser installs a fresh cache and deletes the old one.
 // v5.16: each file has its own content hash; on a new release UNCHANGED files are copied from the previous cache and
 // only changed files are downloaded (a typical release: a few KB per phone instead of the whole app).
-const VERSION = 'c11102fa68e9654e';
+const VERSION = 'bd1f52262eea3246';
 const SCOPE = '/manager/';
 const FILES = {
-  "/manager/": "36dc5309ff51",
+  "/manager/": "e6b453655103",
   "/manager/assets/actions.js": "192bb05e32cc",
   "/manager/assets/config.js": "01501064d14f",
   "/manager/assets/core.js": "a1ec66a34228",

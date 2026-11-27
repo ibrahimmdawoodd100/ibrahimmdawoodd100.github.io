@@ -84,7 +84,8 @@ function dashHarness(callImpl) {
   return { ctx, nodes, calls, traces, text };
 }
 const today = new Date().toISOString().slice(0, 10);
-const home = { date: today, serverTime: Date.now(), info: { nameAr: 'شركة أ', logo: '🏢', timeZone: 'UTC' }, settings: {}, warehouses: { w1: { name: 'الفرع' } },
+// settings.weekendDays: [] so the test does not depend on the weekday (it failed on Fridays: the default weekend).
+const home = { date: today, serverTime: Date.now(), info: { nameAr: 'شركة أ', logo: '🏢', timeZone: 'UTC' }, settings: { weekendDays: [] }, warehouses: { w1: { name: 'الفرع' } },
   employees: { e1: { name: 'أحمد', status: 'approved', warehouseId: 'w1', warehouseName: 'الفرع' }, e2: { name: 'سارة', status: 'approved', warehouseId: 'w1', warehouseName: 'الفرع' } },
   records: { r1: { empId: 'e1', type: 'in', timestamp: `${today}T08:00:00Z`, dateKey: today, warehouseId: 'w1', warehouseName: 'الفرع', locStatus: 'approved' } }, leaves: {}, excuses: {} };
 
