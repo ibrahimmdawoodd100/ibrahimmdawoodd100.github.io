@@ -150,7 +150,7 @@ test(`${MODE}: branch map — satellite tiles and the marker image load, no brok
 // An employee's phone: one browser profile with a virtual platform authenticator and GPS at the branch.
 async function employeePhone(browser, flags = {}) {
   const { branch } = FIX;
-  const g = await guarded(browser, { permissions: ['geolocation'], geolocation: { latitude: branch.lat, longitude: branch.lng, accuracy: 15 } }, flags), page = await g.context.newPage();
+  const g = await guarded(browser, { permissions: ['geolocation'], geolocation: { latitude: branch.lat, longitude: branch.lng, accuracy: 15 }, ...(flags.context || {}) }, flags), page = await g.context.newPage();
   const cdp = await g.context.newCDPSession(page); await cdp.send('WebAuthn.enable');
   const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   return { g, page, cdp, authenticatorId };
@@ -636,7 +636,8 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
   const KARRADA = { address: { road: '901-27', neighbourhood: 'محلة 901', city_district: 'قضاء الرصافة', city: 'بغداد', state: 'محافظة بغداد' } };
   test('old cache -> a new release is served -> the open page switches to it by itself; then the address box', async ({ browser }) => {
     test.setTimeout(240000);
-    const { accounts } = FIX, phone = await employeePhone(browser), { page } = phone;
+    // This ONE test allows the service worker (the suite blocks it everywhere else, e2e.config.js): it tests the update flow.
+    const { accounts } = FIX, phone = await employeePhone(browser, { context: { serviceWorkers: 'allow' } }), { page } = phone;
     await employeeLogin(phone, accounts.employeeC, '#btn-checkin');
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20000 }).toBe(true); // the old version is cached and in control
     await page.reload(); await expect(page.locator('#btn-checkin')).toBeVisible({ timeout: 30000 });

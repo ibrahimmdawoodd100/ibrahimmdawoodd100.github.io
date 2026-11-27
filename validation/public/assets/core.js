@@ -24,7 +24,7 @@ window.Basma = (() => {
       // Returning to the app checks for an update too (a long-open installed app). sw.js is a free static file.
       const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.register(`/${role}/sw.js`, { scope: `/${role}/` }).then(reg => {
-        const check = () => reg.update?.().catch(() => {});
+        const check = () => reg?.update?.()?.catch?.(() => {});
         document.addEventListener?.('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
         if (typeof setInterval === 'function') setInterval(check, 30 * 60000);
       }).catch(() => {});
