@@ -694,9 +694,9 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
     expect(slowMs, 'fallback within 3 s when the service is slow').toBeLessThan(3000);
     expect(blockedMs, 'fallback within 3 s when the service is blocked').toBeLessThan(3000);
     // v6.10: when the app reopens, the box shows the address of the CURRENT place again (phone cache: no new request).
-    const before = phone.g.geoCalls.length;
+    const geoBefore = phone.g.geoCalls.length;
     await page.reload(); await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 20000 });
-    expect(phone.g.geoCalls.length, 'reopen at the same place: phone cache, no new request').toBe(before);
+    expect(phone.g.geoCalls.length, 'reopen at the same place: phone cache, no new request').toBe(geoBefore);
     await phone.g.verify(page, 'update + address');
     } finally { fs.writeFileSync(swFile, original); }
     await phone.g.context.close();
@@ -711,7 +711,7 @@ test.describe('the address box on a holiday, out of range (local emulators)', ()
     const phone = await employeePhone(browser, { context: { geolocation: far(4488 + 300) } }), { page, g } = phone;
     // The recorded answer, 2 s late here, so the loading text can be seen (the real service is never called).
     await page.route(/^https:\/\/nominatim\.openstreetmap\.org\//, async route => { g.geoCalls.push(route.request().url()); await new Promise(r => setTimeout(r, 2000)); await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(RECORDED_KARRADA) }).catch(() => {}); });
-    await employeeLogin(phone, accounts.employeeE, '#btn-checkin');
+    await employeeLogin(phone, accounts.employeeE, '#holiday-banner'); // a holiday: the home screen shows the holiday banner (no check-in button)
     await test.step('the state is: not a work day, 4488 m outside the branch, check-in not allowed', async () => {
       await expect(page.locator('#holiday-text')).toContainText('ليس يوم عمل', { timeout: 20000 }); await expect(page.locator('#holiday-banner')).toBeVisible();
       await expect(page.locator('#geo-zone-alert')).toBeVisible({ timeout: 20000 }); await expect(page.locator('#geo-zone-alert')).toContainText(/خارج النطاق بمقدار 44\d\d متر/);
