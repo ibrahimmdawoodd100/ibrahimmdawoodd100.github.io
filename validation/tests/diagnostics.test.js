@@ -34,7 +34,7 @@ function runDiag(opts = {}, storageValue = '[]') {
   const ctx = { window: {}, setTimeout, clearTimeout, Promise, Date, JSON, String, Math, Object, Error, performance };
   vm.runInNewContext(source, ctx);
   const { firebase, calls } = fakeFirebase(opts);
-  const storage = { getItem: key => key === 'basma_diag_events' ? storageValue : key === 'basma_diag_trace' ? (opts.trace ?? null) : null };
+  const storage = { getItem: key => key === 'basma_diag_events' ? storageValue : key === 'basma_diag_trace' ? (opts.trace ?? null) : key === 'basma_geo_diag' ? (opts.geoDiag ?? null) : null };
   return ctx.window.BasmaDiagnostics.run({ firebase, config: { firebase: { projectId: 'p' }, appCheckSiteKey: SITE_KEY, region: 'us-central1' }, document: dom.document, storage, region: 'us-central1', ...(opts.fetch ? { fetch: opts.fetch } : {}) })
     .then(results => ({ results, dom, calls, text: ['diag-lines', 'diag-summary'].map(id => dom.all(dom.byId.get(id)).map(n => `${n.textContent} ${n.value}`).join('\n')).join('\n') }));
 }
@@ -42,8 +42,8 @@ function runDiag(opts = {}, storageValue = '[]') {
 test('signed-in seller: one line per step, with times, and no token, key or full uid printed', async () => {
   const { results, text, calls } = await runDiag({}, JSON.stringify([{ at: '2026-11-11T13:20:00.000Z', operation: 'renewSubscription', code: 'basma/timeout' }]));
   const P = n => `الشبكة فقط (ملف صغير من الموقع) ${n}/3`, F = (name, n) => `الدالة ${name} — المرة ${n}`;
-  assert.deepEqual(plain(results.map(r => r.step)), ['تحميل مكتبات Firebase', 'خدمة العنوان (OpenStreetMap) متاحة؟', P(1), P(2), P(3), 'حالة تسجيل الدخول', 'استعادة تسجيل الدخول (seller)', 'رمز App Check', F('profile', 1), F('profile', 2), 'الدالة listCompanies', F('managerHome', 1), F('managerHome', 2), F('employeeHome', 1), F('employeeHome', 2), 'الملخص', 'قراءة صغيرة من قاعدة البيانات', 'حالة اتصال قاعدة البيانات', 'خطوات فتح الصفحات بعد الدخول', 'آخر أخطاء لوحة المورّد']);
-  assert.deepEqual(plain(results.map(r => r.status)), ['OK', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'OK', 'WARN', 'OK', 'SKIP', 'WARN']);
+  assert.deepEqual(plain(results.map(r => r.step)), ['تحميل مكتبات Firebase', 'خدمة العنوان (OpenStreetMap) متاحة؟', 'آخر نتيجة عنوان على هذا الهاتف', P(1), P(2), P(3), 'حالة تسجيل الدخول', 'استعادة تسجيل الدخول (seller)', 'رمز App Check', F('profile', 1), F('profile', 2), 'الدالة listCompanies', F('managerHome', 1), F('managerHome', 2), F('employeeHome', 1), F('employeeHome', 2), 'الملخص', 'قراءة صغيرة من قاعدة البيانات', 'حالة اتصال قاعدة البيانات', 'خطوات فتح الصفحات بعد الدخول', 'آخر أخطاء لوحة المورّد']);
+  assert.deepEqual(plain(results.map(r => r.status)), ['OK', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'OK', 'WARN', 'OK', 'SKIP', 'WARN']);
   assert.ok(results.every(r => Number.isInteger(r.ms) && r.ms >= 0));
   assert.match(text, /uidS…/);
   for (const secret of [TOKEN, SITE_KEY, UID]) assert.equal(text.includes(secret), false, secret);
@@ -130,4 +130,19 @@ test('address service blocked: the line says "no" with the time, as a warning (n
   const { results } = await runDiag({ signedIn: 'manager', profileRole: 'manager', fetch });
   const row = results.find(r => r.step === 'خدمة العنوان (OpenStreetMap) متاحة؟');
   assert.equal(row.status, 'WARN'); assert.match(row.detail, /^لا — لم تصل خلال \d+\.\d ث/);
+});
+
+// v6.10 (owner): the LAST address result of this phone (success / fallback / error + reason + time), never the place.
+test('diagnostics: last address result of this phone — fallback with the reason and time, or none yet', async () => {
+  const at = new Date(2026, 10, 27, 9, 5).getTime();
+  const fb = await runDiag({ geoDiag: JSON.stringify({ result: 'fallback', reason: 'http-503', at }) });
+  const line = fb.results.find(r => r.step === 'آخر نتيجة عنوان على هذا الهاتف');
+  assert.equal(line.status, 'WARN'); assert.equal(line.detail, 'احتياطي (البعد عن الفرع) — ردّ الخدمة 503 — 2026-11-27 09:05');
+  const ok = await runDiag({ geoDiag: JSON.stringify({ result: 'success', reason: 'service', at }) });
+  assert.equal(ok.results.find(r => r.step === 'آخر نتيجة عنوان على هذا الهاتف').status, 'OK');
+  assert.match(ok.text, /نجاح — من خدمة العنوان — 2026-11-27 09:05/);
+  const err = await runDiag({ geoDiag: JSON.stringify({ result: 'fallback', reason: 'network', at }) });
+  assert.match(err.text, /الخدمة محجوبة أو لا شبكة/);
+  const none = await runDiag({});
+  assert.equal(none.results.find(r => r.step === 'آخر نتيجة عنوان على هذا الهاتف').status, 'SKIP');
 });

@@ -43,6 +43,20 @@ window.BasmaDiagnostics = (() => {
     }
     add('تحميل مكتبات Firebase', 'OK', 0, 'المكتبات والإعدادات موجودة');
 
+    // v6.9 (owner): is the free address service reachable from this phone? ONE request for a FIXED public point
+    // (Tahrir Square, Baghdad), never the user's location. Yes/no + time in seconds.
+    await step('خدمة العنوان (OpenStreetMap) متاحة؟', async () => {
+      if (!fetchFn) return { status: 'SKIP', detail: 'غير متاح' };
+      const t = now(), ctl = typeof AbortController === 'function' ? new AbortController() : null, timer = setTimeout(() => ctl?.abort(), 3500);
+      try {
+        const res = await fetchFn('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=33.3333&lon=44.4167&accept-language=ar', { signal: ctl?.signal, cache: 'no-store', credentials: 'omit' });
+        const sec = ((now() - t) / 1000).toFixed(1);
+        if (!res.ok) return { status: 'WARN', detail: `لا — ردّ ${res.status} بعد ${sec} ث` };
+        return { detail: `نعم — ${sec} ث` };
+      } catch { return { status: 'WARN', detail: `لا — لم تصل خلال ${((now() - t) / 1000).toFixed(1)} ث (يُعرض البعد عن الفرع بدل العنوان)` }; }
+      finally { clearTimeout(timer); }
+    }, 5000);
+
     // v6.5/v6.6 (owner) 1. Pure network: a tiny file from this site, 3 times. It must NOT come from a cache: the service
     // worker serves only the app files of /manager/ (and ignores ?query), so the file is one it never serves, with a
     // unique query and cache: 'no-store' (a v6.5 ping of config.js came from the service worker: 6-25 ms).

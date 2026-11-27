@@ -7,6 +7,10 @@
 // - If the service is slow, blocked or fails: no error screen; the distance from the branch + a map link are shown.
 (function (root) {
   const CACHE_KEY = 'basma.geo_cache', LAST_KEY = 'basma.geo_last', MAX_CACHE = 30;
+  // v6.10: the LAST lookup result of this phone, for the diagnostics page (result, reason, time; never the place).
+  const DIAG_KEY = 'basma_geo_diag';
+  function note(result, reason) { try { root.localStorage?.setItem(DIAG_KEY, JSON.stringify({ result, reason, at: Date.now() })); } catch {} }
+  function lastResult() { try { return JSON.parse(root.localStorage?.getItem(DIAG_KEY) || 'null'); } catch { return null; } }
   const rad = x => (x * Math.PI) / 180;
   function meters(a, b) {
     if (![a?.lat, a?.lng, b?.lat, b?.lng].every(Number.isFinite)) return null;
@@ -42,10 +46,11 @@
   }
   // One lookup: cache first; else at most one request (timeout), spaced from the previous one on this phone.
   async function lookup(config, point, { fetchFn = root.fetch?.bind(root), now = () => Date.now(), wait = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
-    if (!config?.url || !Number.isFinite(point?.lat) || !Number.isFinite(point?.lng)) return null;
+    if (!config?.url) { note('fallback', 'no-config'); return null; }
+    if (!Number.isFinite(point?.lat) || !Number.isFinite(point?.lng)) { note('error', 'no-location'); return null; }
     const hit = cached(point, config.cacheMeters || 100);
-    if (hit) return { text: hit.text, lang: hit.lang, source: 'cache' };
-    if (typeof fetchFn !== 'function') return null;
+    if (hit) { note('success', 'cache'); return { text: hit.text, lang: hit.lang, source: 'cache' }; }
+    if (typeof fetchFn !== 'function') { note('error', 'no-fetch'); return null; }
     const s = storage(), last = Number(s?.getItem(LAST_KEY) || 0), gap = (config.minIntervalMs || 1500) - (now() - last);
     if (gap > 0) await wait(gap);
     try { s?.setItem(LAST_KEY, String(now())); } catch {}
@@ -53,12 +58,13 @@
     const ctl = typeof AbortController === 'function' ? new AbortController() : null, timer = setTimeout(() => ctl?.abort(), config.timeoutMs || 3000);
     try {
       const res = await fetchFn(url, { signal: ctl?.signal, headers: { Accept: 'application/json' }, referrerPolicy: 'strict-origin-when-cross-origin', credentials: 'omit' });
-      if (!res.ok) return null;
+      if (!res.ok) { note('fallback', `http-${res.status}`); return null; }
       const text = shortText(config.provider, await res.json());
-      if (!text) return null;
+      if (!text) { note('fallback', 'empty-answer'); return null; }
       remember(point, text, config.lang || 'ar');
+      note('success', 'service');
       return { text, lang: config.lang || 'ar', source: 'service' };
-    } catch { return null; } finally { clearTimeout(timer); }
+    } catch (error) { note('fallback', ctl?.signal?.aborted ? 'timeout' : 'network'); return null; } finally { clearTimeout(timer); }
   }
   const mapUrl = p => (Number.isFinite(p?.lat) && Number.isFinite(p?.lng) ? `https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lng}#map=18/${p.lat}/${p.lng}` : null);
   // What the manager sees: the address if found, else "near <branch>, <distance> m"; always a map link to the exact point.
@@ -69,6 +75,6 @@
     const text = clean(record.address?.text) || (d !== null ? `قرب ${branch?.name || 'الفرع'}، ${d} م` : '');
     return { text, href: mapUrl(point), credit: record.address?.text ? '© OpenStreetMap' : '' };
   }
-  const api = { meters, shortText, lookup, cached, remember, mapUrl, place };
+  const api = { meters, shortText, lookup, cached, remember, mapUrl, place, lastResult, note };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.BasmaAddress = api;
 })(typeof window !== 'undefined' ? window : globalThis);

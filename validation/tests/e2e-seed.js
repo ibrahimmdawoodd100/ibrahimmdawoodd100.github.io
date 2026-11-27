@@ -4,10 +4,11 @@ const fs = require('node:fs'), path = require('node:path');
 const req = require('node:module').createRequire(require.resolve('../functions/package.json'));
 const { initializeApp } = req('firebase-admin/app'), { getAuth } = req('firebase-admin/auth'), { getDatabase } = req('firebase-admin/database');
 const PASSWORD = 'e2e-Local-Only-1!';
-const ACCOUNTS = { seller: 'e2e-seller', manager: 'e2e-manager', employee: 'e2e-employee', employeeA: 'e2e-employee3', employeeB: 'e2e-employee4', employeeC: 'e2e-employee5', employeeD: 'e2e-employee6' };
+const ACCOUNTS = { seller: 'e2e-seller', manager: 'e2e-manager', employee: 'e2e-employee', employeeA: 'e2e-employee3', employeeB: 'e2e-employee4', employeeC: 'e2e-employee5', employeeD: 'e2e-employee6', employeeE: 'e2e-employee7' };
 // Employee record per account (A/B: account-switch test on one phone; C: approved, for the open-app update test;
-// D: not yet activated, for the old-version update test: it registers its OWN fingerprint on that test's phone).
-const EMPLOYEE_OF = { employee: 'e2e-emp1', employeeA: 'e2e-emp3', employeeB: 'e2e-emp4', employeeC: 'e2e-emp5', employeeD: 'e2e-emp6' };
+// D: not yet activated, for the old-version update test: it registers its OWN fingerprint on that test's phone;
+// E (v6.10): approved, and TODAY is not one of E's work days (the owner's phone: weekly holiday + out of range)).
+const EMPLOYEE_OF = { employee: 'e2e-emp1', employeeA: 'e2e-emp3', employeeB: 'e2e-emp4', employeeC: 'e2e-emp5', employeeD: 'e2e-emp6', employeeE: 'e2e-emp7' };
 const BRANCH = { lat: 24.7136, lng: 46.6753, radius: 300 };
 async function seed() {
   const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
@@ -28,7 +29,8 @@ async function seed() {
     ...Object.fromEntries(Object.entries(EMPLOYEE_OF).map(([role, eid]) => [`access/${uid[role]}`, { role: 'employee', companyId: cid, employeeId: eid, enabled: true, version: 1 }])),
     // C registered a fingerprint before v5.15 (no device entry = approved): it can check in at once.
     [`credentials/${uid.employeeC}`]: { id: 'e2e-cred5', publicKey: 'a2V5', counter: 0, transports: [] },
-    [`accountLinks/${cid}/manager`]: uid.manager, [`companyDirectory/${cid}`]: info, [`employeeIndex/${cid}/count`]: 6,
+    [`credentials/${uid.employeeE}`]: { id: 'e2e-cred7', publicKey: 'a2V5', counter: 0, transports: [] },
+    [`accountLinks/${cid}/manager`]: uid.manager, [`companyDirectory/${cid}`]: info, [`employeeIndex/${cid}/count`]: 7,
     [`companies/${cid}`]: {
       info, settings: { checkIn: { from: '00:00', to: '23:59' }, checkOut: { from: '00:00', to: '23:59' }, weekendDays: [9] },
       warehouses: { 'e2e-w1': { name: 'e2e الفرع الرئيسي', active: true, geoZone: { ...BRANCH, enabled: true } }, 'e2e-w2': { name: 'e2e الفرع الثاني', active: true, geoZone: { ...BRANCH, radius: 400, enabled: true } } }, // v5.18: transfer target
@@ -36,6 +38,7 @@ async function seed() {
         'e2e-emp1': { name: 'e2e موظف البصمة', empId: 'E2E-1', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },
         'e2e-emp3': { name: 'e2e موظف أ', empId: 'E2E-3', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },
         'e2e-emp4': { name: 'e2e موظف ب', empId: 'E2E-4', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },
+        'e2e-emp7': { name: 'e2e موظف العطلة', empId: 'E2E-7', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'approved', credId: 'e2e-cred7', workDays: { 0: (new Date(now).getUTCDay() + 1) % 7 }, createdAt: now }, // only TOMORROW is a work day
         'e2e-emp6': { name: 'e2e موظف التحديث', empId: 'E2E-6', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'pending_activation', createdAt: now },
         'e2e-emp5': { name: 'e2e موظف الجدول', empId: 'E2E-5', role: 'فني', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'approved', credId: 'e2e-cred5', createdAt: now },
         'e2e-emp2': { name: 'e2e موظف السجلات', empId: 'E2E-2', role: 'محاسب', warehouseId: 'e2e-w1', warehouseName: 'e2e الفرع الرئيسي', status: 'approved', credId: 'e2e-cred', createdAt: now }

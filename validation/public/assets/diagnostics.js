@@ -57,6 +57,19 @@ window.BasmaDiagnostics = (() => {
       finally { clearTimeout(timer); }
     }, 5000);
 
+    // v6.10 (owner): the LAST address result of THIS phone on the employee page (written by checkin-address.js):
+    // success / fallback / error, the reason and the time. Never the place itself.
+    await step('آخر نتيجة عنوان على هذا الهاتف', async () => {
+      let v = null; try { v = JSON.parse(storage?.getItem('basma_geo_diag') || 'null'); } catch {}
+      if (!v || !v.result) return { status: 'SKIP', detail: 'لا توجد بعد (لم يُحدَّد موقع في صفحة الموظف على هذا الهاتف)' };
+      const result = { success: 'نجاح', fallback: 'احتياطي (البعد عن الفرع)', error: 'خطأ' }[v.result] || String(v.result).slice(0, 20);
+      const reasons = { service: 'من خدمة العنوان', cache: 'من ذاكرة الهاتف', timeout: 'لم تردّ الخدمة في الوقت', network: 'الخدمة محجوبة أو لا شبكة', 'no-config': 'لا إعداد عنوان من الخادم', 'empty-answer': 'ردّ بلا عنوان', 'no-location': 'لا موقع', 'no-fetch': 'المتصفح لا يدعم الطلب' };
+      const reason = reasons[v.reason] || (/^http-\d{3}$/.test(v.reason || '') ? `ردّ الخدمة ${v.reason.slice(5)}` : String(v.reason || '').slice(0, 30));
+      const at = Number.isFinite(v.at) ? new Date(v.at) : null, pad = n => String(n).padStart(2, '0');
+      const when = at ? `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}` : '؟';
+      return { status: v.result === 'success' ? 'OK' : 'WARN', detail: `${result} — ${reason} — ${when}` };
+    }, 2000);
+
     // v6.5/v6.6 (owner) 1. Pure network: a tiny file from this site, 3 times. It must NOT come from a cache: the service
     // worker serves only the app files of /manager/ (and ignores ?query), so the file is one it never serves, with a
     // unique query and cache: 'no-store' (a v6.5 ping of config.js came from the service worker: 6-25 ms).

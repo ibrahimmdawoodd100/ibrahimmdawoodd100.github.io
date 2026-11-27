@@ -35,8 +35,13 @@ fs.mkdirSync(path.join(OUT, 'screens'), { recursive: true });
 const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
 const testAppCheckToken = () => `${b64({ alg: 'none', typ: 'JWT' })}.${b64({ app_id: '1:0:web:e2e', sub: '1:0:web:e2e', exp: Math.floor(Date.now() / 1000) + 3600 })}.e2e`;
 
+// v6.8: the browser test never calls the real Nominatim (its rules forbid automated traffic): the REAL answer recorded for
+// Baghdad-Karrada on 27 Nov 2026 is served. v6.10: the address now shows as soon as a location is found (every state), so
+// EVERY test phone gets this answer (0.8 s late, like a real service), and every request is counted (g.geoCalls).
+const RECORDED_KARRADA = { address: { road: '901-27', neighbourhood: 'محلة 901', city_district: 'قضاء الرصافة', city: 'بغداد', state: 'محافظة بغداد' } };
 async function guarded(browser, options = {}, { realPoll = false } = {}) {
-  const context = await browser.newContext(options), issues = [], open = new Map(), consoleTail = [], calls = [];
+  const context = await browser.newContext(options), issues = [], open = new Map(), consoleTail = [], calls = [], geoCalls = [];
+  await context.route(/^https:\/\/nominatim\.openstreetmap\.org\//, async route => { geoCalls.push(route.request().url()); await new Promise(r => setTimeout(r, 800)); await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(RECORDED_KARRADA) }).catch(() => {}); });
   await context.addInitScript(spinnerMs => {
     window.__e2e = { csp: [], spinners: [] };
     document.addEventListener('securitypolicyviolation', e => window.__e2e.csp.push(`${e.effectiveDirective || e.violatedDirective} ${e.blockedURI}`));
@@ -70,7 +75,7 @@ async function guarded(browser, options = {}, { realPoll = false } = {}) {
   // Requests still open after `ms` (a resource that never finishes is a finding, not something to wait on forever).
   const stuck = (ms = 15000) => [...open].filter(([, at]) => Date.now() - at > ms).map(([r]) => r.url().slice(0, 160));
   return {
-    context, issues, stuck, consoleTail, calls, resetCalls() { calls.length = 0; },
+    context, issues, stuck, consoleTail, calls, geoCalls, resetCalls() { calls.length = 0; },
     // A refusal the test provoked ON PURPOSE and asserted itself: remove exactly those entries (and require they exist).
     expectRefusal(url, status) {
       const mine = issues.filter(i => i.includes(url) && (i.startsWith(`HTTP ${status}:`) || i.includes(`status of ${status}`)));
@@ -356,17 +361,17 @@ test.describe('full flow on local emulators', () => {
       await ge.verify(page, 'employee pages');
     }, { timeout: 60000 });
     await test.step('employee: fingerprint check-in inside the branch radius', async () => {
-      // v6.8: the browser test never calls the real Nominatim (its rules forbid automated traffic): the REAL answer
-      // recorded for Baghdad-Karrada on 27 Nov 2026 is served instead. Each request is counted.
-      const geoCalls = [];
-      await page.route(/^https:\/\/nominatim\.openstreetmap\.org\/reverse/, route => { geoCalls.push(route.request().url()); route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ address: { road: '901-27', neighbourhood: 'محلة 901', city_district: 'قضاء الرصافة', city: 'بغداد', state: 'محافظة بغداد' } }) }); });
-      page.__geoCalls = geoCalls;
+      // v6.10: the address of the current place is ALREADY under the location status before any check-in.
+      page.__geoCalls = ge.geoCalls;
       await show(page, 'showTab', 'home'); await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 25000 });
+      await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 20000 });
+      expect(page.__geoCalls.length, 'one request for this place since the app opened').toBe(1);
       const t = Date.now(); await page.click('#btn-checkin'); await expect(page.locator('#stat-in')).not.toHaveText('—', { timeout: 30000 }); timing('employee: fingerprint check-in', Date.now() - t, BUDGET.cold);
-      // v6.8: AFTER the check-in is saved, the readable address appears under the location status, with the OSM credit.
+      // v6.8: AFTER the check-in is saved, the readable address is under the location status, with the OSM credit
+      // (v6.10: the same place was looked up when the location was found: the phone cache answers, NO new request).
       await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 20000 });
       await expect(page.locator('#gps-address')).toContainText('© OpenStreetMap'); await expect(page.locator('#gps-address a').first()).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=/);
-      expect(page.__geoCalls.length, 'one request for this check-in').toBe(1);
+      expect(page.__geoCalls.length, 'the check-in at the same place: phone cache, no second request').toBe(1);
       expect(page.__geoCalls[0]).toMatch(/lat=-?\d+\.\d{4}&lon=-?\d+\.\d{4}&accept-language=ar$/);
     }, { timeout: 60000 });
     await test.step('employee: check-out waits 10 minutes after check-in (v5.19)', async () => {
@@ -648,7 +653,7 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
     expect((await phone.cdp.send('WebAuthn.getCredentials', { authenticatorId: phone.authenticatorId })).credentials.length, 'the fingerprint is on this phone').toBe(1);
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20000 }).toBe(true); // the old version is cached and in control
     await page.reload(); await expect(page.locator('#btn-checkin')).toBeVisible({ timeout: 30000 });
-    await expect(page.locator('#app-version')).toContainText('الإصدار 6.9', { timeout: 15000 });
+    await expect(page.locator('#app-version')).toContainText('الإصدار 6.10', { timeout: 15000 });
     const before = await page.locator('#app-version').innerText();
     // A NEW release appears on the server (only the service worker's version code changes, as in a real release).
     // The new release stays on the server until the END of this test (like a real release); it is restored only then.
@@ -663,8 +668,9 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
     // The address box after a check-in: at once the loading text with the distance and a map link, then the address.
     await page.route(/^https:\/\/nominatim\.openstreetmap\.org\/reverse/, async route => { await new Promise(r => setTimeout(r, 1500)); await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(KARRADA) }); });
     await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 30000 });
+    // v6.10: the address of this place is already shown (looked up when the location was found), before the check-in.
+    await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 20000 });
     await page.click('#btn-checkin'); await expect(page.locator('#stat-in')).not.toHaveText('—', { timeout: 30000 });
-    await expect(page.locator('#gps-address')).toContainText('جارٍ تحديد العنوان…', { timeout: 5000 });
     await expect(page.locator('#gps-address a', { hasText: 'الخريطة' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=/);
     await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 10000 });
     // The service SLOW (no answer for 4 s) and then BLOCKED (refuses: HTTP 503), each at another place (not in the
@@ -687,11 +693,52 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
     console.log(`PERF address fallback: slow service ${(slowMs / 1000).toFixed(1)} s, blocked service ${(blockedMs / 1000).toFixed(1)} s`);
     expect(slowMs, 'fallback within 3 s when the service is slow').toBeLessThan(3000);
     expect(blockedMs, 'fallback within 3 s when the service is blocked').toBeLessThan(3000);
-    // The last address of today comes back when the app reopens.
-    const shown = await page.locator('#gps-address').innerText();
-    await page.reload(); await expect(page.locator('#gps-address')).toHaveText(shown, { timeout: 20000 });
+    // v6.10: when the app reopens, the box shows the address of the CURRENT place again (phone cache: no new request).
+    const before = phone.g.geoCalls.length;
+    await page.reload(); await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 20000 });
+    expect(phone.g.geoCalls.length, 'reopen at the same place: phone cache, no new request').toBe(before);
     await phone.g.verify(page, 'update + address');
     } finally { fs.writeFileSync(swFile, original); }
     await phone.g.context.close();
+  });
+});
+
+// ---------------- v6.10 (owner bug, 27 Nov 2026): the address box in EVERY state ----------------
+test.describe('the address box on a holiday, out of range (local emulators)', () => {
+  test.skip(MODE !== 'emulator', 'runs against the local emulators');
+  test('weekly holiday + 4488 m out of range: the location box shows the address at once, the fallback when the service is blocked, and diagnostics show the last result', async ({ browser }) => {
+    const { branch, accounts } = FIX, far = m => ({ latitude: branch.lat + m / 111195, longitude: branch.lng, accuracy: 14 });
+    const phone = await employeePhone(browser, { context: { geolocation: far(4488 + 300) } }), { page, g } = phone;
+    // The recorded answer, 2 s late here, so the loading text can be seen (the real service is never called).
+    await page.route(/^https:\/\/nominatim\.openstreetmap\.org\//, async route => { g.geoCalls.push(route.request().url()); await new Promise(r => setTimeout(r, 2000)); await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(RECORDED_KARRADA) }).catch(() => {}); });
+    await employeeLogin(phone, accounts.employeeE, '#btn-checkin');
+    await test.step('the state is: not a work day, 4488 m outside the branch, check-in not allowed', async () => {
+      await expect(page.locator('#holiday-text')).toContainText('ليس يوم عمل', { timeout: 20000 }); await expect(page.locator('#holiday-banner')).toBeVisible();
+      await expect(page.locator('#geo-zone-alert')).toBeVisible({ timeout: 20000 }); await expect(page.locator('#geo-zone-alert')).toContainText(/خارج النطاق بمقدار 44\d\d متر/);
+      await expect(page.locator('#gps-text')).toContainText('الموقع محدد؛ دقة GPS نحو 14 متر'); await expect(page.locator('#btn-checkin')).toBeDisabled();
+    }, { timeout: 60000 });
+    await test.step('the location box: at once the loading text with the distance and a map link, then the address', async () => {
+      await expect(page.locator('#gps-address')).toContainText('جارٍ تحديد العنوان…', { timeout: 5000 });
+      await expect(page.locator('#gps-address')).toContainText(/\(قرب e2e الفرع الرئيسي، 47\d\d م\)/);
+      await expect(page.locator('#gps-address a', { hasText: 'الخريطة' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=/);
+      await expect(page.locator('#gps-address')).toContainText('قرب 901-27، محلة 901', { timeout: 10000 }); await expect(page.locator('#gps-address')).toContainText('© OpenStreetMap');
+      expect(g.geoCalls.length, 'one request for this place').toBe(1); await shot(page, 'holiday-out-of-range-address');
+    }, { timeout: 60000 });
+    await test.step('the service BLOCKED at another place (the ↻ button): the distance fallback within 3 s', async () => {
+      await page.unroute(/nominatim/); await page.route(/^https:\/\/nominatim\.openstreetmap\.org\//, route => route.fulfill({ status: 503, headers: { 'access-control-allow-origin': '*' }, body: 'blocked' }));
+      await g.context.setGeolocation(far(6000));
+      const t = Date.now(); await page.click('.gps-retry');
+      await expect(page.locator('#gps-address')).toContainText(/\(قرب e2e الفرع الرئيسي، 60\d\d م\)/, { timeout: 3000 });
+      await expect(page.locator('#gps-address')).not.toContainText('جارٍ تحديد', { timeout: 3000 }); await expect(page.locator('#gps-address')).not.toContainText('محلة 901');
+      const ms = Date.now() - t; console.log(`PERF holiday+out-of-range fallback (blocked service): ${(ms / 1000).toFixed(1)} s`); expect(ms).toBeLessThan(3500);
+      g.expectRefusal('nominatim.openstreetmap.org', 503); // the refusal we provoked; any OTHER problem still fails
+      await g.verify(page, 'holiday + out of range address');
+    }, { timeout: 60000 });
+    await test.step('diagnostics on this phone: the last address result = fallback, the reason and the time', async () => {
+      const d = await g.context.newPage(); await g.open(d, '/manager/diagnostics.html', '#diag-run', 'diagnostics'); await d.click('#diag-run');
+      await expect(d.locator('#diag-lines')).toContainText(/آخر نتيجة عنوان على هذا الهاتف — WARN — احتياطي \(البعد عن الفرع\) — ردّ الخدمة 503 — \d{4}-\d{2}-\d{2} \d{2}:\d{2}/, { timeout: 30000 });
+      await shot(d, 'diagnostics-last-address');
+    }, { timeout: 90000 });
+    await g.context.close();
   });
 });

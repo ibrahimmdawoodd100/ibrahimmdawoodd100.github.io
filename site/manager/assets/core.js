@@ -8,7 +8,7 @@ function basmaPref(name) {
 function basmaPrefSet(name, value) { try { localStorage.setItem(`basma.${name}`, value); localStorage.removeItem(name); } catch {} }
 function basmaPrefDel(name) { try { localStorage.removeItem(`basma.${name}`); localStorage.removeItem(name); } catch {} }
 // v6.9 (owner, 27 Nov 2026): the release name shown in the profile/account menu (with the service worker's version code).
-const BASMA_APP_VERSION = '6.9';
+const BASMA_APP_VERSION = '6.10';
 window.Basma = (() => {
   let app, profile, ready, selectedRole, persistenceMode, inflight = 0, checkinBusy = 0, lastCheckinAt = 0;
   function init(role) {
