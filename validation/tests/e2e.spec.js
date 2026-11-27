@@ -644,6 +644,7 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
     await expect(page.locator('#app-version')).toContainText('الإصدار 6.9', { timeout: 15000 });
     const before = await page.locator('#app-version').innerText();
     // A NEW release appears on the server (only the service worker's version code changes, as in a real release).
+    // The new release stays on the server until the END of this test (like a real release); it is restored only then.
     const swFile = path.join(siteRoot, 'employee/sw.js'), original = fs.readFileSync(swFile, 'utf8');
     try {
       fs.writeFileSync(swFile, original.replace(/const VERSION = '[0-9a-f]+';/, "const VERSION = 'e2e0new0release0';"));
@@ -652,7 +653,6 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
       await expect.poll(() => page.evaluate(() => window.__oldPage === undefined).catch(() => false), { timeout: 60000, message: 'the page reloaded by itself' }).toBe(true);
       await expect(page.locator('#app-version')).toContainText('e2e0new', { timeout: 30000 });
       console.log(`PERF update: version before "${before}" -> after "${await page.locator('#app-version').innerText()}"`);
-    } finally { fs.writeFileSync(swFile, original); }
     // The address box after a check-in: at once the loading text with the distance and a map link, then the address.
     await page.route(/^https:\/\/nominatim\.openstreetmap\.org\/reverse/, async route => { await new Promise(r => setTimeout(r, 1500)); await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(KARRADA) }); });
     await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 30000 });
@@ -683,6 +683,8 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
     // The last address of today comes back when the app reopens.
     const shown = await page.locator('#gps-address').innerText();
     await page.reload(); await expect(page.locator('#gps-address')).toHaveText(shown, { timeout: 20000 });
-    await phone.g.verify(page, 'update + address'); await phone.g.context.close();
+    await phone.g.verify(page, 'update + address');
+    } finally { fs.writeFileSync(swFile, original); }
+    await phone.g.context.close();
   });
 });

@@ -48,12 +48,12 @@
     "employee/icon-employee-512.png": "6ce95559c4db3701774eb7939291820f3c7824927e20f5c5fbba94f176557c7e",
     "employee/index.html": "754debddae521196eef5873736f759113e398fc15e57dcfa6b0ae9a362587d31",
     "employee/manifest.json": "48143bdece322c349f27336da0394f18193195f85b6f5c035890277af7e7706e",
-    "employee/sw.js": "34a197047bc561abe6bba4166a735650534d9685bb2ed6dc16382062fee8046a",
+    "employee/sw.js": "92b1e1ffcb2a7c5be27e77dd17505c4206603061f499842456fdd51d63cf465f",
     "manager/assets/actions.js": "192bb05e32ccb94e7c4a773b5240eda6649752f7e81c1ecff28a248590de51ac",
     "manager/assets/attendance-clock.js": "2598d20e29179f6d8d1adcdc2edb6d94c52f96d6bf2640a4fcc44ff7aa1c8be5",
     "manager/assets/checkin-address.js": "06094a7678200a9addbe9ae707b99cedc83072cfd3cd6e06cda07ff8f0e198d7",
     "manager/assets/config.js": "01501064d14f727ed84c9435c4ccb81ab65bca2eb4b288db82f9c4d3096ece9b",
-    "manager/assets/core.js": "8d2bc542dd0acfb4345f1159f8fb73791a972901b8542e00441b59c59eed0903",
+    "manager/assets/core.js": "c341fe4c2703eefc1139750f758dca06379cd621acf3b341943e4810582db5fe",
     "manager/assets/diagnostics.css": "4006543a95d3ed32a6406a91f9ccc8a42701a08df096dcfcbc454d7b4c11f15a",
     "manager/assets/diagnostics.js": "b02fdc04c0ec70d0e33c1cc2dded089ec79ea79307214cc5795c637e406ab942",
     "manager/assets/dialogs.js": "da1a518e7035bff97cde3e66cd3c93c33923bc8027d730b61dd4c2f67d87a628",
@@ -78,7 +78,7 @@
     "manager/icon-manager-512.png": "92c5f11bb6dd49761fd8b40b2bbded4823b28d601d2fd1ad70fbbff5b7eee22a",
     "manager/index.html": "d8d20b23d1b9fa5339b16fc89525ade7948a90f32ec544017d5265e66d73645d",
     "manager/manifest.json": "432c2c3d035a405772782c947c413ba0ac607c514c37431a19f85c76fa737f98",
-    "manager/sw.js": "9522a8f521cfb67fea629f10313939d1c41b6e50c870ba9e154c44b350f72dc9",
+    "manager/sw.js": "ece90c901d0352cda588a7bb26e47ecca064eafc3980a262169c623504426442",
     "seller.html": "54d6f2987253f6282c53c495244635e73f5b752c54de3eccd62ac6c8b6e7efb3"
   },
   "assetlinksHash": "9c91f947dd7bd94e34ca708e2db7a23e25981af8fbbb3fbbef7345668bb086f4"

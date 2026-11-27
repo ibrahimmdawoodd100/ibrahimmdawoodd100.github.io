@@ -10,7 +10,7 @@ function basmaPrefDel(name) { try { localStorage.removeItem(`basma.${name}`); lo
 // v6.9 (owner, 27 Nov 2026): the release name shown in the profile/account menu (with the service worker's version code).
 const BASMA_APP_VERSION = '6.9';
 window.Basma = (() => {
-  let app, profile, ready, selectedRole, persistenceMode, inflight = 0;
+  let app, profile, ready, selectedRole, persistenceMode, inflight = 0, checkinBusy = 0, lastCheckinAt = 0;
   function init(role) {
     if (ready && role && role !== selectedRole) throw new Error('استخدم صفحة الحساب المناسبة');
     if (ready) return ready;
@@ -31,7 +31,8 @@ window.Basma = (() => {
       let reloading = false;
       navigator.serviceWorker.addEventListener?.('controllerchange', () => {
         if (!hadController || reloading) return; reloading = true; // the very first install does not reload
-        const busy = () => inflight > 0 || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+        // Idle = no server call, no check-in (and 5 s after one, for its screen update), no field being typed in.
+        const busy = () => inflight > 0 || checkinBusy > 0 || Date.now() - lastCheckinAt < 5000 || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
         const go = () => (busy() ? setTimeout(go, 2000) : location.reload());
         go();
       });
@@ -242,11 +243,16 @@ window.Basma = (() => {
     // Registration sends a short device label for the manager's approval notice (display only; the server checks the credential).
     return callRetryingAborted('finishWebAuthn', { challengeId: start.challengeId, response, ...(mode === 'register' ? { deviceLabel: deviceLabel() } : {}) });
   }
+  // v6.9: the WHOLE check-in (location, fingerprint prompt, server call) counts as busy, so an update never reloads the page
+  // in the middle of it (found by the E2E: a reload between the fingerprint and the server call lost the check-in).
   async function attendance(type, locationData, missionKey) {
-    const point = await getGPS();
-    point.name = locationData?.name || 'موقع الجهاز';
-    const verified = await biometric('authenticate', type, missionKey);
-    return call('recordAttendance', { type, proof: verified.proof, location: point, ...(missionKey ? { missionKey } : {}) });
+    checkinBusy++;
+    try {
+      const point = await getGPS();
+      point.name = locationData?.name || 'موقع الجهاز';
+      const verified = await biometric('authenticate', type, missionKey);
+      return await call('recordAttendance', { type, proof: verified.proof, location: point, ...(missionKey ? { missionKey } : {}) });
+    } finally { checkinBusy = Math.max(0, checkinBusy - 1); lastCheckinAt = Date.now(); }
   }
   function getGPS() {
     if (!navigator.geolocation) return Promise.reject(new Error('تحديد الموقع غير متاح على هذا الجهاز'));

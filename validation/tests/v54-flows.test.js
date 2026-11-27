@@ -227,3 +227,35 @@ test('account switch/logout cleanup keeps the step-time log and still removes th
   assert.equal(local.getItem('basma_emp_view'), null, "the employee's name is still removed"); assert.equal(local.getItem('basma_last_uid'), null);
   assert.equal(local.getItem('other_app'), 'keep', 'non-Basma values are never touched');
 });
+
+// v6.9 (owner, 27 Nov 2026): a new release must reach an open page by itself, but NEVER in the middle of a check-in.
+test('a new service worker reloads the page once, but only after a running check-in is done (+5 s)', async () => {
+  let swHandler = null, reloads = 0, now = 1_000_000; const timers = [];
+  let finishRecord; const recordGate = new Promise(r => { finishRecord = r; });
+  const handlers = { beginWebAuthn: async () => ({ challengeId: 'ch1', options: { challenge: 'AQID', allowCredentials: [] } }), finishWebAuthn: async () => ({ proof: 'p1' }), recordAttendance: async () => { await recordGate; return { ok: true, date: '2026-11-27' }; } };
+  const auth = { currentUser: { uid: 'u1', getIdToken: async () => {} }, setPersistence: async () => {}, onAuthStateChanged: fn => { queueMicrotask(fn); return () => {}; }, signOut: async () => {} };
+  const app = { auth: () => auth, appCheck: () => ({ activate() {} }), functions: () => ({ httpsCallable: name => async data => ({ data: await handlers[name](data) }) }) };
+  const firebase = { apps: [], initializeApp: () => app, appCheck: { ReCaptchaEnterpriseProvider: class {} }, auth: { Auth: { Persistence: { LOCAL: 'local', SESSION: 'session' } } } };
+  const buf = () => new Uint8Array([1, 2, 3]).buffer, credential = { id: 'cred', rawId: buf(), type: 'public-key', getClientExtensionResults: () => ({}), response: { clientDataJSON: buf(), authenticatorData: buf(), signature: buf(), userHandle: null } };
+  const dom = createDom(); const document = Object.assign(dom.document, { visibilityState: 'visible', activeElement: null });
+  const window = { BASMA_CONFIG: { firebase: {}, appCheckSiteKey: 'k', region: 'r' }, BASMA_RETRY_DELAY_MS: 5, dispatchEvent() {} };
+  const navigator = { credentials: { get: async () => credential, create: async () => credential },
+    geolocation: { getCurrentPosition: ok => ok({ coords: { latitude: 33.3, longitude: 44.4, accuracy: 10 } }) },
+    serviceWorker: { controller: {}, register: async () => ({ update: async () => {} }), addEventListener: (type, fn) => { if (type === 'controllerchange') swHandler = fn; } } };
+  class ClockDate extends Date { constructor(...a) { super(...(a.length ? a : [now])); } static now() { return now; } }
+  vm.runInNewContext(read('public/assets/core.js'), { window, firebase, navigator, document, URL, console, atob, btoa, Date: ClockDate, location: { reload: () => { reloads++; } },
+    setTimeout: (fn, ms) => { timers.push({ fn, at: now + ms }); return timers.length; }, setInterval: () => 0, clearTimeout() {}, CustomEvent: class { constructor(t) { this.type = t; } }, localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} } });
+  const Basma = window.Basma;
+  await Basma.init('employee');
+  assert.equal(typeof swHandler, 'function', 'listens for a new service worker');
+  const runTimers = () => { for (const t of timers.splice(0)) if (t.at <= now) t.fn(); else timers.push(t); };
+  const checkin = Basma.attendance('in', {}, null);          // the check-in starts (location + fingerprint + call)
+  await new Promise(r => setImmediate(r));
+  swHandler();                                               // a new release takes over DURING the check-in
+  for (let i = 0; i < 5; i++) { now += 2000; runTimers(); }
+  assert.equal(reloads, 0, 'no reload while the check-in is running');
+  finishRecord(); await checkin;                             // the check-in is saved
+  now += 2000; runTimers(); assert.equal(reloads, 0, 'not in the first 5 s after it (its screen updates)');
+  for (let i = 0; i < 4; i++) { now += 2000; runTimers(); }
+  assert.equal(reloads, 1, 'then exactly one reload to run the new version');
+});
