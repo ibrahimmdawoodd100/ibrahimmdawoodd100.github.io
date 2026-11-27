@@ -116,7 +116,7 @@ const RECORD_FIELDS = ['empId', 'empName', 'type', 'timestamp', 'dateKey', 'ware
 // v6.8 (owner, 27 Nov 2026): the readable check-in address is looked up on the EMPLOYEE'S PHONE (never by the server),
 // after the check-in is saved. This ONE setting picks the free service; switching = change it + deploy employeeHome
 // (no page rebuild: the pages allow these three hosts). Owner decision: Nominatim (OpenStreetMap), credit required.
-const GEOCODER = { provider: 'nominatim', url: 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&lat={lat}&lon={lng}&accept-language={lang}', lang: 'ar', credit: '© OpenStreetMap', creditUrl: 'https://www.openstreetmap.org/copyright', timeoutMs: 3000, minIntervalMs: 1500, cacheMeters: 100 };
+const GEOCODER = { provider: 'nominatim', url: 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&lat={lat}&lon={lng}&accept-language={lang}', lang: 'ar', credit: '© OpenStreetMap', creditUrl: 'https://www.openstreetmap.org/copyright', timeoutMs: 2500, minIntervalMs: 1500, cacheMeters: 100 };
 function isoDay(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) p.fail('تاريخ غير صالح', 'invalid-argument');
   return value;

@@ -7,8 +7,10 @@ function basmaPref(name) {
 }
 function basmaPrefSet(name, value) { try { localStorage.setItem(`basma.${name}`, value); localStorage.removeItem(name); } catch {} }
 function basmaPrefDel(name) { try { localStorage.removeItem(`basma.${name}`); localStorage.removeItem(name); } catch {} }
+// v6.9 (owner, 27 Nov 2026): the release name shown in the profile/account menu (with the service worker's version code).
+const BASMA_APP_VERSION = '6.9';
 window.Basma = (() => {
-  let app, profile, ready, selectedRole, persistenceMode;
+  let app, profile, ready, selectedRole, persistenceMode, inflight = 0;
   function init(role) {
     if (ready && role && role !== selectedRole) throw new Error('استخدم صفحة الحساب المناسبة');
     if (ready) return ready;
@@ -17,7 +19,22 @@ window.Basma = (() => {
     // App-shell cache for the manager and employee pages ONLY. Never the seller page (site root): a root
     // service worker would control every app on this shared site, including Golden Cart.
     if ((role === 'manager' || role === 'employee') && typeof navigator === 'object' && navigator.serviceWorker?.register) {
-      navigator.serviceWorker.register(`/${role}/sw.js`, { scope: `/${role}/` }).catch(() => {});
+      // v6.9: a phone with the old cache must not stay on the old version. When a new service worker takes over, the
+      // page reloads ONCE to run the new code (only when idle: no server call running, no field being typed in).
+      // Returning to the app checks for an update too (a long-open installed app). sw.js is a free static file.
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.register(`/${role}/sw.js`, { scope: `/${role}/` }).then(reg => {
+        const check = () => reg.update?.().catch(() => {});
+        document.addEventListener?.('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+        if (typeof setInterval === 'function') setInterval(check, 30 * 60000);
+      }).catch(() => {});
+      let reloading = false;
+      navigator.serviceWorker.addEventListener?.('controllerchange', () => {
+        if (!hadController || reloading) return; reloading = true; // the very first install does not reload
+        const busy = () => inflight > 0 || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+        const go = () => (busy() ? setTimeout(go, 2000) : location.reload());
+        go();
+      });
     }
     ready = (async () => {
       const config = window.BASMA_CONFIG;
@@ -52,10 +69,11 @@ window.Basma = (() => {
   }
   async function call(name, data = {}) {
     await init();
+    inflight++;
     try { const result=(await app.functions(window.BASMA_CONFIG.region).httpsCallable(name, { limitedUseAppCheckTokens: false })(data)).data;
       if(selectedRole==='manager'&&!['profile','serverClock','managerHome','managerRecords','managerList'].includes(name))window.dispatchEvent?.(new CustomEvent('basma-manager-mutated'));
       return result; }
-    finally { if(name==='recordAttendance') window.dispatchEvent?.(new CustomEvent('basma-attendance-settled')); }
+    finally { inflight = Math.max(0, inflight - 1); if(name==='recordAttendance') window.dispatchEvent?.(new CustomEvent('basma-attendance-settled')); }
   }
   const HOME_CALL = { employee: 'employeeHome', manager: 'managerHome' };
   let pendingHome = null;
@@ -285,6 +303,12 @@ window.Basma = (() => {
   // small themed menu with «تغيير كلمة المرور» and «خروج». Same handlers as before. Nothing is fixed at the bottom,
   // so the bottom navigation is never covered. Screens without a header get the button at the TOP-left corner.
   let controlsCleanup = null;
+  // v6.9: "6.9 · ab12cd3" = the release name + the code of the service worker that really serves this phone.
+  async function appVersion() {
+    let code = '';
+    try { const names = await caches.keys(); const mine = names.find(n => n.startsWith(`basma-shell-${selectedRole}-`)); code = mine ? mine.slice(-16, -9) : ''; } catch {}
+    return code ? `${BASMA_APP_VERSION} · ${code}` : BASMA_APP_VERSION;
+  }
   function controls() {
     controlsCleanup?.(); controlsCleanup = null;
     for (const id of ['basma-controls', 'basma-account-btn', 'basma-account-menu']) document.getElementById(id)?.remove();
@@ -305,6 +329,10 @@ window.Basma = (() => {
       item.addEventListener('click', () => { close(); Promise.resolve(handler()).catch(error => banner(window.BasmaErrors?.message(error) ?? error.message)); });
       menu.appendChild(item);
     }
+    const version = document.createElement('div'); version.id = 'basma-app-version'; version.textContent = `الإصدار ${BASMA_APP_VERSION}`;
+    Object.assign(version.style, { fontSize: '11px', opacity: '0.6', padding: '6px 14px 4px', textAlign: 'right' });
+    appVersion().then(v => { version.textContent = `الإصدار ${v}`; }).catch(() => {});
+    menu.appendChild(version);
     document.body.appendChild(menu);
     const place = () => {
       const r = button.getBoundingClientRect(), width = Math.max(menu.offsetWidth || 190, 190);
@@ -439,5 +467,5 @@ window.Basma = (() => {
     return { ref: path => makeRef(String(path || '').replace(/^\/+|\/+$/g, '')), prime(name, data, result) { cache.set(name + JSON.stringify(data), { at: Date.now(), promise: Promise.resolve(result) }); }, poll,
       get real() { return real; }, goOffline() { real?.goOffline(); }, goOnline() { real?.goOnline(); } };
   }
-  return { stateBox, limitWrites, serverDb, snapshotOf, sweepSpinners, init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get signedIn() { return !!app?.auth().currentUser; }, reopenError, get persistenceMode() { return persistenceMode; } };
+  return { appVersion, stateBox, limitWrites, serverDb, snapshotOf, sweepSpinners, init, call, session, login, logout, db, trace, timeout, clock, takeHome, warm, get connection() { return { ...connection }; }, biometric, attendance, records, getGPS, banner, controls, changePassword, get profile() { return profile; }, get signedIn() { return !!app?.auth().currentUser; }, reopenError, get persistenceMode() { return persistenceMode; } };
 })();

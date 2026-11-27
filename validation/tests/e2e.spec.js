@@ -628,3 +628,60 @@ test.describe('speed measurement on a throttled phone (local emulators, informat
     await phoneB.g.context.close();
   });
 });
+
+// ---------------- v6.9 (owner, 27 Nov 2026): update flow + address box ----------------
+test.describe('a phone with the OLD version updates itself; the address box (local emulators)', () => {
+  test.skip(MODE !== 'emulator', 'runs against the local emulators');
+  const siteRoot = process.env.E2E_SITE ? path.resolve(process.env.E2E_SITE) : path.join(__dirname, '../../site');
+  const KARRADA = { address: { road: '901-27', neighbourhood: 'محلة 901', city_district: 'قضاء الرصافة', city: 'بغداد', state: 'محافظة بغداد' } };
+  test('old cache -> a new release is served -> the open page switches to it by itself; then the address box', async ({ browser }) => {
+    test.setTimeout(240000);
+    const { accounts } = FIX, phone = await employeePhone(browser), { page } = phone;
+    await employeeLogin(phone, accounts.employeeC, '#btn-checkin');
+    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20000 }).toBe(true); // the old version is cached and in control
+    await page.reload(); await expect(page.locator('#btn-checkin')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('#app-version')).toContainText('الإصدار 6.9', { timeout: 15000 });
+    const before = await page.locator('#app-version').innerText();
+    // A NEW release appears on the server (only the service worker's version code changes, as in a real release).
+    const swFile = path.join(siteRoot, 'employee/sw.js'), original = fs.readFileSync(swFile, 'utf8');
+    try {
+      fs.writeFileSync(swFile, original.replace(/const VERSION = '[0-9a-f]+';/, "const VERSION = 'e2e0new0release0';"));
+      await page.evaluate(() => { window.__oldPage = true; });
+      await page.evaluate(() => navigator.serviceWorker.getRegistration().then(r => r.update())); // = returning to the app
+      await expect.poll(() => page.evaluate(() => window.__oldPage === undefined).catch(() => false), { timeout: 60000, message: 'the page reloaded by itself' }).toBe(true);
+      await expect(page.locator('#app-version')).toContainText('e2e0new', { timeout: 30000 });
+      console.log(`PERF update: version before "${before}" -> after "${await page.locator('#app-version').innerText()}"`);
+    } finally { fs.writeFileSync(swFile, original); }
+    // The address box after a check-in: at once the loading text with the distance and a map link, then the address.
+    await page.route(/^https:\/\/nominatim\.openstreetmap\.org\/reverse/, async route => { await new Promise(r => setTimeout(r, 1500)); await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(KARRADA) }); });
+    await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 30000 });
+    await page.click('#btn-checkin'); await expect(page.locator('#stat-in')).not.toHaveText('—', { timeout: 30000 });
+    await expect(page.locator('#gps-address')).toContainText('جارٍ تحديد العنوان…', { timeout: 5000 });
+    await expect(page.locator('#gps-address a', { hasText: 'الخريطة' })).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=/);
+    await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 10000 });
+    // The service SLOW (no answer for 4 s) and then BLOCKED (refuses: HTTP 503), each at another place (not in the
+    // phone cache): the box shows the distance + map link at once, and its final fallback within 3 seconds.
+    const fallbackTime = async (lat, lng) => {
+      const t = Date.now();
+      await page.evaluate(([la, lo]) => { window.basmaCheckinAddress('out', new Date().toISOString().slice(0, 10), { lat: la, lng: lo, accuracy: 100 }); }, [lat, lng]); // not awaited (the retry waits 20 s)
+      await expect(page.locator('#gps-address a', { hasText: 'الخريطة' })).toHaveAttribute('href', new RegExp(`mlat=${lat}`), { timeout: 1000 });
+      await expect(page.locator('#gps-address')).not.toContainText('جارٍ تحديد العنوان', { timeout: 3000 });
+      await expect(page.locator('#gps-address')).toContainText(' م)');
+      return Date.now() - t;
+    };
+    await page.unroute(/nominatim/);
+    await page.route(/^https:\/\/nominatim\.openstreetmap\.org\//, async route => { await new Promise(r => setTimeout(r, 4000)); await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(KARRADA) }).catch(() => {}); });
+    const slowMs = await fallbackTime(33.4, 44.5);
+    await page.unroute(/nominatim/);
+    await page.route(/^https:\/\/nominatim\.openstreetmap\.org\//, route => route.fulfill({ status: 503, headers: { 'access-control-allow-origin': '*' }, body: 'blocked' }));
+    const blockedMs = await fallbackTime(33.5, 44.6);
+    phone.g.expectRefusal('nominatim.openstreetmap.org', 503); // the refusal we provoked; any OTHER problem still fails
+    console.log(`PERF address fallback: slow service ${(slowMs / 1000).toFixed(1)} s, blocked service ${(blockedMs / 1000).toFixed(1)} s`);
+    expect(slowMs, 'fallback within 3 s when the service is slow').toBeLessThan(3000);
+    expect(blockedMs, 'fallback within 3 s when the service is blocked').toBeLessThan(3000);
+    // The last address of today comes back when the app reopens.
+    const shown = await page.locator('#gps-address').innerText();
+    await page.reload(); await expect(page.locator('#gps-address')).toHaveText(shown, { timeout: 20000 });
+    await phone.g.verify(page, 'update + address'); await phone.g.context.close();
+  });
+});

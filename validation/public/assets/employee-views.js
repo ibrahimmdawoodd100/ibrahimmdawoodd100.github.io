@@ -39,7 +39,7 @@ const secureAttendanceWindows=(()=>{
     const after=mono();
     if(!Number.isFinite(home.serverTime))throw Error('تعذرت مزامنة وقت الخادم');
     anchor={server:home.serverTime+(after-before)/2,at:after};SERVER_TIME_OFFSET=anchor.server-Date.now();
-    COMPANY_INFO=home.info;SETTINGS=home.settings||{};geocoderConfig=home.geocoder||null;EMP={...home.employee,id:ACTIVATION_UID||EMP.id};
+    COMPANY_INFO=home.info;SETTINGS=home.settings||{};geocoderConfig=home.geocoder||null;window.basmaShowLastAddress?.(home.date);Basma.appVersion?.().then(v=>{const el=document.getElementById('app-version');if(el)el.textContent=`الإصدار ${v}`;}).catch(()=>{});EMP={...home.employee,id:ACTIVATION_UID||EMP.id};
     const wh=home.warehouse||{};WAREHOUSE_GEO_ZONE=(home.employee?.geoZone?.lat!=null&&home.employee.geoZone.enabled!==false?home.employee.geoZone:wh.geoZone)||null; // v5.18: his special work location firstWAREHOUSE_SCHEDULE=wh.schedule||null;
     current={today:newer(current?.today,home.today),date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS,device:home.device||{status:'none'},workDays:Array.isArray(home.workDays)?home.workDays:null,startTime:home.startTime||null};
     knownVersion=home.scheduleVersion??knownVersion;
@@ -168,21 +168,32 @@ loadNotifPage=async function(){
   const updates={};for(const n of items)if(!n.read)updates[`${n.key}/read`]=true;
   if(Object.keys(updates).length)DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).update(updates).catch(()=>{});
 };
-// v6.8 (owner, 27 Nov 2026): readable address of a check-in/out, AFTER it is saved. One request at most (cache first),
-// 3 s timeout, ONE retry 20 s later. While it loads: «جارٍ تحديد العنوان…». No address: the distance from the branch.
+// v6.8/v6.9 (owner, 27 Nov 2026): readable address of a check-in/out, AFTER it is saved. One request at most (cache
+// first), timeout from the server setting, ONE retry 20 s later. At once (even if the service is blocked or slow): the
+// distance from the branch + a map link, with «جارٍ تحديد العنوان…»; the address replaces it when found.
+// The last one of today is kept on this phone (basma_ key: removed on logout) and shown again when the app reopens.
 let geocoderConfig=null;
+const LAST_ADDRESS='basma_last_address';
+function showAddress(text,href,credit,loading){
+  const box=document.getElementById('gps-address');if(!box)return;
+  box.replaceChildren();box.style.display='block';
+  box.append(document.createTextNode(`📍 ${loading?'جارٍ تحديد العنوان… ':''}${text||''}`));
+  if(href){const a=document.createElement('a');a.href=href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=' (الخريطة)';box.append(a);}
+  if(credit){const c=document.createElement('a');c.href='https://www.openstreetmap.org/copyright';c.target='_blank';c.rel='noopener noreferrer';c.textContent=' '+credit;c.style.cssText='font-size:10px;opacity:.7';box.append(c);}
+}
+function keepAddress(value){try{localStorage.setItem(LAST_ADDRESS,JSON.stringify(value));}catch{}}
+window.basmaShowLastAddress=function(today){
+  try{const v=JSON.parse(localStorage.getItem(LAST_ADDRESS)||'null');if(v&&v.date===today)showAddress(v.text,v.href,v.credit,false);}catch{}
+};
 window.basmaCheckinAddress=async function(type,date,point){
-  const box=document.getElementById('gps-address');if(!box||!window.BasmaAddress)return;
-  const show=(text,href,credit)=>{box.replaceChildren();box.style.display='block';box.append(document.createTextNode('📍 '+text));
-    if(href){const a=document.createElement('a');a.href=href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=' (الخريطة)';box.append(a);}
-    if(credit){const c=document.createElement('a');c.href='https://www.openstreetmap.org/copyright';c.target='_blank';c.rel='noopener noreferrer';c.textContent=' '+credit;c.style.cssText='font-size:10px;opacity:.7';box.append(c);}};
-  show('جارٍ تحديد العنوان…');
+  if(!window.BasmaAddress)return;
   const config=geocoderConfig,branch=WAREHOUSE_GEO_ZONE?{name:document.getElementById('main-wh-name')?.textContent||'الفرع',geoZone:WAREHOUSE_GEO_ZONE}:null;
-  const fallback=()=>{const p=BasmaAddress.place({lat:point.lat,lng:point.lng},branch);show(p?.text||'تم التسجيل',p?.href);};
+  const near=BasmaAddress.place({lat:point.lat,lng:point.lng},branch),href=BasmaAddress.mapUrl({lat:point.lat,lng:point.lng});
+  const fallback=()=>{const v={date,text:near?.text?`(${near.text})`:'تم التسجيل',href:near?.href||href,credit:''};showAddress(v.text,v.href,'',false);keepAddress(v);};
+  showAddress(near?.text?`(${near.text})`:'',near?.href||href,'',true); // at once: distance + map, never an empty box
   let found=config?await BasmaAddress.lookup(config,point):null;
-  if(!found&&config){fallback();await new Promise(r=>setTimeout(r,20000));found=await BasmaAddress.lookup(config,point);} // one retry later
-  if(!found){fallback();return;}
-  show(found.text,BasmaAddress.mapUrl({lat:point.lat,lng:point.lng}),config.credit||'');
+  if(!found){fallback();if(!config)return;await new Promise(r=>setTimeout(r,20000));found=await BasmaAddress.lookup(config,point);} // one retry later
+  if(!found)return;
+  const v={date,text:found.text,href,credit:config.credit||''};showAddress(v.text,v.href,v.credit,false);keepAddress(v);
   try{await Basma.call('employeeList',{kind:'setAddress',type,date,text:found.text,lang:found.lang});}catch(error){Basma.trace?.('حفظ عنوان الحضور',Basma.clock?.()||0,false,error?.code||'error');}
 };
-

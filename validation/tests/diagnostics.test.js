@@ -42,8 +42,8 @@ function runDiag(opts = {}, storageValue = '[]') {
 test('signed-in seller: one line per step, with times, and no token, key or full uid printed', async () => {
   const { results, text, calls } = await runDiag({}, JSON.stringify([{ at: '2026-11-11T13:20:00.000Z', operation: 'renewSubscription', code: 'basma/timeout' }]));
   const P = n => `الشبكة فقط (ملف صغير من الموقع) ${n}/3`, F = (name, n) => `الدالة ${name} — المرة ${n}`;
-  assert.deepEqual(plain(results.map(r => r.step)), ['تحميل مكتبات Firebase', P(1), P(2), P(3), 'حالة تسجيل الدخول', 'استعادة تسجيل الدخول (seller)', 'رمز App Check', F('profile', 1), F('profile', 2), 'الدالة listCompanies', F('managerHome', 1), F('managerHome', 2), F('employeeHome', 1), F('employeeHome', 2), 'الملخص', 'قراءة صغيرة من قاعدة البيانات', 'حالة اتصال قاعدة البيانات', 'خطوات فتح الصفحات بعد الدخول', 'آخر أخطاء لوحة المورّد']);
-  assert.deepEqual(plain(results.map(r => r.status)), ['OK', 'SKIP', 'SKIP', 'SKIP', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'OK', 'WARN', 'OK', 'SKIP', 'WARN']);
+  assert.deepEqual(plain(results.map(r => r.step)), ['تحميل مكتبات Firebase', 'خدمة العنوان (OpenStreetMap) متاحة؟', P(1), P(2), P(3), 'حالة تسجيل الدخول', 'استعادة تسجيل الدخول (seller)', 'رمز App Check', F('profile', 1), F('profile', 2), 'الدالة listCompanies', F('managerHome', 1), F('managerHome', 2), F('employeeHome', 1), F('employeeHome', 2), 'الملخص', 'قراءة صغيرة من قاعدة البيانات', 'حالة اتصال قاعدة البيانات', 'خطوات فتح الصفحات بعد الدخول', 'آخر أخطاء لوحة المورّد']);
+  assert.deepEqual(plain(results.map(r => r.status)), ['OK', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'SKIP', 'SKIP', 'SKIP', 'SKIP', 'OK', 'WARN', 'OK', 'SKIP', 'WARN']);
   assert.ok(results.every(r => Number.isInteger(r.ms) && r.ms >= 0));
   assert.match(text, /uidS…/);
   for (const secret of [TOKEN, SITE_KEY, UID]) assert.equal(text.includes(secret), false, secret);
@@ -102,6 +102,10 @@ test('network x3 from our own site, each function twice, sign-in restore, Arabic
   const fetch = async (url, opts) => { urls.push([url, opts?.cache]); return { ok: true, status: 200, text: async () => 'x' }; };
   const trace = JSON.stringify([{ at: '2026-11-20T08:15:30.000Z', page: 'manager', step: 'الدالة managerHome', ms: 6000, ok: true }]);
   const { results, calls, text } = await runDiag({ signedIn: 'manager', profileRole: 'manager', fetch, trace });
+  const geo = urls.filter(([u]) => /nominatim/.test(u)); assert.equal(geo.length, 1, 'one address-service check');
+  assert.match(geo[0][0], /lat=33\.3333&lon=44\.4167/, 'a FIXED public point, never the user location');
+  assert.match(results.find(r => r.step === 'خدمة العنوان (OpenStreetMap) متاحة؟').detail, /^نعم — \d+\.\d ث$/);
+  urls.splice(urls.indexOf(geo[0]), 1);
   assert.equal(urls.length, 3); assert.ok(urls.every(([u, c]) => /^\/\.well-known\/assetlinks\.json\?ping=/.test(u) && c === 'no-store'), 'a file the service worker never serves, never cached');
   assert.equal(new Set(urls.map(([u]) => u)).size, 3, 'a unique address each time');
   const by = Object.fromEntries(results.map(r => [r.step, r]));
@@ -119,4 +123,11 @@ test('the page has the "clear old log" button, and it clears only the old step l
   const html = fs.readFileSync(require.resolve('../public/manager/diagnostics.html'), 'utf8');
   assert.match(html, /<button type="button" id="diag-clear">امسح السجل القديم<\/button>/);
   assert.match(source, /getElementById\('diag-clear'\)\?\.addEventListener\('click', \(\) => \{ try \{ localStorage\.removeItem\('basma_diag_trace'\); \}/);
+});
+
+test('address service blocked: the line says "no" with the time, as a warning (not a failure)', async () => {
+  const fetch = async url => { if (/nominatim/.test(url)) throw new TypeError('blocked'); return { ok: true, status: 200, text: async () => 'x' }; };
+  const { results } = await runDiag({ signedIn: 'manager', profileRole: 'manager', fetch });
+  const row = results.find(r => r.step === 'خدمة العنوان (OpenStreetMap) متاحة؟');
+  assert.equal(row.status, 'WARN'); assert.match(row.detail, /^لا — لم تصل خلال \d+\.\d ث/);
 });
