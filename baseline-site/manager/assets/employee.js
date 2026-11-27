@@ -29,7 +29,7 @@ async function secureEmployeeOpen(profile) {
   DB.prime('employeeList', { kind: 'status' }, { value: home.info?.status ?? null }); // the today listener starts from the home payload (no extra call)
   CRED_ID=employee.credId||null;
   Basma.controls();
-  if (employee.status === 'approved' && employee.credId) { await setupMainScreen(); }
+  if (employee.status === 'approved' && employee.credId) { const t = Basma.clock?.(); await setupMainScreen(); if (t !== undefined) Basma.trace?.('عرض شاشة الموظف', t, true); }
   else {
     for (const [id, value] of [['act-emp-name', employee.name], ['act-emp-id', employee.empId], ['act-emp-role', employee.role], ['act-emp-wh', employee.warehouseName]]) document.getElementById(id).textContent = value || '';
     showScreen('s-activate');

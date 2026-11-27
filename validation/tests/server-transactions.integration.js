@@ -456,6 +456,37 @@ const scenarios = {
       assert.deepEqual((await dates('leaves')).filter(d => d <= today)[0], day(today, -45));
     }
   },
+  'check-in address (owner, 27 Nov 2026): the phone saves ONE short address on its own check-in, once; the manager sees it with the point': async (file, tag) => {
+    const cid = `cAddr${tag}`, emp = `addrE_${tag}`, other = `addrO_${tag}`, mgr = `addrM_${tag}`;
+    await seedCompany(cid);
+    await seed.ref(`companies/${cid}/info/expiresAt`).set(Date.parse('2027-12-01T00:00:00Z'));
+    for (const [uid, eid] of [[emp, 'e1'], [other, 'e2']]) { await seed.ref(`access/${uid}`).set({ role: 'employee', companyId: cid, employeeId: eid, enabled: true, version: 1 }); await seed.ref(`credentials/${uid}`).set({ id: `cred-${eid}`, publicKey: 'a2V5', counter: 0, transports: [] }); }
+    await seed.ref(`access/${mgr}`).set({ role: 'manager', companyId: cid, enabled: true, version: 1, retentionConsent: 1 });
+    await seed.ref(`companies/${cid}/employees`).set({ e1: { status: 'approved', name: 'E1', credId: 'cred-e1', warehouseId: 'w1', warehouseName: 'Branch' }, e2: { status: 'approved', name: 'E2', credId: 'cred-e2', warehouseId: 'w1', warehouseName: 'Branch' } });
+    const call = async (name, uid, data) => JSON.parse(JSON.stringify(await loadServer(file).invoke(name, uid, data)));
+    const home = await call('employeeHome', emp, {});
+    assert.equal(home.geocoder.provider, 'nominatim'); assert.match(home.geocoder.url, /^https:\/\/nominatim\.openstreetmap\.org\/reverse\?/); assert.equal(home.geocoder.credit, '© OpenStreetMap');
+    const text = 'قرب 901-27، محلة 901، قضاء الرصافة، بغداد';
+    await assert.rejects(call('employeeList', emp, { kind: 'setAddress', type: 'in', date: home.date, text, lang: 'ar' }), e => e.code === 'not-found', 'no check-in yet');
+    await seed.ref(`proofs/${emp}/p1`).set({ intent: 'in', version: 1, expiresAt: Date.now() + 60000 });
+    const checkIn = await call('recordAttendance', emp, { type: 'in', proof: 'p1', location: { lat: 33.3041, lng: 44.4217, accuracy: 100 } });
+    await loadServer(file).exports.projectAttendance({ params: { cid, eid: 'e1', date: checkIn.date } });
+    await assert.rejects(call('employeeList', emp, { kind: 'setAddress', type: 'in', date: checkIn.date, text: 'x'.repeat(101), lang: 'ar' }), e => e.code === 'invalid-argument', 'max 100 characters');
+    await assert.rejects(call('employeeList', emp, { kind: 'setAddress', type: 'in', date: checkIn.date, text, lang: 'fr' }), e => e.code === 'invalid-argument');
+    await assert.rejects(call('employeeList', other, { kind: 'setAddress', type: 'in', date: checkIn.date, text, lang: 'ar' }), e => e.code === 'not-found', "another employee cannot write on this check-in (only on his own)");
+    assert.equal((await call('employeeList', emp, { kind: 'setAddress', type: 'in', date: checkIn.date, text, lang: 'ar' })).ok, true);
+    assert.deepEqual(await get(`attendanceLedger/${cid}/e1/${checkIn.date}/events/in/address`), { text, lang: 'ar' });
+    assert.deepEqual(await get(`companies/${cid}/records/${checkIn.date}_e1_in/address`), { text, lang: 'ar' });
+    assert.equal((await call('employeeList', emp, { kind: 'setAddress', type: 'in', date: checkIn.date, text: 'تغيير', lang: 'ar' })).kept, true, 'saved once; never overwritten');
+    assert.equal((await get(`companies/${cid}/records/${checkIn.date}_e1_in/address`)).text, text);
+    // The manager receives the address AND the exact point (for the map link).
+    const day = await call('managerRecords', mgr, { from: checkIn.date, to: checkIn.date });
+    const rec = day.records[`${checkIn.date}_e1_in`];
+    assert.equal(rec.address.text, text); assert.equal(rec.lat, 33.3041); assert.equal(rec.lng, 44.4217); assert.equal(rec.accuracy, 100);
+    // The changed record reaches the manager's phone through the incremental sync.
+    const notes = Object.values((await get(`changeLog/${cid}`)) || {}).filter(n => n.id === `${checkIn.date}_e1_in`);
+    assert.ok(notes.length >= 2, 'noted when created and when the address was added');
+  },
   'a WebAuthn challenge is consumed exactly once with two concurrent finish calls': async (file, tag) => {
     const cid = `cBio${tag}`, uid = `emp_bio_${tag}`;
     await seedCompany(cid);
@@ -582,7 +613,9 @@ const scenarios = {
     }
     const range = await loadServer(file).invoke('managerRecords', `mgr_${A}`, { from: '2026-10-01', to: '2026-10-31', companyId: B });
     assert.deepEqual(Object.keys(range.records), [`in_${A}`], 'range only, company A only');
-    assert.deepEqual(Object.keys(range.records[`in_${A}`]).sort(), ['dateKey', 'delayMins', 'empId', 'locStatus', 'timestamp', 'type', 'warehouseId', 'warehouseName'], 'compact: no coordinates or actor');
+    // v6.8 (owner): the manager now receives the exact point (map link next to each check-in); still no actor or other internals.
+    assert.deepEqual(Object.keys(range.records[`in_${A}`]).sort(), ['dateKey', 'delayMins', 'empId', 'lat', 'lng', 'locStatus', 'timestamp', 'type', 'warehouseId', 'warehouseName'], 'compact: the point for the map link, no actor');
+    assert.equal(range.records[`in_${A}`].actor, undefined, 'never the actor');
     assert.deepEqual(Object.keys(range.leaves), [`oct_${A}`]);
     assert.equal(JSON.stringify(range).includes(B), false, 'nothing from company B');
     await assert.rejects(loadServer(file).invoke('managerRecords', `mgr_${A}`, { from: '2026-09-01', to: '2026-10-31' }), e => e.code === 'invalid-argument', 'more than 31 days refused');

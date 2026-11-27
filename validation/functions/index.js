@@ -75,7 +75,7 @@ exports.employeeHome = endpoint(['employee'], async ({uid,member,info,employee})
   const device=credential?{status:await deviceState(cid,eid,credential.id)}:{status:'none'};
   const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value?.[key]!==undefined).map(key=>[key,value[key]]));
   return {serverTime:Date.now(),date,employee:pick(employee,['name','empId','role','warehouseId','warehouseName','status','credId','schedule','workDays','geoZone']),
-    workDays:rules.workDaysOf(settings||{},warehouse,employee),startTime:rules.startTimeOf(settings||{},warehouse,employee),
+    workDays:rules.workDaysOf(settings||{},warehouse,employee),startTime:rules.startTimeOf(settings||{},warehouse,employee),geocoder:GEOCODER,
     info:pick(info,['nameAr','nameEn','name','logo','timeZone','status']),
     settings:pick(settings,['checkIn','checkOut','weekendDays','holidays','geoZone']),
     warehouse:pick(warehouse,['name','active','schedule','geoZone']),today:today?.dateKey===date?today:{},
@@ -112,7 +112,11 @@ exports.managerHome = endpoint(['manager'], async ({ uid, member, info, data }) 
 // Manager attendance records, reports, payroll and request lists through ONE call per range (no direct database
 // reads, which stall on networks where the realtime connection does not establish). Indexed queries only
 // (records.dateKey, leaves/excuses.date and .status), the manager's own company only, compact record fields.
-const RECORD_FIELDS = ['empId', 'empName', 'type', 'timestamp', 'dateKey', 'warehouseId', 'warehouseName', 'locStatus', 'excuseType', 'delayMins', 'locationName', 'missionKey'];
+const RECORD_FIELDS = ['empId', 'empName', 'type', 'timestamp', 'dateKey', 'warehouseId', 'warehouseName', 'locStatus', 'excuseType', 'delayMins', 'locationName', 'missionKey', 'address', 'lat', 'lng', 'accuracy'];
+// v6.8 (owner, 27 Nov 2026): the readable check-in address is looked up on the EMPLOYEE'S PHONE (never by the server),
+// after the check-in is saved. This ONE setting picks the free service; switching = change it + deploy employeeHome
+// (no page rebuild: the pages allow these three hosts). Owner decision: Nominatim (OpenStreetMap), credit required.
+const GEOCODER = { provider: 'nominatim', url: 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&lat={lat}&lon={lng}&accept-language={lang}', lang: 'ar', credit: '© OpenStreetMap', creditUrl: 'https://www.openstreetmap.org/copyright', timeoutMs: 3000, minIntervalMs: 1500, cacheMeters: 100 };
 function isoDay(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) p.fail('تاريخ غير صالح', 'invalid-argument');
   return value;
@@ -360,6 +364,23 @@ exports.employeeList = endpoint(['employee'], async ({ member, info, employee, d
   const cid = member.companyId, eid = member.employeeId, own = collection => db.ref(`companies/${cid}/${collection}`).orderByChild('empId').equalTo(eid).limitToLast(200);
   switch (data.kind) {
     case 'today': return { value: (await read(`companies/${cid}/today/${eid}`)) ?? null };
+    // v6.8: the phone saves ONE short readable address (<= 100 characters + its language) on its OWN check-in/out of
+    // today (or yesterday, for a check-out after midnight), once. Nothing else is stored.
+    case 'setAddress': {
+      if (!['in', 'out'].includes(data.type)) p.fail('نوع غير صالح', 'invalid-argument');
+      if (!['ar', 'en', 'ku'].includes(data.lang)) p.fail('لغة غير صالحة', 'invalid-argument');
+      const text = p.text(data.text, 'العنوان', 100), date = isoDate(data.date), today = companyToday(info.timeZone);
+      if (date !== today && date !== daysBefore(today, 1)) p.fail('التاريخ غير صالح', 'invalid-argument');
+      const path = `attendanceLedger/${cid}/${eid}/${date}/events/${data.type}`, event = await read(path);
+      if (!event) p.fail('لا يوجد تسجيل لهذا العنوان', 'not-found');
+      if (event.address) return { ok: true, kept: true };
+      const recordId = `${date}_${eid}_${data.type}`, address = { text, lang: data.lang };
+      const updates = { [`${path}/address`]: address };
+      if (await read(`companies/${cid}/records/${recordId}/type`)) updates[`companies/${cid}/records/${recordId}/address`] = address;
+      noteChange(updates, cid, 'records', recordId);
+      await db.ref().update(updates);
+      return { ok: true };
+    }
     case 'partialLeave': return { value: (await read(`companies/${cid}/todayPartialLeave/${eid}`)) ?? null };
     case 'partialRecords': return { value: (await read(`companies/${cid}/partialLeaveRecords/${eid}/${isoDate(data.date)}`)) ?? null };
     case 'missions': case 'leaves': case 'excuses': return ordered(own(data.kind));

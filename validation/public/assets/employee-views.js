@@ -39,7 +39,7 @@ const secureAttendanceWindows=(()=>{
     const after=mono();
     if(!Number.isFinite(home.serverTime))throw Error('تعذرت مزامنة وقت الخادم');
     anchor={server:home.serverTime+(after-before)/2,at:after};SERVER_TIME_OFFSET=anchor.server-Date.now();
-    COMPANY_INFO=home.info;SETTINGS=home.settings||{};EMP={...home.employee,id:ACTIVATION_UID||EMP.id};
+    COMPANY_INFO=home.info;SETTINGS=home.settings||{};geocoderConfig=home.geocoder||null;EMP={...home.employee,id:ACTIVATION_UID||EMP.id};
     const wh=home.warehouse||{};WAREHOUSE_GEO_ZONE=(home.employee?.geoZone?.lat!=null&&home.employee.geoZone.enabled!==false?home.employee.geoZone:wh.geoZone)||null; // v5.18: his special work location firstWAREHOUSE_SCHEDULE=wh.schedule||null;
     current={today:newer(current?.today,home.today),date:home.date,onLeave:home.onLeave,schedule:EMP.schedule||wh.schedule||SETTINGS,device:home.device||{status:'none'},workDays:Array.isArray(home.workDays)?home.workDays:null,startTime:home.startTime||null};
     knownVersion=home.scheduleVersion??knownVersion;
@@ -168,3 +168,21 @@ loadNotifPage=async function(){
   const updates={};for(const n of items)if(!n.read)updates[`${n.key}/read`]=true;
   if(Object.keys(updates).length)DB.ref(`companies/${COMPANY_ID}/notifications/${EMP.id}`).update(updates).catch(()=>{});
 };
+// v6.8 (owner, 27 Nov 2026): readable address of a check-in/out, AFTER it is saved. One request at most (cache first),
+// 3 s timeout, ONE retry 20 s later. While it loads: «جارٍ تحديد العنوان…». No address: the distance from the branch.
+let geocoderConfig=null;
+window.basmaCheckinAddress=async function(type,date,point){
+  const box=document.getElementById('gps-address');if(!box||!window.BasmaAddress)return;
+  const show=(text,href,credit)=>{box.replaceChildren();box.style.display='block';box.append(document.createTextNode('📍 '+text));
+    if(href){const a=document.createElement('a');a.href=href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=' (الخريطة)';box.append(a);}
+    if(credit){const c=document.createElement('a');c.href='https://www.openstreetmap.org/copyright';c.target='_blank';c.rel='noopener noreferrer';c.textContent=' '+credit;c.style.cssText='font-size:10px;opacity:.7';box.append(c);}};
+  show('جارٍ تحديد العنوان…');
+  const config=geocoderConfig,branch=WAREHOUSE_GEO_ZONE?{name:document.getElementById('main-wh-name')?.textContent||'الفرع',geoZone:WAREHOUSE_GEO_ZONE}:null;
+  const fallback=()=>{const p=BasmaAddress.place({lat:point.lat,lng:point.lng},branch);show(p?.text||'تم التسجيل',p?.href);};
+  let found=config?await BasmaAddress.lookup(config,point):null;
+  if(!found&&config){fallback();await new Promise(r=>setTimeout(r,20000));found=await BasmaAddress.lookup(config,point);} // one retry later
+  if(!found){fallback();return;}
+  show(found.text,BasmaAddress.mapUrl({lat:point.lat,lng:point.lng}),config.credit||'');
+  try{await Basma.call('employeeList',{kind:'setAddress',type,date,text:found.text,lang:found.lang});}catch(error){Basma.trace?.('حفظ عنوان الحضور',Basma.clock?.()||0,false,error?.code||'error');}
+};
+

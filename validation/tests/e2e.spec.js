@@ -356,8 +356,18 @@ test.describe('full flow on local emulators', () => {
       await ge.verify(page, 'employee pages');
     }, { timeout: 60000 });
     await test.step('employee: fingerprint check-in inside the branch radius', async () => {
+      // v6.8: the browser test never calls the real Nominatim (its rules forbid automated traffic): the REAL answer
+      // recorded for Baghdad-Karrada on 27 Nov 2026 is served instead. Each request is counted.
+      const geoCalls = [];
+      await page.route(/^https:\/\/nominatim\.openstreetmap\.org\/reverse/, route => { geoCalls.push(route.request().url()); route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ address: { road: '901-27', neighbourhood: 'محلة 901', city_district: 'قضاء الرصافة', city: 'بغداد', state: 'محافظة بغداد' } }) }); });
+      page.__geoCalls = geoCalls;
       await show(page, 'showTab', 'home'); await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 25000 });
       const t = Date.now(); await page.click('#btn-checkin'); await expect(page.locator('#stat-in')).not.toHaveText('—', { timeout: 30000 }); timing('employee: fingerprint check-in', Date.now() - t, BUDGET.cold);
+      // v6.8: AFTER the check-in is saved, the readable address appears under the location status, with the OSM credit.
+      await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 20000 });
+      await expect(page.locator('#gps-address')).toContainText('© OpenStreetMap'); await expect(page.locator('#gps-address a').first()).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=/);
+      expect(page.__geoCalls.length, 'one request for this check-in').toBe(1);
+      expect(page.__geoCalls[0]).toMatch(/lat=-?\d+\.\d{4}&lon=-?\d+\.\d{4}&accept-language=ar$/);
     }, { timeout: 60000 });
     await test.step('employee: check-out waits 10 minutes after check-in (v5.19)', async () => {
       await expect(page.locator('#win-msg')).toContainText('يمكنك الانصراف بعد', { timeout: 15000 });
@@ -379,11 +389,20 @@ test.describe('full flow on local emulators', () => {
     await test.step('employee: fingerprint check-out', async () => {
       await expect(page.locator('#btn-checkout')).toBeEnabled({ timeout: 25000 });
       const t = Date.now(); await page.click('#btn-checkout'); await expect(page.locator('#stat-out')).not.toHaveText('—', { timeout: 30000 }); timing('employee: fingerprint check-out', Date.now() - t, BUDGET.cold);
+      await expect(page.locator('#gps-address')).toContainText('محلة 901', { timeout: 20000 });
+      expect(page.__geoCalls.length, 'same place (within 100 m): the phone cache answers, NO second request').toBe(1);
       await shot(page, 'employee-checked-out');
     }, { timeout: 60000 });
     await test.step('employee: records show check-in and check-out', async () => {
       await show(page, 'showTab', 'hist'); await expect(page.locator('#main-tab-hist')).toContainText('حضور'); await expect(page.locator('#main-tab-hist')).toContainText('انصراف'); await shot(page, 'employee-records');
       await ge.verify(page, 'employee'); await ge.context.close();
+      // v6.8: a manager (a new phone: full sync) sees the readable place next to the check-in and check-out, with a map link.
+      const m = await managerSession(browser);
+      await m.page.evaluate(() => localData.open(true));
+      await show(m.page, 'showPage', 'attend');
+      const row = m.page.locator('#att-tbody tr', { hasText: 'e2e موظف البصمة' });
+      await expect(row).toContainText('محلة 901', { timeout: 20000 }); await expect(row.locator('a', { hasText: 'الخريطة' }).first()).toHaveAttribute('href', /openstreetmap\.org\/\?mlat=/);
+      await m.g.verify(m.page, 'manager sees the check-in address'); await m.g.context.close();
     }, { timeout: 60000 });
   });
 });

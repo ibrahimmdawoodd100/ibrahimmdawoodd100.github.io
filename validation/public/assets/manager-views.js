@@ -82,24 +82,44 @@ const secureManagerView = (()=>{
   const el=id=>document.getElementById(id);
   const text=(tag,value)=>{const node=document.createElement(tag);node.textContent=String(value??'');return node;};
   const time=value=>value?new Date(value).toLocaleTimeString('ar',{timeZone:COMPANY_INFO.timeZone||'UTC',hour:'2-digit',minute:'2-digit'}):'—';
+  // v6.8: a cell may be {text, sub, href, credit}: the time, the readable place under it, and a map link to the exact point.
+  function cell(value){
+    if(!value||typeof value!=='object')return text('td',value);
+    const td=text('td',value.text||'—');
+    if(value.sub){const sub=text('div',value.sub);sub.style.cssText='font-size:11px;opacity:.8';td.appendChild(sub);}
+    if(value.href){const a=document.createElement('a');a.href=value.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='📍 الخريطة';a.style.fontSize='11px';a.addEventListener?.('click',e=>e.stopPropagation?.());td.appendChild(a);}
+    if(value.credit){const c=text('div',value.credit);c.style.cssText='font-size:9px;opacity:.6';td.appendChild(c);}
+    return td;
+  }
   function table(id,rows,cells,click) {
     const body=el(id);let page=0;const size=200;
     el(`${id}-pager`)?.remove();
     const pager=document.createElement('div');pager.id=`${id}-pager`;const label=text('span',''),previous=text('button','السابق'),next=text('button','التالي');
     const draw=()=>{
       body.replaceChildren();
-      for(const row of rows.slice(page*size,(page+1)*size)){const tr=document.createElement('tr');for(const value of cells(row))tr.appendChild(text('td',value));if(click){tr.style.cursor='pointer';tr.addEventListener('click',()=>click(row));}body.appendChild(tr);}
+      for(const row of rows.slice(page*size,(page+1)*size)){const tr=document.createElement('tr');for(const value of cells(row))tr.appendChild(cell(value));if(click){tr.style.cursor='pointer';tr.addEventListener('click',()=>click(row));}body.appendChild(tr);}
       if(!rows.length){const td=text('td','لا توجد بيانات مطابقة');td.colSpan=12;const tr=document.createElement('tr');tr.appendChild(td);body.appendChild(tr);}
       label.textContent=rows.length?`${page*size+1}–${Math.min((page+1)*size,rows.length)} من ${rows.length}`:'0';previous.disabled=page===0;next.disabled=(page+1)*size>=rows.length;
     };
     previous.addEventListener('click',()=>{page--;draw();});next.addEventListener('click',()=>{page++;draw();});pager.append(previous,label,next);body.parentElement?.parentElement?.appendChild(pager);draw();
+  }
+  // v6.8: each day row keeps its check-in and check-out records (address + exact point) for the place shown next to the time.
+  function withPlaces(rows,records){
+    const by={};for(const r of Object.values(records||{}))if(r&&(r.type==='in'||r.type==='out')){const k=`${r.empId}|${r.dateKey}|${r.type}`,old=by[k];if(!old||(r.type==='in'?r.timestamp<old.timestamp:r.timestamp>old.timestamp))by[k]=r;}
+    for(const row of rows){row.inRecord=by[`${row.employeeId}|${row.date}|in`]||null;row.outRecord=by[`${row.employeeId}|${row.date}|out`]||null;}
+    return rows;
+  }
+  function checkCell(row,type){
+    const stamp=type==='in'?row.checkIn:row.checkOut,rec=type==='in'?row.inRecord:row.outRecord;if(!stamp)return '—';
+    const branch=ALL_WAREHOUSES?.[rec?.warehouseId||row.warehouseId],p=window.BasmaAddress?.place(rec,branch);
+    return {text:time(stamp),sub:p?.text||'',href:p?.href||null,credit:p?.credit||''};
   }
   async function dataset(from,to,{employeeId='all',warehouseId='all'}={}) {
     const token=managerData.capture();
     // Two server calls at most (base is cached from managerHome); no direct database read, no clock read.
     const [base,range]=await Promise.all([managerData.base(),managerRange(from,to)]);
     token.check();ALL_EMPLOYEES=base.employees;ALL_WAREHOUSES=base.warehouses;
-    return BasmaReports.build({employees:base.employees,records:range.records,leaves:range.leaves,excuses:range.excuses,settings:base.settings,warehouses:typeof ALL_WAREHOUSES==='object'?ALL_WAREHOUSES:{},today:today(),from,to,employeeId,warehouseId,timeZone:COMPANY_INFO.timeZone||'UTC'});
+    return withPlaces(BasmaReports.build({employees:base.employees,records:range.records,leaves:range.leaves,excuses:range.excuses,settings:base.settings,warehouses:typeof ALL_WAREHOUSES==='object'?ALL_WAREHOUSES:{},today:today(),from,to,employeeId,warehouseId,timeZone:COMPANY_INFO.timeZone||'UTC'}),range.records);
   }
   function options(select,values,first) {
     const selected=select.value;select.replaceChildren();const all=text('option',first);all.value='all';select.appendChild(all);
@@ -116,10 +136,10 @@ const secureManagerView = (()=>{
   }
   function details(rows,title) {
     el('daily-details-title').textContent=title;
-    table('daily-details-body',rows,r=>[r.date,r.name,r.warehouseName,r.statusLabel,time(r.checkIn),time(r.checkOut),r.actualWorkMinutes==null?'—':(r.actualWorkMinutes/60).toFixed(2),r.delayMins]);
+    table('daily-details-body',rows,r=>[r.date,r.name,r.warehouseName,r.statusLabel,checkCell(r,'in'),checkCell(r,'out'),r.actualWorkMinutes==null?'—':(r.actualWorkMinutes/60).toFixed(2),r.delayMins]);
     el('daily-details-modal').style.display='flex';
   }
-  return {today,el,text,time,table,dataset,filters,financial,details};
+  return {today,el,text,time,table,dataset,filters,financial,details,checkCell};
 })();
 
 let dashboardTicket=0,attendanceTicket=0,reportTicket=0,payrollTicket=0;
@@ -195,7 +215,7 @@ loadAttendance=async function(){
     let rows=await secureManagerView.dataset(date,date,{warehouseId:document.getElementById('att-wh').value});
     if(ticket!==attendanceTicket||date!==document.getElementById('att-date').value)return;
     if(attStatusFilter!=='all')rows=rows.filter(r=>attStatusFilter==='present'?['present','excused'].includes(r.classification):attStatusFilter==='excused_out'?r.attendanceStatus==='excused_out':r.classification===attStatusFilter);
-    secureManagerView.table('att-tbody',rows,r=>[r.name,r.role,r.warehouseName,r.statusLabel,secureManagerView.time(r.checkIn),secureManagerView.time(r.checkOut),r.delayMins],r=>secureManagerView.details([r],`${r.name} — ${date}`));
+    secureManagerView.table('att-tbody',rows,r=>[r.name,r.role,r.warehouseName,r.statusLabel,secureManagerView.checkCell(r,'in'),secureManagerView.checkCell(r,'out'),r.delayMins],r=>secureManagerView.details([r],`${r.name} — ${date}`));
   }catch(error){if(error?.code==='stale-manager-scope'||ticket!==attendanceTicket)return;tableError('att-tbody',7,error,()=>loadAttendance());}
 };
 generateReport=async function(){
