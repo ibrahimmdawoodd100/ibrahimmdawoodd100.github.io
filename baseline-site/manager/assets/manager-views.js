@@ -127,11 +127,11 @@ let dashboardTicket=0,attendanceTicket=0,reportTicket=0,payrollTicket=0;
 // Before: info + employees + settings + warehouses + leave/excuse pages + records + clock, all direct database reads
 // with no limit; on a stalled database connection the cards stayed "-" and the table spun forever.
 const managerHomeTimeoutMs=()=>Number(window.BASMA_MANAGER_TIMEOUT_MS)||25000;
-function applyManagerHome(home){
+function applyManagerHome(home,{offline=false}={}){
   COMPANY_INFO={...(COMPANY_INFO||{}),...(home.info||{})};
-  managerData.prime(home);ALL_EMPLOYEES=home.employees||{};ALL_WAREHOUSES=home.warehouses||{};
+  if(!offline)managerData.prime(home); // v6.6: the instant draw from the phone runs before sign-in (no session to prime)ALL_EMPLOYEES=home.employees||{};ALL_WAREHOUSES=home.warehouses||{};
   // Badges and company status arrive inside managerHome: the badge listeners start from them (no extra call).
-  if(home.badges&&typeof DB?.prime==='function'){DB.prime('managerList',{kind:'badges'},home.badges);DB.poll?.();} // badge listeners update from this answer (no extra call)
+  if(!offline&&home.badges&&typeof DB?.prime==='function'){DB.prime('managerList',{kind:'badges'},home.badges);DB.poll?.();} // badge listeners update from this answer (no extra call)
   const name=document.getElementById('sb-company'),logo=document.getElementById('sb-logo');
   if(name&&COMPANY_INFO.nameAr)name.textContent=COMPANY_INFO.nameAr;if(logo)logo.textContent=COMPANY_INFO.logo||'🏭';
 }
@@ -156,10 +156,10 @@ loadDashboard=async function(){
 // v6.4: draw the dashboard from a home value (fresh from the server, or the last copy saved on this phone).
 let lastManagerHome=null;
 function setDashState(text){let chip=document.getElementById('dash-state');if(!chip){const dash=document.getElementById('page-dash');if(!dash)return;chip=document.createElement('div');chip.id='dash-state';chip.style.cssText='margin:8px 16px 0;font-size:12px;color:var(--text2)';dash.prepend(chip);}chip.textContent=text||'';chip.style.display=text?'block':'none';}
-function renderDashboard(home){
+function renderDashboard(home,{offline=false}={}){
   const t1=Basma.clock();
   try{
-    applyManagerHome(home);
+    applyManagerHome(home,{offline});
     const rows=BasmaReports.build({employees:home.employees||{},records:home.records||{},leaves:home.leaves||{},excuses:home.excuses||{},settings:home.settings||{},warehouses:typeof ALL_WAREHOUSES==='object'?ALL_WAREHOUSES:{},today:home.date,from:home.date,to:home.date,warehouseId:dashWHFilter,timeZone:COMPANY_INFO.timeZone||'UTC'});
     const count=kind=>rows.filter(r=>r.classification===kind).length;
     document.getElementById('ds-total').textContent=rows.length;
@@ -179,7 +179,7 @@ window.basmaDrawFromPhone=async function(){
     const home=await s.loadSnapshot('managerHome');if(!home||window.__basmaLiveHome)return false;
     COMPANY_ID=cid;COMPANY_INFO={...(home.info||{}),timeZone:home.info?.timeZone||'UTC'};
     const name=document.getElementById('sb-company');if(name)name.textContent=home.info?.nameAr||'';
-    renderDashboard(home);setDashState(`آخر بيانات محفوظة (${home.date||''}) — يتم التحديث…`);return true;
+    renderDashboard(home,{offline:true});setDashState(`آخر بيانات محفوظة (${home.date||''}) — يتم التحديث…`);window.__basmaDrawnFromPhone=performance.now();return true;
   }catch{return false;}
 };
 // v6.4: the opening call carries this phone's sync cursor, so the incremental sync rides along (one call, one wake-up).
@@ -287,7 +287,10 @@ showEmpModal=async function(eid){
     if(select.value===employee.warehouseId){showToast('اختر فرعًا غير فرعه الحالي','error');return;}
     const target=ALL_WAREHOUSES[select.value]?.name||'';
     if(!await BasmaDialogs.confirm('نقل الموظف',`سيُنقل «${employee.name||''}» إلى «${target}» نقلًا دائمًا. يأخذ دوام الفرع الجديد وأيامه وموقعه. أوقاته وأيامه الخاصة تبقى، وموقعه الخاص يعود لموقع الفرع الجديد. السجلات السابقة تبقى باسم الفرع القديم. البصمة والجهاز يبقيان صالحين.`,'نقل'))return;
-    button.disabled=true;try{await Basma.call('transferEmployee',{employeeId:eid,warehouseId:select.value});closeEmpModal();await loadAllData();showToast('تم النقل؛ السجلات السابقة لم تتغير','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{button.disabled=false;}
+    button.disabled=true;try{await Basma.call('transferEmployee',{employeeId:eid,warehouseId:select.value});
+      // v6.6: update this page's copy at once (a reopened window must not show the old branch while the list reloads).
+      if(ALL_EMPLOYEES[eid])ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],warehouseId:select.value,warehouseName:target,geoZone:null};
+      closeEmpModal();await loadAllData();showToast('تم النقل؛ السجلات السابقة لم تتغير','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{button.disabled=false;}
   });section.append(select,button);
   const logBox=secureManagerView.text('div','جاري تحميل سجل التغييرات...');logBox.style.cssText='font-size:12px;color:var(--text2);margin-top:10px';section.appendChild(logBox);
   parent.appendChild(section);

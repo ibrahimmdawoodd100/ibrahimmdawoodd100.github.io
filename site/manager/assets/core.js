@@ -127,6 +127,7 @@ window.Basma = (() => {
   // logout AND when a different account signs in on the same phone, so employee B never sees employee A's state.
   // Firebase's own sign-in record is removed by signOut(); page memory is cleared by the reload.
   function clearLocalState(keep = []) {
+    keep = [...keep, 'basma_diag_trace']; // v6.7: the step-time log (step names and ms only, no personal data) survives logout/account switch, so diagnostics can show it
     try { indexedDB.deleteDatabase('basma-month-cache'); } catch {} // the manager's closed-month cache
     // v6.0: the company's records on this phone are KEPT (the only copy after 45 days); only the decryption key is removed,
     // so nobody can read them until the manager signs in again. Never delete basma-local-v1 here.

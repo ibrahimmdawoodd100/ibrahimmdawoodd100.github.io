@@ -213,3 +213,17 @@ test('seller panel shows the manager username from listCompanies, or "--" when t
   await h.ctx.openPanel('c2');
   assert.equal(userRow.value.textContent, '--', 'old backend without the field: still "--", no invented value');
 });
+
+// v6.7 (owner, 27 Nov 2026): the diagnostics page showed "no recorded steps" because logout / an account switch removed
+// EVERY basma_ key, the step-time log too. The log (step names + ms only) now survives; personal values are still removed.
+test('account switch/logout cleanup keeps the step-time log and still removes the other Basma values', () => {
+  const src = read('public/assets/core.js'), start = src.indexOf('  function clearLocalState(keep = []) {'), end = src.indexOf('\n  }\n', start) + 4;
+  const store = () => { const m = new Map(); return { m, getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), get length() { return m.size; } }; };
+  const local = store(), session = store();
+  local.setItem('basma_diag_trace', '[{"step":"x","ms":5}]'); local.setItem('basma_emp_view', '{"name":"أحمد"}'); local.setItem('basma_last_uid', 'A'); local.setItem('other_app', 'keep');
+  const ctx = { localStorage: new Proxy(local, { ownKeys: t => [...t.m.keys()], getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) }), sessionStorage: session, indexedDB: { deleteDatabase() {} }, Object };
+  vm.runInNewContext(src.slice(start, end) + '\nclearLocalState();', ctx);
+  assert.equal(local.getItem('basma_diag_trace'), '[{"step":"x","ms":5}]', 'the step log survives');
+  assert.equal(local.getItem('basma_emp_view'), null, "the employee's name is still removed"); assert.equal(local.getItem('basma_last_uid'), null);
+  assert.equal(local.getItem('other_app'), 'keep', 'non-Basma values are never touched');
+});

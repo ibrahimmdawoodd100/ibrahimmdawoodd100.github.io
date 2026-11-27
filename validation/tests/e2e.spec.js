@@ -578,5 +578,34 @@ test.describe('speed measurement on a throttled phone (local emulators, informat
     await expect(ep.locator('#btn-checkin')).toBeEnabled({ timeout: 90000 }); usable = await ep.evaluate(() => performance.now());
     await timeline(ep, 'EMPLOYEE normal open (saved session)', 0, shown, usable);
     await phone.g.context.close();
+    // v6.7 (owner, 27 Nov 2026): the same opens with the database WebSocket BLOCKED (every attempt is closed at once).
+    const blockWs = async (context, attempts) => context.routeWebSocket(/.*/, ws => { attempts.push(ws.url().replace(/\?.*$/, '')); ws.close({ code: 1006, reason: 'blocked by the test' }); });
+    const wsM = [], gb = await guarded(browser), pb = await gb.context.newPage(); await gb.context.addInitScript(probe); await blockWs(gb.context, wsM); await slowPhone(pb);
+    await gb.open(pb, '/manager/', '#dl-username', 'speed: manager login (WebSocket blocked)');
+    await pb.fill('#dl-username', accounts.manager); await pb.fill('#dl-password', FIX.password);
+    t0 = await pb.evaluate(() => performance.now()); await pb.click('#dl-submit-btn');
+    await pb.locator('#dash-tbody').filter({ hasText: 'e2e' }).waitFor({ timeout: 90000 }); shown = await pb.evaluate(() => performance.now()); usable = shown;
+    await timeline(pb, 'MANAGER first open, WebSocket BLOCKED', t0, shown, usable, { 'WebSocket attempts (all blocked)': wsM.length });
+    await pb.reload({ waitUntil: 'commit' });
+    await pb.locator('#dash-tbody').filter({ hasText: 'e2e' }).waitFor({ timeout: 90000 }); shown = await pb.evaluate(() => performance.now());
+    const fromPhoneB = await pb.evaluate(() => window.__basmaDrawnFromPhone || null);
+    await timeline(pb, 'MANAGER normal open, WebSocket BLOCKED', 0, fromPhoneB || shown, shown, { 'WebSocket attempts (all blocked)': wsM.length, 'server data shown': `${s(shown)}s` });
+    expect(shown, 'the manager page never waits for the blocked WebSocket (10 s timeouts)').toBeLessThan(15000);
+    await gb.context.close();
+    const wsE = [], phoneB = await employeePhone(browser); await phoneB.g.context.addInitScript(probe); await blockWs(phoneB.g.context, wsE); await slowPhone(phoneB.page);
+    const eb = phoneB.page; await phoneB.g.open(eb, '/employee/', '#dl-emp-username', 'speed: employee login (WebSocket blocked)');
+    await eb.fill('#dl-emp-username', accounts.employeeC); await eb.fill('#dl-emp-password', FIX.password);
+    t0 = await eb.evaluate(() => performance.now()); await eb.click('#dl-emp-submit');
+    await expect(eb.locator('#btn-checkin')).toBeEnabled({ timeout: 90000 }); usable = await eb.evaluate(() => performance.now());
+    await timeline(eb, 'EMPLOYEE first open, WebSocket BLOCKED', t0, usable, usable, { 'WebSocket attempts (all blocked)': wsE.length });
+    await eb.reload({ waitUntil: 'commit' });
+    await expect(eb.locator('#btn-checkin')).toBeEnabled({ timeout: 90000 }); usable = await eb.evaluate(() => performance.now());
+    await timeline(eb, 'EMPLOYEE normal open, WebSocket BLOCKED', 0, usable, usable, { 'WebSocket attempts (all blocked)': wsE.length });
+    expect(usable, 'the employee page never waits for the blocked WebSocket').toBeLessThan(15000);
+    // The step log survives the account switch (manager -> employee on one phone): diagnostics can show it.
+    const steps = await eb.evaluate(() => { try { return JSON.parse(localStorage.getItem('basma_diag_trace') || '[]').map(t => `${t.page}: ${t.step}`); } catch { return []; } });
+    console.log('PERF recorded open steps on this phone: ' + steps.slice(-8).join(' | '));
+    expect(steps.some(x => /^employee: /.test(x)), 'employee open steps recorded').toBe(true);
+    await phoneB.g.context.close();
   });
 });
