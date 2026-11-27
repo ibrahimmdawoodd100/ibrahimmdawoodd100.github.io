@@ -638,7 +638,14 @@ test.describe('a phone with the OLD version updates itself; the address box (loc
     test.setTimeout(240000);
     // This ONE test allows the service worker (the suite blocks it everywhere else, e2e.config.js): it tests the update flow.
     const { accounts } = FIX, phone = await employeePhone(browser, { context: { serviceWorkers: 'allow' } }), { page } = phone;
-    await employeeLogin(phone, accounts.employeeC, '#btn-checkin');
+    // The employee registers a fingerprint on THIS phone first (the main flow's steps: activation button -> the new device
+    // waits -> the manager approves -> check-in is enabled), so the check-in below has a real fingerprint to use.
+    // (v6.9 retry: C was used here, but C's fingerprint is seeded and was never on this phone: the check-in could not finish.)
+    await employeeLogin(phone, accounts.employeeD); await expect(page.locator('#act-emp-name')).toHaveText('e2e موظف التحديث');
+    await page.click('#act-bio-btn'); await expect(page.locator('#win-msg')).toContainText('بانتظار اعتماد المدير', { timeout: 30000 }); await expect(page.locator('#btn-checkin')).toBeDisabled();
+    const m = await managerSession(browser); await approveDevice(m, 'e2e موظف التحديث'); await m.g.verify(m.page, 'update test: device approval'); await m.g.context.close();
+    await expect(page.locator('#btn-checkin')).toBeEnabled({ timeout: 20000 });
+    expect((await phone.cdp.send('WebAuthn.getCredentials', { authenticatorId: phone.authenticatorId })).credentials.length, 'the fingerprint is on this phone').toBe(1);
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20000 }).toBe(true); // the old version is cached and in control
     await page.reload(); await expect(page.locator('#btn-checkin')).toBeVisible({ timeout: 30000 });
     await expect(page.locator('#app-version')).toContainText('الإصدار 6.9', { timeout: 15000 });
