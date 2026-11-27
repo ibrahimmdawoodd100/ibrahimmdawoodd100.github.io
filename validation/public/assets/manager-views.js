@@ -287,7 +287,10 @@ showEmpModal=async function(eid){
     if(select.value===employee.warehouseId){showToast('اختر فرعًا غير فرعه الحالي','error');return;}
     const target=ALL_WAREHOUSES[select.value]?.name||'';
     if(!await BasmaDialogs.confirm('نقل الموظف',`سيُنقل «${employee.name||''}» إلى «${target}» نقلًا دائمًا. يأخذ دوام الفرع الجديد وأيامه وموقعه. أوقاته وأيامه الخاصة تبقى، وموقعه الخاص يعود لموقع الفرع الجديد. السجلات السابقة تبقى باسم الفرع القديم. البصمة والجهاز يبقيان صالحين.`,'نقل'))return;
-    button.disabled=true;try{await Basma.call('transferEmployee',{employeeId:eid,warehouseId:select.value});closeEmpModal();await loadAllData();showToast('تم النقل؛ السجلات السابقة لم تتغير','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{button.disabled=false;}
+    button.disabled=true;try{await Basma.call('transferEmployee',{employeeId:eid,warehouseId:select.value});
+      // v6.6: update this page's copy at once (a reopened window must not show the old branch while the list reloads).
+      if(ALL_EMPLOYEES[eid])ALL_EMPLOYEES[eid]={...ALL_EMPLOYEES[eid],warehouseId:select.value,warehouseName:target,geoZone:null};
+      closeEmpModal();await loadAllData();showToast('تم النقل؛ السجلات السابقة لم تتغير','success');}catch(error){showToast(window.BasmaErrors?.message(error)??error.message,'error');}finally{button.disabled=false;}
   });section.append(select,button);
   const logBox=secureManagerView.text('div','جاري تحميل سجل التغييرات...');logBox.style.cssText='font-size:12px;color:var(--text2);margin-top:10px';section.appendChild(logBox);
   parent.appendChild(section);
